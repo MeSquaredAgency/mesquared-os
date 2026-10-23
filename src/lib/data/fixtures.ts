@@ -137,6 +137,18 @@ export const demoApiKeyHashes: Record<string, string> = Object.fromEntries(
 // Integrations and channels
 // ---------------------------------------------------------------------------
 
+/** Per-integration settings the adapters read (never credentials). Keyed by integration id. */
+export const demoIntegrationSettings: Record<string, Record<string, unknown>> = {
+  int_1: { eventTypeSlug: "harbor-realty/appraisal", calendar: "google" },
+  int_2: { pageId: "page_1", instagramAccountId: "ig_1" },
+  int_5: { domain: "harbor-realty.example", forms: ["contact", "appraisal"] },
+  int_6: { fromNumber: "+61400000000", whatsapp: false },
+  int_10: { inboxAddress: "intake+harbor-realty@inbound.mesquared.example", sources: ["REA", "DOMAIN"] },
+  int_7: { pageId: "page_2" },
+  int_8: { merchantId: "merchant_2" },
+  int_9: { eventTypeSlug: "summit/trial" },
+};
+
 export const demoIntegrations: IntegrationRecord[] = [
   { id: "int_1", tenantId: "tenant_harbor", provider: "CALCOM", label: "Cal.com (Google Workspace)", status: "CONNECTED", externalAccountId: "harbor", lastSyncAt: ago(12), lastError: null },
   { id: "int_2", tenantId: "tenant_harbor", provider: "META", label: "Facebook & Instagram", status: "CONNECTED", externalAccountId: "page_1", lastSyncAt: ago(30), lastError: null },
@@ -144,6 +156,7 @@ export const demoIntegrations: IntegrationRecord[] = [
   { id: "int_4", tenantId: "tenant_harbor", provider: "REA", label: "realestate.com.au emails", status: "PENDING", externalAccountId: null, lastSyncAt: null, lastError: null },
   { id: "int_5", tenantId: "tenant_harbor", provider: "WEBSITE", label: "Agency website forms", status: "CONNECTED", externalAccountId: "site_1", lastSyncAt: ago(3), lastError: null },
   { id: "int_6", tenantId: "tenant_harbor", provider: "TWILIO", label: "SMS", status: "CONNECTED", externalAccountId: "+61400000000", lastSyncAt: ago(3), lastError: null },
+  { id: "int_10", tenantId: "tenant_harbor", provider: "EMAIL_FORWARDING", label: "Forwarding inbox (REA, Domain)", status: "CONNECTED", externalAccountId: "intake+harbor-realty@inbound.mesquared.example", lastSyncAt: ago(8), lastError: null },
   { id: "int_7", tenantId: "tenant_summit", provider: "META", label: "Facebook & Instagram", status: "CONNECTED", externalAccountId: "page_2", lastSyncAt: ago(45), lastError: null },
   { id: "int_8", tenantId: "tenant_summit", provider: "SQUARE", label: "Square", status: "CONNECTED", externalAccountId: "merchant_2", lastSyncAt: ago(20), lastError: null },
   { id: "int_9", tenantId: "tenant_summit", provider: "CALCOM", label: "Cal.com", status: "DISCONNECTED", externalAccountId: null, lastSyncAt: ago(60 * 24 * 3), lastError: "Calendar access revoked" },

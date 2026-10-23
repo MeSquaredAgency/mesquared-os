@@ -25,7 +25,8 @@ describe("intake pipeline (demo repository)", () => {
     assert.equal(result.outcome, "created");
     if (result.outcome !== "created") return;
     assert.equal(result.qualification.ticketType, "GREEN");
-    assert.ok(result.bookingUrl?.includes(`/book/${tenant.slug}?lead=${result.lead.id}`));
+    // Harbor has Cal.com connected, so the link is a prefilled Cal.com event with the lead id in metadata.
+    assert.ok(result.bookingUrl && (result.bookingUrl.includes(`metadata%5BleadId%5D=${result.lead.id}`) || result.bookingUrl.includes(`/book/${tenant.slug}?lead=${result.lead.id}`)));
     assert.ok(result.lead.contactId, "contact linked");
     const config = await repository.getTenantConfig(tenant.id);
     const pipeline = config.pipelines.find((p) => p.isDefault)!;

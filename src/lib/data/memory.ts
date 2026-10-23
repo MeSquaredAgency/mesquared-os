@@ -23,11 +23,13 @@ import {
   type IntakeEventInput,
   type NewBooking,
   type NewContentAsset,
+  type NewMessage,
   type NewMissedOpportunity,
   type Repository,
 } from "./repository";
 import {
   demoAdSpendMonthCents,
+  demoIntegrationSettings,
   demoApiKeyHashes,
   demoAssets,
   demoConfig,
@@ -53,6 +55,8 @@ interface MemoryStore {
   leads: LeadRecord[];
   bookings: { id: string; tenantId: string; leadId: string; bookingUrl: string; sent: boolean }[];
   intakeEvents: (IntakeEventInput & { id: string; tenantId: string; createdAt: Date })[];
+  conversations: { id: string; tenantId: string; contactId: string | null; channel: NewMessage["channel"]; externalId: string | null; lastMessageAt: Date; awaitingReply: boolean }[];
+  messages: (NewMessage & { id: string; tenantId: string; conversationId: string; createdAt: Date })[];
   missed: MissedOpportunityRecord[];
   runs: AutomationRunRecord[];
   exceptions: ExceptionRecord[];
@@ -77,6 +81,8 @@ function store(): MemoryStore {
       leads: [...demoLeads],
       bookings: [],
       intakeEvents: [],
+      conversations: [],
+      messages: [],
       missed: [...demoMissed],
       runs: [...demoRuns],
       exceptions: [...demoExceptions],
@@ -276,6 +282,26 @@ export const memoryRepository: Repository = {
     };
   },
 
+  async findLeadById(tenantId, leadId) {
+    return store().leads.find((l) => l.id === leadId && l.tenantId === tenantId) ?? null;
+  },
+
+  async markLeadBooked(tenantId, leadId, at) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return null;
+    lead.bookedAt ??= at;
+    if (lead.status === "QUALIFIED" || lead.status === "BOOKING_SENT" || lead.status === "NEW") lead.status = "BOOKED";
+    const pipeline = demoConfig[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
+    const next = pipeline?.stages.find((s) => s.advanceOn === "BOOKING_CREATED");
+    if (next) lead.stageId = next.id;
+    return lead;
+  },
+
+  async assignLead(tenantId, leadId, assigneeId) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (lead) lead.assigneeId = assigneeId;
+  },
+
   async markLeadResponded(tenantId, leadId, at) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (lead && !lead.firstResponseAt) lead.firstResponseAt = at;
@@ -296,6 +322,40 @@ export const memoryRepository: Repository = {
     assertLeadInTenant(tenantId, data.leadId);
     assertContactInTenant(tenantId, data.contactId);
     pushBounded(store().intakeEvents, { ...data, id: randomUUID(), tenantId, createdAt: new Date() }, false);
+  },
+
+  async recordMessage(tenantId, data: NewMessage) {
+    assertContactInTenant(tenantId, data.contactId);
+    const s = store();
+    let convo = s.conversations.find((c) => c.tenantId === tenantId && c.channel === data.channel && (data.externalConversationId ? c.externalId === data.externalConversationId : c.contactId === data.contactId && c.contactId !== null));
+    if (!convo) {
+      convo = { id: id("cv"), tenantId, contactId: data.contactId, channel: data.channel, externalId: data.externalConversationId ?? null, lastMessageAt: new Date(), awaitingReply: false };
+      pushBounded(s.conversations, convo, false);
+    }
+    convo.lastMessageAt = new Date();
+    convo.awaitingReply = data.direction === "INBOUND";
+    const message = { ...data, id: id("msg"), tenantId, conversationId: convo.id, createdAt: new Date() };
+    pushBounded(s.messages, message, false);
+    return { conversationId: convo.id, messageId: message.id };
+  },
+
+  async listAlertRecipients(tenantId) {
+    const s = store();
+    return demoMemberships
+      .filter((mb) => mb.tenantId === tenantId)
+      .map((mb) => ({ mb, role: demoConfig[tenantId]?.roles.find((r) => r.id === mb.roleId), user: s.users.find((u) => u.id === mb.userId) }))
+      .filter((x) => x.user && x.role?.permissions.includes("RECEIVE_LEAD_ALERTS"))
+      .map((x) => ({ userId: x.user!.id, email: x.user!.email, name: x.user!.name }));
+  },
+
+  async findIntegration(tenantId, provider) {
+    const i = store().integrations.find((x) => x.tenantId === tenantId && x.provider === provider);
+    return i ? { id: i.id, provider: i.provider, status: i.status, externalAccountId: i.externalAccountId, settings: demoIntegrationSettings[i.id] ?? {}, credentialsEnc: null } : null;
+  },
+
+  async findTenantByIntegrationAccount(provider, externalAccountId) {
+    const i = store().integrations.find((x) => x.provider === provider && x.externalAccountId === externalAccountId && x.status !== "DISCONNECTED");
+    return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
   },
 
   async upsertMissedOpportunity(tenantId, data: NewMissedOpportunity) {

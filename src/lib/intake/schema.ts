@@ -47,6 +47,25 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return `${plus}${digits}`;
 }
 
+/** Country calling codes for the regions we operate in; used when a number has no "+" prefix. */
+const COUNTRY_CODES: Record<string, string> = { AU: "61", NZ: "64", GB: "44", US: "1", CA: "1", KH: "855", SG: "65", IE: "353" };
+
+/**
+ * Converts a normalised phone number to E.164 using the tenant's home region
+ * when the caller omitted the country code: "0400111222" in AU → "+61400111222".
+ * Numbers that already start with "+" are returned unchanged.
+ */
+export function toE164(phone: string | null, region: string): string | null {
+  if (!phone) return null;
+  if (phone.startsWith("+")) return phone;
+  const cc = COUNTRY_CODES[region.toUpperCase()];
+  if (!cc) return phone;
+  const national = phone.replace(/^0+/, "");
+  // Already carries the country code without "+" (e.g. "61400111222")?
+  if (phone.startsWith(cc) && phone.length >= cc.length + 8) return `+${phone}`;
+  return `+${cc}${national}`;
+}
+
 /** Scalars only, bounded count and length; anything else is dropped rather than rejected. */
 const fieldsSchema = z
   .record(z.string().max(64), z.unknown())

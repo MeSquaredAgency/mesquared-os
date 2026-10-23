@@ -119,6 +119,38 @@ export interface NewContentAsset {
   scheduledFor: Date | null;
 }
 
+export type MessageChannel = "SMS" | "EMAIL" | "WHATSAPP" | "SOCIAL_DM" | "SOCIAL_COMMENT" | "PHONE";
+
+export interface NewMessage {
+  contactId: string | null;
+  channel: MessageChannel;
+  direction: "INBOUND" | "OUTBOUND";
+  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF";
+  body: string;
+  status: "QUEUED" | "SENT" | "DELIVERED" | "FAILED" | "RECEIVED";
+  subject?: string | null;
+  providerMessageId?: string | null;
+  automationRunId?: string | null;
+  /** Thread id from the provider (email thread, DM thread) when known. */
+  externalConversationId?: string | null;
+}
+
+export interface AlertRecipient {
+  userId: string;
+  email: string;
+  name: string | null;
+}
+
+export interface IntegrationSettings {
+  id: string;
+  provider: import("@/lib/types").IntegrationProvider;
+  status: import("@/lib/types").IntegrationStatus;
+  externalAccountId: string | null;
+  settings: Record<string, unknown>;
+  /** Decrypted by the caller with decryptSecret when present. */
+  credentialsEnc: string | null;
+}
+
 export interface TenantConfig {
   modules: TenantModuleRecord[];
   automations: TenantAutomationRecord[];
@@ -179,9 +211,21 @@ export interface Repository {
   listNeedsYou(tenantId: string, opts: { onlyAssigneeId: string | null; limit: number }): Promise<LeadRecord[]>;
   /** Leads whose response or booking deadline has passed without the matching event. */
   listLeadsPastSla(tenantId: string, now: Date): Promise<{ respond: LeadRecord[]; book: LeadRecord[] }>;
+  findLeadById(tenantId: string, leadId: string): Promise<LeadRecord | null>;
   markLeadResponded(tenantId: string, leadId: string, at: Date): Promise<void>;
+  /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
+  markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
+  assignLead(tenantId: string, leadId: string, assigneeId: string | null): Promise<void>;
   createBooking(tenantId: string, data: NewBooking): Promise<{ id: string; bookingUrl: string }>;
   recordIntakeEvent(tenantId: string, data: IntakeEventInput): Promise<void>;
+  /** Appends a message to the contact's conversation on that channel, creating the conversation if needed. */
+  recordMessage(tenantId: string, data: NewMessage): Promise<{ conversationId: string; messageId: string }>;
+  /** Tenant members holding RECEIVE_LEAD_ALERTS. */
+  listAlertRecipients(tenantId: string): Promise<AlertRecipient[]>;
+  /** Integration row (with encrypted credentials) for a provider, or null when not connected. */
+  findIntegration(tenantId: string, provider: import("@/lib/types").IntegrationProvider): Promise<IntegrationSettings | null>;
+  /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
+  findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
 
   // --- missed opportunities, automation, exceptions, events ----------------------------
   /** Creates the item unless an open one with the same dedupeKey exists. */

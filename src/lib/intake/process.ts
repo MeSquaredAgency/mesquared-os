@@ -1,10 +1,12 @@
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { opportunityValue } from "@/lib/opportunities/detect";
+import { registerPlaybook } from "@/lib/playbook";
 import { getQualifier, type QualificationResult } from "@/lib/qualify";
+import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
 import type { IntakeChannel } from "@/lib/data/repository";
-import { redactPayload, splitName, type IntakeBody } from "./schema";
+import { redactPayload, splitName, toE164, type IntakeBody } from "./schema";
 
 export type IntakeOutcome =
   | { outcome: "created"; lead: LeadRecord; qualification: QualificationResult; bookingUrl: string | null }
@@ -37,7 +39,10 @@ const CHANNEL_FOR_SOURCE: Partial<Record<IntakeBody["source"], IntakeChannel>> =
  * booking link ready for the messaging adapter; RED items are logged as
  * handled. Everything emits events for the activity log and detectors.
  */
-export async function processIntake(tenant: TenantSummary, body: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
+export async function processIntake(tenant: TenantSummary, input: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
+  registerPlaybook();
+  // Phones are stored and messaged in E.164, using the tenant's region when the country code was omitted.
+  const body: IntakeBody = { ...input, phone: toE164(input.phone, tenant.region) };
   const { firstName, lastName } = splitName(body);
   const payload = redactPayload(rawPayload) as Record<string, unknown>;
   const channel: IntakeChannel = meta?.channel ?? CHANNEL_FOR_SOURCE[body.source] ?? "API";
@@ -96,24 +101,12 @@ export async function processIntake(tenant: TenantSummary, body: IntakeBody, raw
 
   await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: contact.id, leadId: lead.id, outcome: "CREATED", classifier: qualification.classifier });
   await emit(tenant.id, "intake.received", { leadId: lead.id, contactId: contact.id, channel, source: body.source });
-  await emit(tenant.id, "lead.qualified", { leadId: lead.id, ticketType: qualification.ticketType, intentScore: qualification.intentScore, classifier: qualification.classifier });
 
   const displayName = [firstName, lastName].filter(Boolean).join(" ") || body.email || body.phone || "New lead";
   let bookingUrl: string | null = null;
 
   if (green) {
-    bookingUrl = buildBookingUrl(tenant, lead);
-    // `sent: false` until the messaging adapter confirms delivery; the lead stays QUALIFIED until then.
-    await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
-    await repository.recordAutomationRun(tenant.id, {
-      typeKey: "enquiry_auto_reply",
-      outcome: "SKIPPED",
-      summary: `${displayName} is waiting for a reply. The booking link is ready; automatic acknowledgement starts once messaging is connected.`,
-      leadId: lead.id,
-      contactId: contact.id,
-      details: { bookingUrl },
-    });
-    await emit(tenant.id, "booking.link_ready", { leadId: lead.id, bookingUrl });
+    bookingUrl = await bookingLinkFor(tenant, lead);
   } else {
     await repository.recordAutomationRun(tenant.id, {
       typeKey: "enquiry_auto_reply",
@@ -124,6 +117,9 @@ export async function processIntake(tenant: TenantSummary, body: IntakeBody, raw
       contactId: contact.id,
     });
   }
+
+  // The green-lead playbook (acknowledgement, alerts, booking) runs off this event.
+  await emit(tenant.id, "lead.qualified", { leadId: lead.id, tenantSlug: tenant.slug, ticketType: qualification.ticketType, intentScore: qualification.intentScore, classifier: qualification.classifier });
 
   return { outcome: "created", lead, qualification, bookingUrl };
 }
@@ -137,18 +133,4 @@ function pickAttribution(fields: Record<string, unknown>): Record<string, unknow
     if (typeof v === "string" && v) out[target] = v;
   }
   return out;
-}
-
-/**
- * Tenant-scoped booking link, resolved by the scheduling engine. The public
- * base URL must be configured in production; a localhost link must never be
- * handed to an integrator by accident.
- */
-function buildBookingUrl(tenant: TenantSummary, lead: LeadRecord) {
-  const base = process.env.NEXT_PUBLIC_APP_URL;
-  if (!base) {
-    if (process.env.NODE_ENV === "production") throw new Error("NEXT_PUBLIC_APP_URL must be set in production to build booking links.");
-    return `http://localhost:3000/book/${tenant.slug}?lead=${lead.id}`;
-  }
-  return `${base.replace(/\/$/, "")}/book/${tenant.slug}?lead=${lead.id}`;
 }

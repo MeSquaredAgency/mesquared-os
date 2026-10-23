@@ -138,6 +138,31 @@ covers the classifier, intake schema and phone normalisation, the full intake
 pipeline against the in-memory repository (including cross-tenant isolation),
 password hashing, session tokens and the sign-in rate limiter.
 
+## Intake channels and the playbook
+
+Every channel ends in the same pipeline (dedupe → qualify → contact → lead →
+playbook), so a lead looks the same whether it came from a form, an ad or an
+email.
+
+| Channel | Endpoint | How a tenant is matched |
+|---|---|---|
+| JSON API / relays | `POST /api/v1/intake` | API key header |
+| Plain HTML forms, Google Ads landing pages | `POST /api/v1/intake/form` (urlencoded or multipart; hidden `_key`, honeypot `_hp`, optional `_redirect`; UTMs and click ids become attribution) | API key |
+| Meta lead forms | `GET/POST /api/v1/webhooks/meta` (handshake + signed leadgen events, Graph fetch) | page id on the tenant's META integration |
+| Forwarding inbox (REA, Domain, anything) | `POST /api/v1/inbound/email` (generic inbound-webhook JSON) | recipient address on the tenant's EMAIL_FORWARDING integration |
+| Cal.com bookings | `POST /api/v1/webhooks/calcom` (signed) | `metadata[tenant]` + `metadata[leadId]` on the booking |
+
+When a lead is green the playbook runs off the `lead.qualified` event: an
+acknowledgement with a booking link goes out by SMS, WhatsApp or email
+according to the tenant's region (quiet hours apply to non-urgent messages),
+the lead is marked responded and "booking link sent", the members holding
+`RECEIVE_LEAD_ALERTS` are emailed, and every step is logged for "Handled for
+you". Messaging providers are platform-level (Twilio, Resend) but each tenant
+sends under its own name, number and reply-to. Set `MESSAGING_MODE=log` to
+print instead of send. The SLA watch (`POST /api/jobs/detect`, run it every
+few minutes) turns leads that miss the response or booking window into missed
+opportunities for an operator.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

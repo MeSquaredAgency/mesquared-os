@@ -43,7 +43,7 @@ import type {
   UserRecord,
 } from "@/lib/types";
 import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
-import { TenantMismatchError, type NewContentAsset, type Repository } from "./repository";
+import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
 
 const json = (v: unknown) => v as Prisma.InputJsonValue;
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -314,6 +314,31 @@ export const prismaRepository: Repository = {
     return { respond: respond.map(toLead), book: book.map(toLead) };
   },
 
+  async findLeadById(tenantId, leadId) {
+    const row = await getPrisma().lead.findFirst({ where: { id: leadId, tenantId } });
+    return row ? toLead(row) : null;
+  },
+
+  async markLeadBooked(tenantId, leadId, at) {
+    const db = getPrisma();
+    const lead = await db.lead.findFirst({ where: { id: leadId, tenantId } });
+    if (!lead) return null;
+    const next = lead.pipelineId ? await db.pipelineStage.findFirst({ where: { pipelineId: lead.pipelineId, advanceOn: "BOOKING_CREATED" }, orderBy: { order: "asc" } }) : null;
+    const updated = await db.lead.update({
+      where: { id: lead.id },
+      data: {
+        bookedAt: lead.bookedAt ?? at,
+        status: ["NEW", "QUALIFIED", "BOOKING_SENT"].includes(lead.status) ? "BOOKED" : lead.status,
+        ...(next ? { stageId: next.id } : {}),
+      },
+    });
+    return toLead(updated);
+  },
+
+  async assignLead(tenantId, leadId, assigneeId) {
+    await getPrisma().lead.updateMany({ where: { id: leadId, tenantId }, data: { assigneeId } });
+  },
+
   async markLeadResponded(tenantId, leadId, at) {
     await getPrisma().lead.updateMany({ where: { id: leadId, tenantId, firstResponseAt: null }, data: { firstResponseAt: at } });
   },
@@ -334,6 +359,49 @@ export const prismaRepository: Repository = {
     await getPrisma().intakeEvent.create({
       data: { tenantId, channel: data.channel, provider: data.provider, externalId: data.externalId, contactId: data.contactId, leadId: data.leadId, outcome: data.outcome, payload: json(data.payload), classifier: data.classifier },
     });
+  },
+
+  async recordMessage(tenantId, data: NewMessage) {
+    await assertContactInTenant(tenantId, data.contactId);
+    const db = getPrisma();
+    const existing = await db.conversation.findFirst({
+      where: data.externalConversationId ? { tenantId, channel: data.channel, externalId: data.externalConversationId } : { tenantId, channel: data.channel, contactId: data.contactId ?? "__none__" },
+    });
+    const convo =
+      existing ??
+      (await db.conversation.create({ data: { tenantId, contactId: data.contactId, channel: data.channel, externalId: data.externalConversationId ?? null, subject: data.subject ?? null } }));
+    const [message] = await db.$transaction([
+      db.message.create({
+        data: {
+          tenantId,
+          conversationId: convo.id,
+          direction: data.direction,
+          sender: data.sender,
+          body: data.body,
+          status: data.status,
+          providerMessageId: data.providerMessageId ?? null,
+          automationRunId: data.automationRunId ?? null,
+          sentAt: data.direction === "OUTBOUND" && data.status !== "QUEUED" && data.status !== "FAILED" ? new Date() : null,
+        },
+      }),
+      db.conversation.update({ where: { id: convo.id }, data: { lastMessageAt: new Date(), awaitingReply: data.direction === "INBOUND" } }),
+    ]);
+    return { conversationId: convo.id, messageId: message.id };
+  },
+
+  async listAlertRecipients(tenantId) {
+    const rows = await getPrisma().membership.findMany({ where: { tenantId, role: { permissions: { has: "RECEIVE_LEAD_ALERTS" } } }, include: { user: true } });
+    return rows.map((m) => ({ userId: m.user.id, email: m.user.email, name: m.user.name }));
+  },
+
+  async findIntegration(tenantId, provider) {
+    const i = await getPrisma().integration.findFirst({ where: { tenantId, provider }, orderBy: { updatedAt: "desc" } });
+    return i ? { id: i.id, provider: i.provider, status: i.status, externalAccountId: i.externalAccountId, settings: obj(i.settings), credentialsEnc: i.credentialsEnc } : null;
+  },
+
+  async findTenantByIntegrationAccount(provider, externalAccountId) {
+    const i = await getPrisma().integration.findFirst({ where: { provider, externalAccountId, status: { not: "DISCONNECTED" }, tenant: { isActive: true } }, include: { tenant: true } });
+    return i ? toTenant(i.tenant) : null;
   },
 
   async upsertMissedOpportunity(tenantId, data) {

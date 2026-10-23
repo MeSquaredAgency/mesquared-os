@@ -187,13 +187,13 @@ identity, states it is automated, and is stored on the conversation.
 Nine weeks from 27 October. Each phase ends with the demo tenants running on
 the new code, tests passing, and a deployed preview.
 
-**Phase 0 — Re-foundation (week 1).** Permission-based roles and operator
+**Phase 0 — Re-foundation (week 1). Shipped 24 Oct.** Permission-based roles and operator
 assignments; tenant configuration, module registry and industry templates
 (real estate, health & fitness, generic); contacts; pipelines; missed-
 opportunity and automation models; domain events; the two surfaces with the
 new home screens on demo data; client-facing copy. Remove the discarded UI.
 
-**Phase 1 — Capture and respond (weeks 2–3).** Intake channels for APN: web
+**Phase 1 — Capture and respond (weeks 2–3). Code shipped 24 Oct; live once Twilio/Resend/Meta/Cal.com credentials are set.** Intake channels for APN: web
 forms with tracking, Meta lead forms, forwarding inbox with REA/Domain
 parsing. Qualification per tenant. Playbook: acknowledgement with booking link
 (SMS/email), assignee alert, Cal.com over Google Calendar, SLA → missed

@@ -67,6 +67,30 @@ function uniqueLower(values: string[]) {
 
 const matcherCache = new Map<string, RegExp>();
 
+/** Words that carry no topic on their own in a tenant's "auto handled" list. */
+const TOPIC_STOPWORDS = new Set(["and", "or", "the", "a", "an", "of", "for", "to", "enquiry", "enquiries", "question", "questions", "request", "requests", "application", "applications", "email", "emails", "message", "messages"]);
+
+/** Topic stems of a phrase like "availability questions" → ["availab"], so "available" and "availability" both match. */
+export function stemsOf(phrase: string): string[] {
+  return phrase
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 5 && !TOPIC_STOPWORDS.has(w))
+    .map((w) => w.slice(0, 6));
+}
+
+/** Whole-word prefix match: stem "inspect" hits "inspection" and "inspections", never "disinspect". */
+function containsStem(body: string, stem: string): boolean {
+  const key = `stem:${stem}`;
+  let re = matcherCache.get(key);
+  if (!re) {
+    const escaped = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\const matcherCache = new Map<string, RegExp>();");
+    re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}`, "iu");
+    matcherCache.set(key, re);
+  }
+  return re.test(body);
+}
+
 /** Whole-word match so "order" does not hit "border" and "job" does not hit "Jobson". */
 function containsKeyword(body: string, keyword: string): boolean {
   let re = matcherCache.get(keyword);
@@ -173,6 +197,25 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   if (input.phone) {
     score += 10;
     signals.push("phone number provided (+10)");
+  } else if (rules.requirePhone) {
+    score -= 15;
+    signals.push("no phone number, which this business requires for a green lead (-15)");
+  }
+
+  const areas = (rules.serviceAreas ?? []).map((a) => a.toLowerCase()).filter(Boolean);
+  if (areas.length) {
+    const inArea = areas.filter((a) => containsKeyword(body, a));
+    if (inArea.length) {
+      score += 10;
+      signals.push(`in service area: ${inArea.join(", ")} (+10)`);
+    }
+  }
+
+  const autoHandled = (rules.autoHandled ?? []).map((a) => a.toLowerCase());
+  const autoHits = autoHandled.filter((a) => stemsOf(a).some((stem) => containsStem(body, stem)));
+  if (autoHits.length) {
+    score -= 20;
+    signals.push(`handled automatically for this business: ${autoHits[0]} (-20)`);
   }
   if (HIGH_INTENT_SOURCES.has(input.source)) {
     score += 5;

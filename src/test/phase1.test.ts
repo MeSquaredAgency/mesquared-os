@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import { before, describe, it } from "node:test";
+import { repository } from "@/lib/data";
+import { demoTenants } from "@/lib/data/fixtures";
+import { parseEnquiryEmail } from "@/lib/intake/channels/email-parsers";
+import { mapMetaFieldData, parseMetaLeadgenEvents, verifyMetaSignature } from "@/lib/intake/channels/meta";
+import { processIntake } from "@/lib/intake/process";
+import { intakeSchema } from "@/lib/intake/schema";
+import { chooseChannel, inQuietHours, regionRule, templates } from "@/lib/messaging";
+import { scoreLead } from "@/lib/qualify/rules";
+import { bookingLinkFor } from "@/lib/scheduling/calcom";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { createHmac } from "node:crypto";
+
+const harbor = demoTenants[0];
+
+before(() => {
+  process.env.MESSAGING_MODE = "log";
+  process.env.DEFAULT_FROM_EMAIL = "hello@example.com";
+});
+
+describe("messaging policy", () => {
+  it("picks SMS for AU phones, email otherwise, nothing without contact details", () => {
+    assert.equal(chooseChannel({ region: "AU" }, { phone: "+61400000000", email: null }), "SMS");
+    assert.equal(chooseChannel({ region: "AU" }, { phone: null, email: "a@b.co" }), "EMAIL");
+    assert.equal(chooseChannel({ region: "KH" }, { phone: "+85512345678", email: null }), "WHATSAPP");
+    assert.equal(chooseChannel({ region: "AU" }, { phone: null, email: null }), null);
+    assert.deepEqual(regionRule("US").requiresConsentFor, ["SMS", "WHATSAPP"]);
+  });
+
+  it("knows quiet hours in the tenant timezone", () => {
+    const t = { timezone: "Australia/Adelaide", region: "AU", sla: { firstResponseMinutes: 5, bookingWindowHours: 72, quietHours: { start: 20, end: 8 } } };
+    // 2026-01-15T12:30Z is 23:00 in Adelaide (UTC+10:30 in January).
+    assert.equal(inQuietHours(t, new Date("2026-01-15T12:30:00Z")), true);
+    // 2026-01-15T02:30Z is 13:00 in Adelaide.
+    assert.equal(inQuietHours(t, new Date("2026-01-15T02:30:00Z")), false);
+  });
+
+  it("templates identify as automated and come from the tenant", () => {
+    const sms = templates.acknowledgementSms({ tenant: harbor, firstName: "Margaret", bookingUrl: "https://x/y", topic: "an appraisal" });
+    assert.match(sms, /Hi Margaret/);
+    assert.match(sms, /Automated reply from Harbor Realty Group/);
+    assert.match(sms, /https:\/\/x\/y/);
+    const mail = templates.acknowledgementEmail({ tenant: harbor, firstName: null, bookingUrl: "https://x/y", topic: null });
+    assert.match(mail.subject, /Harbor Realty Group/);
+    assert.match(mail.body, /automated reply/);
+    assert.doesNotMatch(sms + mail.body, /MeSquared|Me²/);
+  });
+});
+
+describe("booking links", () => {
+  it("prefills Cal.com when connected and falls back to the platform page otherwise", async () => {
+    const link = await bookingLinkFor(harbor, { id: "lead_x", firstName: "Peter", lastName: "Nguyen", email: "p@example.com", phone: "+61400333444" });
+    assert.match(link, /^https:\/\/cal\.com\/harbor-realty\/appraisal\?/);
+    assert.match(link, /name=Peter\+Nguyen/);
+    assert.match(link, /metadata%5BleadId%5D=lead_x/);
+    const summit = demoTenants[1]; // Cal.com disconnected in fixtures
+    const fallback = await bookingLinkFor(summit, { id: "lead_y", firstName: null, lastName: null, email: null, phone: null });
+    assert.match(fallback, /\/book\/summit-fitness\?lead=lead_y$/);
+  });
+});
+
+describe("green-lead playbook (log provider)", () => {
+  it("acknowledges, records the message on a conversation, marks responded and booking sent, alerts recipients", async () => {
+    const body = intakeSchema.parse({ source: "WEB_FORM", externalId: "pb_1", name: "Olive Tan", email: "olive@example.com", phone: "+61 400 999 111", message: "I own a unit in Adelaide and want an appraisal to sell." });
+    const result = await processIntake(harbor, body, {});
+    assert.equal(result.outcome, "created");
+    if (result.outcome !== "created") return;
+    assert.equal(result.qualification.ticketType, "GREEN");
+    const lead = await repository.findLeadById(harbor.id, result.lead.id);
+    assert.ok(lead?.firstResponseAt, "first response recorded");
+    assert.equal(lead?.status, "BOOKING_SENT");
+    const runs = (await repository.listAutomationRuns(harbor.id, 20)).filter((r) => r.leadId === lead!.id);
+    assert.ok(runs.some((r) => r.outcome === "SENT" && /Acknowledged Olive Tan by SMS/.test(r.summary)), "acknowledgement run");
+    assert.ok(runs.some((r) => /Told .* about Olive Tan/.test(r.summary)), "alert run");
+    const events = await repository.listEvents(harbor.id, 50);
+    assert.ok(events.some((e) => e.type === "message.sent" && e.payload.leadId === lead!.id));
+    assert.ok(events.some((e) => e.type === "alert.sent" && e.payload.leadId === lead!.id));
+  });
+
+  it("alert recipients are the members holding RECEIVE_LEAD_ALERTS", async () => {
+    const recipients = await repository.listAlertRecipients(harbor.id);
+    assert.deepEqual(recipients.map((r) => r.email).sort(), ["director@harbor.example", "pm@harbor.example"]);
+  });
+
+  it("booking webhook effect: markLeadBooked advances the stage and resolves NOT_BOOKED", async () => {
+    const config = await repository.getTenantConfig(harbor.id);
+    const pipeline = config.pipelines.find((p) => p.isDefault)!;
+    const lead = await repository.markLeadBooked(harbor.id, "lead_4", new Date());
+    assert.equal(lead?.status, "BOOKED");
+    assert.equal(lead?.stageId, pipeline.stages.find((s) => s.advanceOn === "BOOKING_CREATED")!.id);
+  });
+});
+
+describe("qualifier tenant criteria", () => {
+  it("penalises missing phone when required, rewards service area, downgrades auto-handled topics", () => {
+    const rules = harbor.qualificationRules;
+    const noPhone = scoreLead({ source: "WEB_FORM", email: "a@b.co", message: "I want an appraisal for my house in Adelaide", attributes: {} }, rules);
+    const withPhone = scoreLead({ source: "WEB_FORM", email: "a@b.co", phone: "+61400000000", message: "I want an appraisal for my house in Adelaide", attributes: {} }, rules);
+    assert.ok(withPhone.intentScore > noPhone.intentScore + 15);
+    assert.ok(withPhone.signals.some((s) => s.includes("in service area: adelaide")));
+    const renter = scoreLead({ source: "PORTAL_EMAIL", email: "r@b.co", message: "Is the rental still available? I'd like an inspection time.", attributes: {} }, rules);
+    assert.equal(renter.ticketType, "RED");
+    assert.ok(renter.signals.some((s) => s.includes("handled automatically")));
+  });
+});
+
+describe("email parsers", () => {
+  it("parses a realestate.com.au style enquiry", () => {
+    const parsed = parseEnquiryEmail({
+      from: "enquiries@realestate.com.au",
+      to: "intake+harbor-realty@inbound.mesquared.example",
+      subject: "New enquiry about 12 Marine Parade, Glenelg",
+      text: ["You have a new enquiry.", "Name: Lucy Tran", "Email: lucy.t@example.com", "Phone: 0400 333 444", "Property: 12 Marine Parade, Glenelg", "Message: Is this still available? When is the next inspection?", "", "Sent by realestate.com.au"].join("\n"),
+      messageId: "<abc@rea>",
+    });
+    assert.equal(parsed.provider, "REA");
+    assert.equal(parsed.source, "PORTAL_EMAIL");
+    assert.equal(parsed.name, "Lucy Tran");
+    assert.equal(parsed.email, "lucy.t@example.com");
+    assert.equal(parsed.phone, "0400 333 444");
+    assert.equal(parsed.fields.property, "12 Marine Parade, Glenelg");
+    assert.match(parsed.message ?? "", /still available/);
+    assert.equal(parsed.externalId, "email:<abc@rea>");
+  });
+
+  it("falls back to the sender for a generic email", () => {
+    const parsed = parseEnquiryEmail({ from: "Jane Owner <jane@example.com>", to: "x@y", subject: "Appraisal please", text: "Hi, could someone appraise my place at 5 Hill St?", messageId: null });
+    assert.equal(parsed.provider, "GENERIC");
+    assert.equal(parsed.source, "EMAIL");
+    assert.equal(parsed.email, "jane@example.com");
+    assert.equal(parsed.name, "Jane Owner");
+    assert.match(parsed.message ?? "", /appraise my place/);
+    const withPhone = parseEnquiryEmail({ from: "ken@example.com", to: "x@y", subject: "Appraisal", text: "Call me on 0411 222 333 about my unit.", messageId: null });
+    assert.equal(withPhone.phone, "0411 222 333");
+    assert.equal(withPhone.name, null);
+  });
+});
+
+describe("meta lead forms", () => {
+  it("verifies signatures, parses leadgen events and maps field data", () => {
+    const raw = JSON.stringify({ object: "page", entry: [{ id: "page_1", changes: [{ field: "leadgen", value: { leadgen_id: "123", page_id: "page_1", form_id: "f1", ad_id: "a1", created_time: 1700000000 } }, { field: "feed", value: {} }] }] });
+    const sig = "sha256=" + createHmac("sha256", "s3cret").update(raw).digest("hex");
+    assert.equal(verifyMetaSignature(raw, sig, "s3cret"), true);
+    assert.equal(verifyMetaSignature(raw, sig, "other"), false);
+    assert.equal(verifyMetaSignature(raw, null, "s3cret"), false);
+    const events = parseMetaLeadgenEvents(JSON.parse(raw));
+    assert.deepEqual(events, [{ pageId: "page_1", leadgenId: "123", formId: "f1", adId: "a1", createdTime: 1700000000 }]);
+    const mapped = mapMetaFieldData([{ name: "full_name", values: ["Dana W"] }, { name: "email", values: ["d@x.co"] }, { name: "phone_number", values: ["+61400000001"] }, { name: "what_suburb?", values: ["Glenelg"] }]);
+    assert.equal(mapped.name, "Dana W");
+    assert.equal(mapped.phone, "+61400000001");
+    assert.equal(mapped.fields["what_suburb?"], "Glenelg");
+  });
+
+  it("resolves the tenant from the page id", async () => {
+    const tenant = await repository.findTenantByIntegrationAccount("META", "page_1");
+    assert.equal(tenant?.slug, "harbor-realty");
+    assert.equal(await repository.findTenantByIntegrationAccount("META", "nope"), null);
+  });
+});
+
+describe("E.164 by region", () => {
+  it("adds the tenant country code when the caller omitted it", async () => {
+    const { toE164 } = await import("@/lib/intake/schema");
+    assert.equal(toE164("0400111222", "AU"), "+61400111222");
+    assert.equal(toE164("+61400111222", "AU"), "+61400111222");
+    assert.equal(toE164("61400111222", "AU"), "+61400111222");
+    assert.equal(toE164("0212345678", "NZ"), "+64212345678");
+    assert.equal(toE164("5551234567", "US"), "+15551234567");
+    assert.equal(toE164(null, "AU"), null);
+  });
+
+  it("stores and messages leads in E.164 so dedupe and Twilio agree", async () => {
+    const body = intakeSchema.parse({ source: "WEB_FORM", externalId: "e164_1", name: "Nat Phone", phone: "0400 777 000", message: "Appraisal for my Adelaide house please." });
+    const result = await processIntake(harbor, body, {});
+    assert.equal(result.outcome, "created");
+    if (result.outcome !== "created") return;
+    assert.equal(result.lead.phone, "+61400777000");
+    const dup = await processIntake(harbor, intakeSchema.parse({ phone: "+61 400 777 000", message: "again" }), {});
+    assert.equal(dup.outcome, "duplicate");
+  });
+});
+
+describe("integration secrets", () => {
+  it("round-trip with AES-GCM and reject tampering", () => {
+    const enc = encryptSecret("EAAB-token");
+    assert.equal(decryptSecret(enc), "EAAB-token");
+    const [iv, tag, data] = enc.split(".");
+    assert.throws(() => decryptSecret([iv, tag, data.slice(0, -2) + "zz"].join(".")));
+  });
+});
