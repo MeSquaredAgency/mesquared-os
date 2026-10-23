@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CalendarClock, Check, Link2, Send, Sparkles, X } from "lucide-react";
+import { useMemo, useOptimistic, useState, useTransition } from "react";
+import { CalendarClock, Check, Link2, RotateCcw, Send, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,38 +9,47 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { Workbench as WorkbenchData } from "@/lib/data";
+import { decideAsset, submitDraft } from "@/lib/marketing/actions";
 import { SOCIAL_PLATFORMS, type ContentAssetRecord, type ContentStatus, type SocialPlatform } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { humanize, PLATFORM_LABEL, PLATFORM_LIMIT } from "./platform";
+import { cn, formatDateTime, formatLocalInput, humanize, type FormatContext } from "@/lib/utils";
+import { PLATFORM_LABEL, PLATFORM_LIMIT } from "./platform";
+import { StatusBadge } from "./status-badge";
 
-const STATUS_VARIANT: Record<ContentStatus, "green" | "red" | "secondary" | "muted" | "outline"> = {
-  DRAFT: "outline",
-  IN_REVIEW: "secondary",
-  APPROVED: "green",
-  REJECTED: "red",
-  SCHEDULED: "muted",
-  PUBLISHED: "muted",
-};
+type Fmt = Pick<FormatContext, "timezone" | "locale">;
+
+interface Props {
+  data: WorkbenchData;
+  tenantName: string;
+  fmt: Fmt;
+  canDraft: boolean;
+  canApprove: boolean;
+}
 
 /**
  * Multi-channel creation + approval workbench.
  *
- * Draft once, tag, pick channels and a time; review generated drafts and
- * approve/reject them. State is local for now — the persistence actions land
- * with the social engine (SocialPost / ContentAsset writes).
+ * Drafts and decisions go through server actions and persist per tenant;
+ * the review list updates optimistically and is reconciled when the page
+ * revalidates. Per-channel AI variants arrive with the content engine.
  */
-export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantName: string }) {
+export function Workbench({ data, tenantName, fmt, canDraft, canApprove }: Props) {
+  const [pending, startTransition] = useTransition();
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+
+  // Compose state
   const [caption, setCaption] = useState("");
   const [tags, setTags] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
   const [selected, setSelected] = useState<Set<SocialPlatform>>(() => new Set(data.connectedPlatforms));
-  const [assets, setAssets] = useState<ContentAssetRecord[]>(data.assets);
-  const [submitted, setSubmitted] = useState<string | null>(null);
 
-  const overLimit = useMemo(
-    () => SOCIAL_PLATFORMS.filter((p) => selected.has(p) && caption.length > PLATFORM_LIMIT[p]),
-    [caption, selected],
+  // Review state: props are the source of truth; optimistic overlay while an action is in flight.
+  const [assets, applyDecision] = useOptimistic(data.assets, (current: ContentAssetRecord[], change: { id: string; status: ContentStatus }) =>
+    current.map((a) => (a.id === change.id ? { ...a, status: change.status } : a)),
   );
+
+  const overLimit = useMemo(() => SOCIAL_PLATFORMS.filter((p) => selected.has(p) && caption.length > PLATFORM_LIMIT[p]), [caption, selected]);
+  const pendingReview = assets.filter((a) => a.status === "IN_REVIEW" || a.status === "DRAFT");
+  const decided = assets.filter((a) => a.status !== "IN_REVIEW" && a.status !== "DRAFT");
 
   const toggle = (p: SocialPlatform) =>
     setSelected((prev) => {
@@ -50,11 +59,31 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
       return next;
     });
 
-  const setStatus = (id: string, status: ContentStatus) =>
-    setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
+  const sendToReview = () => {
+    const payload = {
+      caption,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      platforms: [...selected],
+      scheduledForLocal: scheduledFor || null,
+    };
+    startTransition(async () => {
+      const result = await submitDraft(payload);
+      setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
+      if (result.ok) {
+        setCaption("");
+        setTags("");
+        setScheduledFor("");
+      }
+    });
+  };
 
-  const pending = assets.filter((a) => a.status === "IN_REVIEW" || a.status === "DRAFT");
-  const decided = assets.filter((a) => a.status !== "IN_REVIEW" && a.status !== "DRAFT");
+  const decide = (id: string, status: ContentStatus) => {
+    startTransition(async () => {
+      applyDecision({ id, status });
+      const result = await decideAsset(id, status);
+      setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
+    });
+  };
 
   return (
     <Tabs defaultValue="compose" className="flex flex-col gap-4">
@@ -63,41 +92,58 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="review">
             Review
-            {pending.length > 0 && <Badge variant="secondary" className="ml-1 h-5 px-1.5">{pending.length}</Badge>}
+            {pendingReview.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5" aria-label={`${pendingReview.length} awaiting approval`}>
+                {pendingReview.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Link2 className="size-3.5" />
+          <Link2 className="size-3.5" aria-hidden="true" />
           {data.connectedPlatforms.length} of 5 channels connected for {tenantName}
         </div>
       </div>
 
+      {notice && (
+        <p role="status" aria-live="polite" className={cn("rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+          {notice.text}
+        </p>
+      )}
+
       <TabsContent value="compose">
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-          <Card>
+          <Card aria-labelledby="compose-title">
             <CardHeader>
-              <CardTitle>Draft once, post everywhere</CardTitle>
-              <CardDescription>One asset becomes a tailored post per channel. Edit per-channel copy in Review.</CardDescription>
+              <CardTitle id="compose-title">Draft once, post everywhere</CardTitle>
+              <CardDescription>One draft becomes a review item per channel. Edit per-channel copy in Review.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <Textarea
-                placeholder="What’s the story? Paste a client quote, a result, or a hook…"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                className="min-h-40"
-              />
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                Post text
+                <Textarea
+                  placeholder="What’s the story? Paste a client quote, a result, or a hook…"
+                  value={caption}
+                  onChange={(e) => {
+                    setCaption(e.target.value);
+                    if (notice) setNotice(null);
+                  }}
+                  className="min-h-40 text-sm text-foreground"
+                  disabled={!canDraft}
+                />
+              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                  Tags
-                  <Input placeholder="implants, patientstory" value={tags} onChange={(e) => setTags(e.target.value)} />
+                  Tags (comma separated)
+                  <Input placeholder="implants, patientstory" value={tags} onChange={(e) => setTags(e.target.value)} disabled={!canDraft} />
                 </label>
                 <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                  Schedule for
-                  <Input type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
+                  Schedule for ({fmt.timezone})
+                  <Input type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} disabled={!canDraft} />
                 </label>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Channels">
                 {SOCIAL_PLATFORMS.map((p) => {
                   const connected = data.connectedPlatforms.includes(p);
                   const on = selected.has(p);
@@ -106,57 +152,57 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
                       key={p}
                       type="button"
                       onClick={() => connected && toggle(p)}
-                      disabled={!connected}
+                      disabled={!connected || !canDraft}
+                      aria-pressed={on}
                       className={cn(
-                        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
+                        "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors",
                         on ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent",
                         !connected && "cursor-not-allowed opacity-40",
                       )}
-                      title={connected ? undefined : "Not connected for this workspace"}
                     >
-                      {on && <Check className="size-3" />}
+                      {on && <Check className="size-3" aria-hidden="true" />}
                       {PLATFORM_LABEL[p]}
+                      {!connected && <span className="sr-only"> (not connected)</span>}
                     </button>
                   );
                 })}
               </div>
               {overLimit.length > 0 && (
-                <p className="text-xs text-red">
-                  Caption exceeds the limit for {overLimit.map((p) => PLATFORM_LABEL[p]).join(", ")}. The AI engine will shorten it per channel.
+                <p className="text-xs text-red-text">
+                  Caption exceeds the limit for {overLimit.map((p) => PLATFORM_LABEL[p]).join(", ")}. Shorten it, or edit the per-channel copy in Review.
                 </p>
               )}
+              {!canDraft && <p className="text-xs text-muted-foreground">Your role in this workspace is view-only.</p>}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                 <span className="text-xs text-muted-foreground">
                   {caption.length} characters · {selected.size} channel{selected.size === 1 ? "" : "s"}
                 </span>
                 <div className="flex gap-2">
-                  <Button variant="outline" disabled={!caption.trim()}>
-                    <Sparkles /> Generate variants
+                  <Button variant="outline" disabled title="Per-channel AI variants arrive with the content engine">
+                    <Sparkles /> Generate variants <span className="text-[10px] font-normal text-muted-foreground">soon</span>
                   </Button>
-                  <Button
-                    disabled={!caption.trim() || selected.size === 0}
-                    onClick={() => setSubmitted(`Queued ${selected.size} draft${selected.size === 1 ? "" : "s"} for review.`)}
-                  >
-                    <Send /> Send to review
+                  <Button disabled={!canDraft || !caption.trim() || selected.size === 0 || pending} onClick={sendToReview}>
+                    <Send /> {pending ? "Sending…" : "Send to review"}
                   </Button>
                 </div>
               </div>
-              {submitted && <p className="text-xs text-green">{submitted}</p>}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card aria-labelledby="preview-title">
             <CardHeader>
-              <CardTitle className="text-sm">Preview</CardTitle>
+              <CardTitle id="preview-title" className="text-sm">
+                Preview
+              </CardTitle>
               <CardDescription>How the first selected channel will see it.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-lg border bg-muted/40 p-4 text-sm">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="size-7 rounded-full bg-primary/80" />
+                  <span className="size-7 rounded-full bg-primary/80" aria-hidden="true" />
                   <div className="flex flex-col leading-tight">
                     <span className="text-xs font-semibold">{tenantName}</span>
-                    <span className="text-[10px] text-muted-foreground">{scheduledFor ? new Date(scheduledFor).toLocaleString() : "Now"}</span>
+                    <span className="text-[10px] text-muted-foreground">{scheduledFor ? formatLocalInput(scheduledFor, fmt.locale) : "Now"}</span>
                   </div>
                 </div>
                 <p className="whitespace-pre-wrap text-sm">{caption || <span className="text-muted-foreground">Your post will appear here.</span>}</p>
@@ -178,42 +224,46 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
 
       <TabsContent value="review">
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
+          <Card aria-labelledby="awaiting-title">
             <CardHeader>
-              <CardTitle>Awaiting approval</CardTitle>
-              <CardDescription>AI-generated drafts. Approve to schedule, reject to regenerate.</CardDescription>
+              <CardTitle id="awaiting-title">Awaiting approval</CardTitle>
+              <CardDescription>Approve to queue for scheduling. Reject to send it back.</CardDescription>
             </CardHeader>
             <CardContent>
-              {pending.length === 0 ? (
+              {pendingReview.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Inbox zero. Nothing waiting on you.</p>
               ) : (
                 <ul className="flex flex-col gap-3">
-                  {pending.map((a) => (
+                  {pendingReview.map((a) => (
                     <li key={a.id} className="rounded-lg border p-3">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <Badge variant={STATUS_VARIANT[a.status]}>{humanize(a.status)}</Badge>
+                        <StatusBadge status={a.status} />
                         <Badge variant="outline">{humanize(a.kind)}</Badge>
                         {a.targetPlatform && <Badge variant="muted">{PLATFORM_LABEL[a.targetPlatform]}</Badge>}
                       </div>
                       <p className="text-sm font-medium">{a.title}</p>
-                      <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{a.body}</p>
-                      <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="green" onClick={() => setStatus(a.id, "APPROVED")}>
-                          <Check /> Approve
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => setStatus(a.id, "REJECTED")}>
-                          <X /> Reject
-                        </Button>
-                      </div>
+                      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
+                      {canApprove ? (
+                        <div className="mt-3 flex gap-2">
+                          <Button size="sm" variant="green" onClick={() => decide(a.id, "APPROVED")} disabled={pending}>
+                            <Check /> Approve
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => decide(a.id, "REJECTED")} disabled={pending}>
+                            <X /> Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs text-muted-foreground">An operator or admin approves this.</p>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </CardContent>
           </Card>
-          <Card>
+          <Card aria-labelledby="decided-title">
             <CardHeader>
-              <CardTitle>Decided</CardTitle>
+              <CardTitle id="decided-title">Decided</CardTitle>
               <CardDescription>Approved drafts move to scheduling; rejected ones go back to the engine.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -230,7 +280,14 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
                           {a.targetPlatform ? ` · ${PLATFORM_LABEL[a.targetPlatform]}` : ""}
                         </p>
                       </div>
-                      <Badge variant={STATUS_VARIANT[a.status]}>{humanize(a.status)}</Badge>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <StatusBadge status={a.status} />
+                        {canApprove && (a.status === "APPROVED" || a.status === "REJECTED") && (
+                          <Button size="icon" variant="ghost" className="size-7" onClick={() => decide(a.id, "IN_REVIEW")} aria-label="Move back to review" title="Move back to review" disabled={pending}>
+                            <RotateCcw />
+                          </Button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -241,9 +298,9 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
       </TabsContent>
 
       <TabsContent value="scheduled">
-        <Card>
+        <Card aria-labelledby="queue-title">
           <CardHeader>
-            <CardTitle>Queue</CardTitle>
+            <CardTitle id="queue-title">Queue</CardTitle>
             <CardDescription>Posts grouped by batch across channels.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -252,16 +309,16 @@ export function Workbench({ data, tenantName }: { data: WorkbenchData; tenantNam
             ) : (
               <ul className="divide-y">
                 {data.posts.map((p) => (
-                  <li key={p.id} className="flex items-center gap-3 py-3">
+                  <li key={p.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 py-3 sm:flex sm:items-center">
                     <Badge variant="muted" className="w-20 justify-center">
                       {PLATFORM_LABEL[p.platform]}
                     </Badge>
-                    <p className="min-w-0 flex-1 truncate text-sm">{p.caption}</p>
-                    <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                      <CalendarClock className="size-3.5" />
-                      {p.scheduledFor ? p.scheduledFor.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "unscheduled"}
+                    <p className="min-w-0 truncate text-sm sm:flex-1">{p.caption}</p>
+                    <span className="col-start-2 inline-flex items-center gap-1 text-xs text-muted-foreground sm:col-auto sm:shrink-0">
+                      <CalendarClock className="size-3.5" aria-hidden="true" />
+                      {p.scheduledFor ? formatDateTime(p.scheduledFor, fmt) : "unscheduled"}
                     </span>
-                    <Badge variant="outline">{humanize(p.status)}</Badge>
+                    <StatusBadge status={p.status} className="col-start-2 sm:col-auto" />
                   </li>
                 ))}
               </ul>

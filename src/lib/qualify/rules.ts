@@ -65,6 +65,19 @@ function uniqueLower(values: string[]) {
   return Array.from(new Set(values.map((v) => v.trim().toLowerCase()).filter(Boolean)));
 }
 
+const matcherCache = new Map<string, RegExp>();
+
+/** Whole-word match so "order" does not hit "border" and "job" does not hit "Jobson". */
+function containsKeyword(body: string, keyword: string): boolean {
+  let re = matcherCache.get(keyword);
+  if (!re) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, "iu");
+    matcherCache.set(keyword, re);
+  }
+  return re.test(body);
+}
+
 function text(input: QualificationInput) {
   const attrs = Object.values(input.attributes ?? {})
     .filter((v) => typeof v === "string")
@@ -72,15 +85,21 @@ function text(input: QualificationInput) {
   return `${input.message ?? ""} ${attrs}`.toLowerCase();
 }
 
-function parseBudget(attributes: Record<string, unknown>): number | null {
+/**
+ * Reads a budget from common field names. Strings may carry currency symbols,
+ * thousands separators, "k" suffixes or ranges ("500-1000" → 500, the lower
+ * bound, so a range never inflates the score).
+ */
+export function parseBudget(attributes: Record<string, unknown>): number | null {
   const candidates = ["budget", "budget_range", "spend", "amount", "value"];
   for (const key of candidates) {
     const v = attributes[key];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
     if (typeof v === "string") {
-      const digits = v.replace(/[^0-9.]/g, "");
-      const n = Number.parseFloat(digits);
-      if (Number.isFinite(n) && n > 0) return n;
+      const m = /(\d[\d,\.]*)\s*(k)?/i.exec(v);
+      if (!m) continue;
+      const n = Number.parseFloat(m[1].replace(/,/g, ""));
+      if (Number.isFinite(n) && n > 0) return m[2] ? n * 1000 : n;
     }
   }
   return null;
@@ -104,8 +123,8 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   const green = uniqueLower([...DEFAULT_GREEN_KEYWORDS, ...(rules.greenKeywords ?? [])]);
   const red = uniqueLower([...DEFAULT_RED_KEYWORDS, ...(rules.redKeywords ?? [])]);
 
-  const greenHits = green.filter((k) => k && body.includes(k));
-  const redHits = red.filter((k) => k && body.includes(k));
+  const greenHits = green.filter((k) => k && containsKeyword(body, k));
+  const redHits = red.filter((k) => k && containsKeyword(body, k));
 
   if (greenHits.length) {
     const pts = Math.min(30, greenHits.length * 10);
@@ -119,7 +138,7 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   }
 
   const services = (rules.highIntentServices ?? []).map((s) => s.toLowerCase());
-  const serviceHits = services.filter((s) => s && body.includes(s));
+  const serviceHits = services.filter((s) => s && containsKeyword(body, s));
   if (serviceHits.length) {
     score += 15;
     signals.push(`high-intent service: ${serviceHits.join(", ")} (+15)`);

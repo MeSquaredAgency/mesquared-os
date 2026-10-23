@@ -8,10 +8,12 @@
 export interface SessionPayload {
   /** User id */
   sub: string;
-  /** Issued at (unix seconds) */
+  /** Original sign-in time (unix seconds). Preserved across renewals. */
   iat: number;
-  /** Expires at (unix seconds) */
+  /** Expires at (unix seconds); moves forward on renewal up to the absolute max age. */
   exp: number;
+  /** User.sessionVersion at sign-in; a mismatch means the session was revoked. */
+  ver: number;
 }
 
 const encoder = new TextEncoder();
@@ -64,9 +66,11 @@ export async function verifySession(token: string | undefined | null, secret: st
 
   try {
     const payload = JSON.parse(decoder.decode(fromBase64Url(body))) as Partial<SessionPayload>;
-    if (typeof payload.sub !== "string" || typeof payload.exp !== "number" || typeof payload.iat !== "number") return null;
+    if (typeof payload.sub !== "string" || typeof payload.exp !== "number" || typeof payload.iat !== "number" || typeof payload.ver !== "number") {
+      return null;
+    }
     if (payload.exp * 1000 <= now) return null;
-    return { sub: payload.sub, iat: payload.iat, exp: payload.exp };
+    return { sub: payload.sub, iat: payload.iat, exp: payload.exp, ver: payload.ver };
   } catch {
     return null;
   }

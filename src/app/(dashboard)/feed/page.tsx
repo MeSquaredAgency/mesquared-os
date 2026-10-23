@@ -3,6 +3,8 @@ import { TransactionStream } from "@/components/dashboard/transaction-stream";
 import { repository } from "@/lib/data";
 import { getCurrentTenant } from "@/lib/tenant/current";
 
+export const metadata = { title: "Live feed" };
+
 export default async function FeedPage() {
   const { tenant } = await getCurrentTenant();
   const [leads, transactions] = await Promise.all([
@@ -16,9 +18,9 @@ export default async function FeedPage() {
         <h1 className="text-xl font-semibold tracking-tight">Live feed</h1>
         <p className="text-sm text-muted-foreground">Real-time lead intake and the Square payment stream for {tenant.name}.</p>
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <LeadFeed leads={leads} />
-        <TransactionStream transactions={transactions} currency={tenant.currency} />
+        <TransactionStream transactions={transactions} currency={tenant.currency} locale={tenant.locale} />
       </div>
     </div>
   );

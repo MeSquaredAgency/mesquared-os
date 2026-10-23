@@ -23,6 +23,8 @@ model Tenant {
   slug      String   @unique
   name      String
   timezone  String   @default("UTC")
+  /// BCP 47 tag used for date and number formatting in the dashboard.
+  locale    String   @default("en-AU")
   currency  String   @default("USD")
   /// Dynamic branding: { logoUrl, primaryColor, accentColor, fromName, replyTo }
   branding  Json     @default("{}")
@@ -56,6 +58,8 @@ model User {
   name         String?
   avatarUrl    String?
   passwordHash String?
+  /// Bumped on password change or "sign out everywhere"; sessions carry it and must match.
+  sessionVersion Int   @default(0)
   isPlatformAdmin Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -154,8 +158,6 @@ model Lead {
   phone     String?
   company   String?
   message   String?
-  /// Raw payload exactly as received, for audit and re-qualification.
-  rawPayload Json    @default("{}")
   /// Normalised answers (budget, timeline, service, etc.) used by the classifier.
   attributes Json    @default("{}")
 
@@ -188,15 +190,23 @@ model Lead {
   @@index([tenantId, ticketType])
   @@index([tenantId, createdAt])
   @@index([tenantId, email])
+  @@index([tenantId, phone])
 }
 
-/// Immutable log of every inbound intake hit (accepted, deduped or rejected).
+enum IntakeOutcome {
+  CREATED
+  DUPLICATE
+  REJECTED
+}
+
+/// Immutable log of every inbound intake hit. `payload` is the redacted raw
+/// body as received, kept once here (not on Lead) for audit and re-qualification.
 model IntakeEvent {
   id         String   @id @default(cuid())
   tenantId   String
   leadId     String?
   source     LeadSource
-  outcome    String   // "created" | "duplicate" | "rejected"
+  outcome    IntakeOutcome
   payload    Json
   classifier String?
   createdAt  DateTime @default(now())
@@ -358,6 +368,8 @@ enum BookingProvider {
 }
 
 enum BookingStatus {
+  /// Link generated, delivery not yet confirmed by the messaging adapter.
+  LINK_PENDING
   LINK_SENT
   SCHEDULED
   COMPLETED

@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { LeadRecord, TaskRecord, TransactionRecord, ContentAssetRecord, SocialPostRecord, TenantSummary, UserRecord } from "@/lib/types";
-import type { IntakeEventInput, NewBooking, Repository } from "./repository";
+import type {
+  ContentAssetRecord,
+  LeadRecord,
+  MembershipRole,
+  SocialPostRecord,
+  TaskRecord,
+  TenantSummary,
+  TransactionRecord,
+  UserRecord,
+} from "@/lib/types";
+import { startOfDayInZone } from "@/lib/utils";
+import { TenantMismatchError, type IntakeEventInput, type NewBooking, type NewContentAsset, type Repository } from "./repository";
 import {
   demoApiKeyHashes,
   demoAssets,
@@ -11,7 +21,7 @@ import {
   demoTasks,
   demoTenants,
   demoTransactions,
-  demoUsers,
+  getDemoUsers,
 } from "./fixtures";
 
 interface MemoryStore {
@@ -22,9 +32,12 @@ interface MemoryStore {
   transactions: TransactionRecord[];
   assets: ContentAssetRecord[];
   posts: SocialPostRecord[];
-  bookings: { id: string; tenantId: string; leadId: string; bookingUrl: string }[];
+  bookings: { id: string; tenantId: string; leadId: string; bookingUrl: string; sent: boolean }[];
   intakeEvents: (IntakeEventInput & { id: string; tenantId: string; createdAt: Date })[];
 }
+
+/** Keeps demo memory bounded if a long-running dev server receives a lot of traffic. */
+const MAX_ROWS = 5000;
 
 const g = globalThis as unknown as { __msqMemoryStore?: MemoryStore };
 
@@ -32,7 +45,7 @@ function store(): MemoryStore {
   if (!g.__msqMemoryStore) {
     g.__msqMemoryStore = {
       tenants: [...demoTenants],
-      users: [...demoUsers],
+      users: [...getDemoUsers()],
       leads: [...demoLeads],
       tasks: [...demoTasks],
       transactions: [...demoTransactions],
@@ -45,13 +58,27 @@ function store(): MemoryStore {
   return g.__msqMemoryStore;
 }
 
-const startOfToday = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+function pushBounded<T>(list: T[], item: T, front = true) {
+  if (front) list.unshift(item);
+  else list.push(item);
+  if (list.length > MAX_ROWS) list.length = MAX_ROWS;
+}
 
 const byNewest = <T extends { createdAt: Date }>(a: T, b: T) => b.createdAt.getTime() - a.createdAt.getTime();
+
+const publicUser = (u: UserRecord & { passwordHash: string }): UserRecord => ({
+  id: u.id,
+  email: u.email,
+  name: u.name,
+  isPlatformAdmin: u.isPlatformAdmin,
+  sessionVersion: u.sessionVersion,
+});
+
+function assertLeadInTenant(tenantId: string, leadId: string | null) {
+  if (!leadId) return;
+  const lead = store().leads.find((l) => l.id === leadId);
+  if (!lead || lead.tenantId !== tenantId) throw new TenantMismatchError("Lead", leadId);
+}
 
 /** In-memory repository backed by demo fixtures. Used when DATABASE_URL is unset. */
 export const memoryRepository: Repository = {
@@ -62,19 +89,21 @@ export const memoryRepository: Repository = {
   async listTenantsForUser(userId) {
     const user = store().users.find((u) => u.id === userId);
     if (!user) return [];
-    if (user.isPlatformAdmin) return store().tenants;
-    const allowed = new Set(demoMemberships[userId] ?? []);
-    return store().tenants.filter((t) => allowed.has(t.id));
+    if (user.isPlatformAdmin) return store().tenants.map((t) => ({ ...t, role: "OWNER" as MembershipRole }));
+    const memberships = demoMemberships[userId] ?? [];
+    return store()
+      .tenants.filter((t) => memberships.some((m) => m.tenantId === t.id))
+      .map((t) => ({ ...t, role: memberships.find((m) => m.tenantId === t.id)!.role }));
   },
 
   async findUserById(id) {
     const u = store().users.find((x) => x.id === id);
-    return u ? { id: u.id, email: u.email, name: u.name, isPlatformAdmin: u.isPlatformAdmin } : null;
+    return u ? publicUser(u) : null;
   },
 
   async findUserByEmail(email) {
     const u = store().users.find((x) => x.email === email.toLowerCase());
-    return u ? { user: { id: u.id, email: u.email, name: u.name, isPlatformAdmin: u.isPlatformAdmin }, passwordHash: u.passwordHash } : null;
+    return u ? { user: publicUser(u), passwordHash: u.passwordHash } : null;
   },
 
   async findTenantByApiKeyHash(hash) {
@@ -100,6 +129,10 @@ export const memoryRepository: Repository = {
   },
 
   async createLead(tenantId, data) {
+    if (data.externalId) {
+      const existing = store().leads.find((l) => l.tenantId === tenantId && l.externalId === data.externalId);
+      if (existing) return { lead: existing, created: false };
+    }
     const lead: LeadRecord = {
       id: `lead_${randomUUID().slice(0, 8)}`,
       tenantId,
@@ -119,11 +152,12 @@ export const memoryRepository: Repository = {
       qualifiedBy: data.qualifiedBy,
       createdAt: new Date(),
     };
-    store().leads.unshift(lead);
-    return lead;
+    pushBounded(store().leads, lead);
+    return { lead, created: true };
   },
 
   async createTask(tenantId, data) {
+    assertLeadInTenant(tenantId, data.leadId);
     const task: TaskRecord = {
       id: `task_${randomUUID().slice(0, 8)}`,
       tenantId,
@@ -137,25 +171,29 @@ export const memoryRepository: Repository = {
       automationKey: data.automationKey,
       createdAt: new Date(),
     };
-    store().tasks.unshift(task);
+    pushBounded(store().tasks, task);
     return task;
   },
 
   async createBooking(tenantId, data: NewBooking) {
+    assertLeadInTenant(tenantId, data.leadId);
     const booking = { id: `bk_${randomUUID().slice(0, 8)}`, tenantId, ...data };
-    store().bookings.push(booking);
-    const lead = store().leads.find((l) => l.id === data.leadId && l.tenantId === tenantId);
-    if (lead) lead.status = "BOOKING_SENT";
+    pushBounded(store().bookings, booking, false);
+    if (data.sent) {
+      const lead = store().leads.find((l) => l.id === data.leadId && l.tenantId === tenantId);
+      if (lead) lead.status = "BOOKING_SENT";
+    }
     return { id: booking.id, bookingUrl: booking.bookingUrl };
   },
 
   async recordIntakeEvent(tenantId, data) {
-    store().intakeEvents.push({ ...data, id: randomUUID(), tenantId, createdAt: new Date() });
+    assertLeadInTenant(tenantId, data.leadId);
+    pushBounded(store().intakeEvents, { ...data, id: randomUUID(), tenantId, createdAt: new Date() }, false);
   },
 
-  async getTicketBoard(tenantId) {
+  async getTicketBoard(tenantId, { timezone, currency }) {
     const s = store();
-    const today = startOfToday().getTime();
+    const today = startOfDayInZone(timezone).getTime();
     const tasks = s.tasks.filter((t) => t.tenantId === tenantId);
     const leads = s.leads.filter((l) => l.tenantId === tenantId);
     const open = (t: TaskRecord) => t.status !== "DONE" && t.status !== "CANCELLED";
@@ -171,7 +209,7 @@ export const memoryRepository: Repository = {
         redLeadsToday: redLeads.filter((l) => l.createdAt.getTime() >= today).length,
         bookingsPending: leads.filter((l) => l.status === "BOOKING_SENT").length,
         revenueTodayCents: s.transactions
-          .filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.occurredAt.getTime() >= today)
+          .filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.currency === currency && t.occurredAt.getTime() >= today)
           .reduce((sum, t) => sum + t.amountCents, 0),
       },
       greenTasks,
@@ -199,5 +237,27 @@ export const memoryRepository: Repository = {
       posts: s.posts.filter((p) => p.tenantId === tenantId),
       connectedPlatforms: demoConnections[tenantId] ?? [],
     };
+  },
+
+  async createContentAssets(tenantId, items: NewContentAsset[]) {
+    const created = items.map((item) => ({
+      id: `asset_${randomUUID().slice(0, 8)}`,
+      tenantId,
+      kind: item.kind,
+      title: item.title,
+      body: item.body,
+      targetPlatform: item.targetPlatform,
+      status: item.status,
+      createdAt: new Date(),
+    }));
+    for (const asset of created) pushBounded(store().assets, asset);
+    return created;
+  },
+
+  async updateContentAssetStatus(tenantId, assetId, status) {
+    const asset = store().assets.find((a) => a.id === assetId && a.tenantId === tenantId);
+    if (!asset) return null;
+    asset.status = status;
+    return asset;
   },
 };

@@ -19,11 +19,15 @@ function makeKey() {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+    throw new Error("Refusing to seed demo tenants and a platform-admin user in production (set ALLOW_PRODUCTION_SEED=true to override).");
+  }
   const tenants = [
     {
       slug: "northwind-clinics",
       name: "Northwind Clinics",
       timezone: "Australia/Sydney",
+      locale: "en-AU",
       currency: "AUD",
       branding: { primaryColor: "#0f766e", fromName: "Northwind Clinics" },
       qualificationRules: {
@@ -37,6 +41,7 @@ async function main() {
       slug: "harbor-legal",
       name: "Harbor Legal Partners",
       timezone: "America/New_York",
+      locale: "en-US",
       currency: "USD",
       branding: { primaryColor: "#1d4ed8", fromName: "Harbor Legal" },
       qualificationRules: {

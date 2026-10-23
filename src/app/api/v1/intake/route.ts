@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { processIntake } from "@/lib/intake/process";
-import { intakeSchema } from "@/lib/intake/schema";
+import { takeIntakeToken } from "@/lib/intake/rate-limit";
+import { INTAKE_MAX_BODY_BYTES, intakeSchema } from "@/lib/intake/schema";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 
 export const runtime = "nodejs";
@@ -20,19 +22,33 @@ export async function POST(req: NextRequest) {
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
+  const limit = takeIntakeToken(auth.tenant.id);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests for this workspace. Slow down and retry." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+    );
+  }
+
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > INTAKE_MAX_BODY_BYTES) {
+    return NextResponse.json({ error: `Body too large (max ${INTAKE_MAX_BODY_BYTES} bytes).` }, { status: 413 });
+  }
+
   let raw: unknown;
   try {
-    raw = await req.json();
+    const bytes = await req.arrayBuffer();
+    if (bytes.byteLength > INTAKE_MAX_BODY_BYTES) {
+      return NextResponse.json({ error: `Body too large (max ${INTAKE_MAX_BODY_BYTES} bytes).` }, { status: 413 });
+    }
+    raw = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
   }
 
   const parsed = intakeSchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid intake payload.", issues: parsed.error.flatten().fieldErrors },
-      { status: 422 },
-    );
+    return NextResponse.json({ error: "Invalid intake payload.", issues: z.flattenError(parsed.error).fieldErrors }, { status: 422 });
   }
 
   const rawPayload = (raw && typeof raw === "object" ? raw : { value: raw }) as Record<string, unknown>;
@@ -44,10 +60,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ outcome: "dry_run", tenant: auth.tenant.slug, qualification: result.qualification });
     }
     if (result.outcome === "duplicate") {
-      return NextResponse.json(
-        { outcome: "duplicate", tenant: auth.tenant.slug, leadId: result.lead.id, ticketType: result.lead.ticketType },
-        { status: 200 },
-      );
+      return NextResponse.json({ outcome: "duplicate", tenant: auth.tenant.slug, leadId: result.lead.id, ticketType: result.lead.ticketType });
     }
     return NextResponse.json(
       {
@@ -64,7 +77,9 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("[intake] failed", error);
+    // Never log payloads here: a validation error from the ORM can echo the data it was given.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[intake] failed for tenant ${auth.tenant.slug}: ${message}`);
     return NextResponse.json({ error: "Intake failed. The lead was not stored." }, { status: 500 });
   }
 }

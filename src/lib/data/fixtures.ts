@@ -1,6 +1,7 @@
 import { hashPasswordSync } from "@/lib/auth/password";
 import { hashApiKey } from "@/lib/crypto";
 import type {
+  MembershipRole,
   UserRecord,
   ContentAssetRecord,
   LeadRecord,
@@ -26,6 +27,7 @@ export const demoTenants: TenantSummary[] = [
     slug: "northwind-clinics",
     name: "Northwind Clinics",
     timezone: "Australia/Sydney",
+    locale: "en-AU",
     currency: "AUD",
     branding: { primaryColor: "#0f766e", fromName: "Northwind Clinics" },
     qualificationRules: {
@@ -41,6 +43,7 @@ export const demoTenants: TenantSummary[] = [
     slug: "harbor-legal",
     name: "Harbor Legal Partners",
     timezone: "America/New_York",
+    locale: "en-US",
     currency: "USD",
     branding: { primaryColor: "#1d4ed8", fromName: "Harbor Legal" },
     qualificationRules: {
@@ -68,7 +71,7 @@ export const demoLeads: LeadRecord[] = [
     firstName: "Margaret",
     lastName: "Ellis",
     email: "margaret.ellis@example.com",
-    phone: "+61 400 111 222",
+    phone: "+61400111222",
     company: null,
     message: "Interested in dental implants, would like a consult this week.",
     attributes: { budget: "$4,000", timeline: "this week", service: "dental implants" },
@@ -106,7 +109,7 @@ export const demoLeads: LeadRecord[] = [
     firstName: "Peter",
     lastName: "Nguyen",
     email: "peter.n@example.com",
-    phone: "+61 400 333 444",
+    phone: "+61400333444",
     company: null,
     message: "How much is teeth whitening? Can I book for Saturday?",
     attributes: { timeline: "soon" },
@@ -144,7 +147,7 @@ export const demoLeads: LeadRecord[] = [
     firstName: "Dana",
     lastName: "Whitfield",
     email: "dana@whitfield.example.com",
-    phone: "+1 212 555 0101",
+    phone: "+12125550101",
     company: "Whitfield Holdings",
     message: "Need an estate plan drawn up before year end, ready to pay a retainer.",
     attributes: { budget: 7500, timeline: "this month" },
@@ -441,24 +444,34 @@ export const demoConnections: Record<string, SocialPostRecord["platform"][]> = {
  */
 export const DEMO_OPERATOR_EMAIL = "operator@example.com";
 
-export const demoUsers: (UserRecord & { passwordHash: string })[] = [
+let cachedDemoUsers: (UserRecord & { passwordHash: string })[] | null = null;
+
+/** Hashing is deferred to first use so importing fixtures stays cheap. */
+export function getDemoUsers(): (UserRecord & { passwordHash: string })[] {
+  if (cachedDemoUsers) return cachedDemoUsers;
+  const passwordHash = hashPasswordSync(process.env.DEMO_OPERATOR_PASSWORD ?? "mesquared-demo");
+  cachedDemoUsers = [
   {
     id: "user_demo_operator",
     email: DEMO_OPERATOR_EMAIL,
     name: "Demo Operator",
     isPlatformAdmin: true,
-    passwordHash: hashPasswordSync(process.env.DEMO_OPERATOR_PASSWORD ?? "mesquared-demo"),
+    sessionVersion: 0,
+    passwordHash,
   },
   {
     id: "user_demo_marketing",
     email: "marketing@example.com",
     name: "Demo Marketer",
     isPlatformAdmin: false,
-    passwordHash: hashPasswordSync(process.env.DEMO_OPERATOR_PASSWORD ?? "mesquared-demo"),
+    sessionVersion: 0,
+    passwordHash,
   },
-];
+  ];
+  return cachedDemoUsers;
+}
 
-/** userId → tenantIds. Platform admins ignore this and see everything. */
-export const demoMemberships: Record<string, string[]> = {
-  user_demo_marketing: ["tenant_demo_one"],
+/** userId → memberships. Platform admins ignore this and see everything as OWNER. */
+export const demoMemberships: Record<string, { tenantId: string; role: MembershipRole }[]> = {
+  user_demo_marketing: [{ tenantId: "tenant_demo_one", role: "MARKETING" }],
 };

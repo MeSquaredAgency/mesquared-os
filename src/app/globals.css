@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
+/*
+ * Design tokens. Light is the default; dark follows the system preference.
+ * `--green` / `--red` are fills. `--green-text` / `--red-text` are the
+ * darker (light mode) or lighter (dark mode) variants that pass WCAG AA for
+ * text on the page background and on the matching `-soft` tint.
+ */
 :root {
   --background: oklch(0.985 0.002 90);
   --foreground: oklch(0.2 0.02 260);
@@ -14,45 +18,51 @@
   --secondary: oklch(0.955 0.005 260);
   --secondary-foreground: oklch(0.28 0.04 260);
   --muted: oklch(0.955 0.005 260);
-  --muted-foreground: oklch(0.5 0.02 260);
+  --muted-foreground: oklch(0.46 0.02 260);
   --accent: oklch(0.955 0.005 260);
   --accent-foreground: oklch(0.28 0.04 260);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.91 0.005 260);
-  --input: oklch(0.91 0.005 260);
+  --input: oklch(0.88 0.005 260);
   --ring: oklch(0.6 0.03 260);
   --green: oklch(0.62 0.17 150);
+  --green-text: oklch(0.45 0.15 150);
   --green-soft: oklch(0.95 0.05 150);
   --red: oklch(0.6 0.2 25);
+  --red-text: oklch(0.5 0.19 25);
   --red-soft: oklch(0.95 0.04 25);
   --radius: 0.625rem;
   --sidebar: oklch(0.975 0.003 260);
 }
 
-.dark {
-  --background: oklch(0.17 0.015 260);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.21 0.015 260);
-  --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.21 0.015 260);
-  --popover-foreground: oklch(0.96 0 0);
-  --primary: oklch(0.92 0 0);
-  --primary-foreground: oklch(0.2 0.02 260);
-  --secondary: oklch(0.27 0.015 260);
-  --secondary-foreground: oklch(0.96 0 0);
-  --muted: oklch(0.27 0.015 260);
-  --muted-foreground: oklch(0.7 0.01 260);
-  --accent: oklch(0.27 0.015 260);
-  --accent-foreground: oklch(0.96 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.55 0.02 260);
-  --green: oklch(0.72 0.17 150);
-  --green-soft: oklch(0.3 0.06 150);
-  --red: oklch(0.7 0.19 25);
-  --red-soft: oklch(0.3 0.06 25);
-  --sidebar: oklch(0.19 0.015 260);
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.015 260);
+    --foreground: oklch(0.96 0 0);
+    --card: oklch(0.21 0.015 260);
+    --card-foreground: oklch(0.96 0 0);
+    --popover: oklch(0.21 0.015 260);
+    --popover-foreground: oklch(0.96 0 0);
+    --primary: oklch(0.92 0 0);
+    --primary-foreground: oklch(0.2 0.02 260);
+    --secondary: oklch(0.27 0.015 260);
+    --secondary-foreground: oklch(0.96 0 0);
+    --muted: oklch(0.27 0.015 260);
+    --muted-foreground: oklch(0.74 0.01 260);
+    --accent: oklch(0.27 0.015 260);
+    --accent-foreground: oklch(0.96 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 18%);
+    --ring: oklch(0.55 0.02 260);
+    --green: oklch(0.72 0.17 150);
+    --green-text: oklch(0.82 0.15 150);
+    --green-soft: oklch(0.3 0.06 150);
+    --red: oklch(0.7 0.19 25);
+    --red-text: oklch(0.82 0.14 25);
+    --red-soft: oklch(0.3 0.06 25);
+    --sidebar: oklch(0.19 0.015 260);
+  }
 }
 
 @theme inline {
@@ -75,8 +85,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-green: var(--green);
+  --color-green-text: var(--green-text);
   --color-green-soft: var(--green-soft);
   --color-red: var(--red);
+  --color-red-text: var(--red-text);
   --color-red-soft: var(--red-soft);
   --color-sidebar: var(--sidebar);
   --radius-sm: calc(var(--radius) - 4px);
@@ -89,8 +101,21 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    color-scheme: light dark;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

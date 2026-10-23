@@ -8,6 +8,7 @@ export const PLATFORM_LABEL: Record<SocialPlatform, string> = {
   LINKEDIN: "LinkedIn",
 };
 
+/** Caption limits per platform, used to warn before the engine shortens copy. */
 export const PLATFORM_LIMIT: Record<SocialPlatform, number> = {
   FACEBOOK: 63206,
   INSTAGRAM: 2200,
@@ -15,11 +16,3 @@ export const PLATFORM_LIMIT: Record<SocialPlatform, number> = {
   YOUTUBE: 5000,
   LINKEDIN: 3000,
 };
-
-export function humanize(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}

@@ -77,6 +77,8 @@ export interface TenantSummary {
   slug: string;
   name: string;
   timezone: string;
+  /** BCP 47 tag for date and number formatting, e.g. "en-AU". */
+  locale: string;
   currency: string;
   branding: TenantBranding;
   qualificationRules: QualificationRules;
@@ -160,9 +162,30 @@ export interface TicketBoardStats {
   revenueTodayCents: number;
 }
 
+export type MembershipRole = "OWNER" | "ADMIN" | "OPERATOR" | "MARKETING" | "VIEWER";
+
 export interface UserRecord {
   id: string;
   email: string;
   name: string | null;
   isPlatformAdmin: boolean;
+  /** Incremented to invalidate every existing session for the user. */
+  sessionVersion: number;
+}
+
+/** A tenant the user may operate, with the role they hold in it. */
+export interface TenantAccess extends TenantSummary {
+  role: MembershipRole;
+}
+
+/** The minimum a client component needs to render a workspace picker. Never ship rules or settings to the browser. */
+export interface TenantOption {
+  id: string;
+  slug: string;
+  name: string;
+  primaryColor: string | null;
+}
+
+export function toTenantOption(t: TenantSummary): TenantOption {
+  return { id: t.id, slug: t.slug, name: t.name, primaryColor: t.branding.primaryColor ?? null };
 }

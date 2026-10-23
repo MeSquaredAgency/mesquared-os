@@ -78,6 +78,31 @@ src/lib/tenant/               API-key auth for inbound requests; cookie-based wo
 src/components/dashboard/     Dashboard UI
 ```
 
+## Security model
+
+- **Operator sessions** are HMAC-signed cookies carrying the user id, the
+  original sign-in time and the user's `sessionVersion`. They renew while in use
+  (7-day TTL) up to a 30-day absolute maximum, and bumping `sessionVersion`
+  signs the user out everywhere. Sign-in is rate limited per IP and per
+  (IP, email), with a growing delay per email so an attacker cannot lock an
+  operator out just by knowing their address.
+- **Roles** (`Membership.role`: OWNER, ADMIN, OPERATOR, MARKETING, VIEWER) gate
+  mutations. Marketing can draft; operators and above approve. Platform admins
+  act as OWNER everywhere.
+- **Intake** is authenticated by hashed tenant API keys, rate limited per
+  workspace, capped at 64 KB, bounded to 30 scalar `fields`, and deduped before
+  the classifier runs so retries never cost a model call. Raw payloads are
+  redacted (passwords, card numbers, government ids) and stored once on
+  `IntakeEvent`. The AI qualifier treats lead text as untrusted data, derives
+  the ticket from the score, clamps its reason, and cannot promote a lead the
+  rule engine finds signal-less.
+- **Every relational write** (task, booking, intake event) verifies the
+  referenced lead belongs to the tenant and throws otherwise; lead creation is
+  race-safe on the `(tenantId, externalId)` unique index.
+- **Production guards:** the app refuses to start in demo mode, with a default
+  demo password, without `AUTH_SECRET`, or (for booking links) without
+  `NEXT_PUBLIC_APP_URL`; the seed refuses to run against production.
+
 ## Multi-tenancy rules
 
 - Every operational row carries `tenantId`; every repository method takes a tenant id.
@@ -85,11 +110,24 @@ src/components/dashboard/     Dashboard UI
   integration credentials live on the tenant's rows.
 - Inbound API keys are stored as SHA-256 hashes; the raw key is shown once at creation.
 
-## Tests
+## Tests and CI
 
 ```bash
-npm test
+npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-Runs the qualifier tests with Node's built-in test runner (Node 22.6+ with type
-stripping; Node 24 recommended).
+That is exactly what `.github/workflows/ci.yml` runs on every push and pull
+request, in demo mode (no database or AI key needed). Tests use Node's built-in
+runner with type stripping (Node 22.12+; `.nvmrc` pins 24). `src/test/setup.mjs`
+resolves the `@/` alias so pipeline modules can be tested unbundled: the suite
+covers the classifier, intake schema and phone normalisation, the full intake
+pipeline against the in-memory repository (including cross-tenant isolation),
+password hashing, session tokens and the sign-in rate limiter.
+
+## Operations
+
+- `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.
+- Security headers (nosniff, frame deny, referrer policy, HSTS in production) are
+  set in `next.config.ts`.
+- Dates render in each tenant's `timezone` and money in its `currency` using its
+  `locale` (BCP 47). Set these per tenant; they default to UTC / en-AU / USD.
