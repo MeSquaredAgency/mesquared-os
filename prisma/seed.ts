@@ -2,10 +2,16 @@
  * Seeds two fictional tenants with an API key each so /api/v1/intake can be
  * exercised immediately. Run with `npm run db:seed`. Keys are printed once.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, scryptSync } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16);
+  const derived = scryptSync(password, salt, 64, { N: 16384 });
+  return ["scrypt", 16384, salt.toString("base64url"), derived.toString("base64url")].join("$");
+}
 
 function makeKey() {
   const raw = `msq_live_${randomBytes(24).toString("base64url")}`;
@@ -42,11 +48,13 @@ async function main() {
     },
   ];
 
+  const operatorPassword = process.env.SEED_OPERATOR_PASSWORD || randomBytes(12).toString("base64url");
   const operator = await prisma.user.upsert({
     where: { email: "operator@example.com" },
-    update: {},
-    create: { email: "operator@example.com", name: "Demo Operator", isPlatformAdmin: true },
+    update: process.env.SEED_OPERATOR_PASSWORD ? { passwordHash: hashPassword(operatorPassword) } : {},
+    create: { email: "operator@example.com", name: "Demo Operator", isPlatformAdmin: true, passwordHash: hashPassword(operatorPassword) },
   });
+  console.log(`Operator sign-in: operator@example.com / ${operatorPassword}  (shown once — store it now)`);
 
   for (const t of tenants) {
     const tenant = await prisma.tenant.upsert({

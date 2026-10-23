@@ -1,4 +1,5 @@
 import type {
+  UserRecord,
   ContentAssetRecord,
   LeadRecord,
   LeadSource,
@@ -72,6 +73,10 @@ export interface Workbench {
  */
 export interface Repository {
   listTenants(): Promise<TenantSummary[]>;
+  /** Tenants the user may operate. Platform admins see every active tenant. */
+  listTenantsForUser(userId: string): Promise<TenantSummary[]>;
+  findUserById(id: string): Promise<UserRecord | null>;
+  findUserByEmail(email: string): Promise<{ user: UserRecord; passwordHash: string | null } | null>;
   findTenantByApiKeyHash(hash: string): Promise<{ tenant: TenantSummary; apiKeyId: string | null } | null>;
 
   findDuplicateLead(tenantId: string, probe: { externalId: string | null; email: string | null; phone: string | null }): Promise<LeadRecord | null>;

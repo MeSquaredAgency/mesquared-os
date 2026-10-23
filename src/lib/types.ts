@@ -159,3 +159,10 @@ export interface TicketBoardStats {
   bookingsPending: number;
   revenueTodayCents: number;
 }
+
+export interface UserRecord {
+  id: string;
+  email: string;
+  name: string | null;
+  isPlatformAdmin: boolean;
+}

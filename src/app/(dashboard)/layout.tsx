@@ -1,5 +1,6 @@
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
 import { TenantSwitcher } from "@/components/dashboard/tenant-switcher";
+import { UserMenu } from "@/components/dashboard/user-menu";
 import { Badge } from "@/components/ui/badge";
 import { dataMode } from "@/lib/data";
 import { getCurrentTenant } from "@/lib/tenant/current";
@@ -7,7 +8,7 @@ import { getCurrentTenant } from "@/lib/tenant/current";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { tenant, tenants } = await getCurrentTenant();
+  const { user, tenant, tenants } = await getCurrentTenant();
 
   return (
     <div className="flex min-h-screen">
@@ -18,7 +19,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
         <TenantSwitcher current={tenant} tenants={tenants} />
         <SidebarNav />
-        <div className="mt-auto flex flex-col gap-2 px-1 text-xs text-muted-foreground">
+        <div className="mt-auto flex flex-col gap-3">
+          <UserMenu user={user} />
+          <div className="flex flex-col gap-2 px-1 text-xs text-muted-foreground">
           <div className="flex items-center justify-between">
             <span>Data source</span>
             <Badge variant={dataMode === "postgres" ? "muted" : "secondary"}>{dataMode === "postgres" ? "PostgreSQL" : "Demo"}</Badge>
@@ -26,6 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span>
             {tenant.timezone} · {tenant.currency}
           </span>
+          </div>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">

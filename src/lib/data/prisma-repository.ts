@@ -1,4 +1,4 @@
-import type { ContentAsset, Lead, Prisma, SocialPost, Task, Transaction } from "@prisma/client";
+import type { ContentAsset, Lead, Prisma, SocialPost, Task, Transaction, User } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import type {
   ContentAssetRecord,
@@ -10,6 +10,7 @@ import type {
   TenantBranding,
   TenantSummary,
   TransactionRecord,
+  UserRecord,
 } from "@/lib/types";
 import type { Repository } from "./repository";
 
@@ -111,6 +112,8 @@ const toPost = (p: PostRow): SocialPostRecord => ({
   batchId: p.batchId,
 });
 
+const toUser = (u: User): UserRecord => ({ id: u.id, email: u.email, name: u.name, isPlatformAdmin: u.isPlatformAdmin });
+
 const startOfToday = () => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -123,6 +126,26 @@ export const prismaRepository: Repository = {
   async listTenants() {
     const rows = await getPrisma().tenant.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
     return rows.map(toTenant);
+  },
+
+  async listTenantsForUser(userId) {
+    const user = await getPrisma().user.findUnique({ where: { id: userId }, select: { isPlatformAdmin: true } });
+    if (!user) return [];
+    const rows = await getPrisma().tenant.findMany({
+      where: user.isPlatformAdmin ? { isActive: true } : { isActive: true, memberships: { some: { userId } } },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(toTenant);
+  },
+
+  async findUserById(id) {
+    const u = await getPrisma().user.findUnique({ where: { id } });
+    return u ? toUser(u) : null;
+  },
+
+  async findUserByEmail(email) {
+    const u = await getPrisma().user.findUnique({ where: { email: email.toLowerCase() } });
+    return u ? { user: toUser(u), passwordHash: u.passwordHash } : null;
   },
 
   async findTenantByApiKeyHash(hash) {

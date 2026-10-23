@@ -1,19 +1,22 @@
 import { randomUUID } from "node:crypto";
-import type { LeadRecord, TaskRecord, TransactionRecord, ContentAssetRecord, SocialPostRecord, TenantSummary } from "@/lib/types";
+import type { LeadRecord, TaskRecord, TransactionRecord, ContentAssetRecord, SocialPostRecord, TenantSummary, UserRecord } from "@/lib/types";
 import type { IntakeEventInput, NewBooking, Repository } from "./repository";
 import {
   demoApiKeyHashes,
   demoAssets,
   demoConnections,
   demoLeads,
+  demoMemberships,
   demoPosts,
   demoTasks,
   demoTenants,
   demoTransactions,
+  demoUsers,
 } from "./fixtures";
 
 interface MemoryStore {
   tenants: TenantSummary[];
+  users: (UserRecord & { passwordHash: string })[];
   leads: LeadRecord[];
   tasks: TaskRecord[];
   transactions: TransactionRecord[];
@@ -29,6 +32,7 @@ function store(): MemoryStore {
   if (!g.__msqMemoryStore) {
     g.__msqMemoryStore = {
       tenants: [...demoTenants],
+      users: [...demoUsers],
       leads: [...demoLeads],
       tasks: [...demoTasks],
       transactions: [...demoTransactions],
@@ -53,6 +57,24 @@ const byNewest = <T extends { createdAt: Date }>(a: T, b: T) => b.createdAt.getT
 export const memoryRepository: Repository = {
   async listTenants() {
     return store().tenants;
+  },
+
+  async listTenantsForUser(userId) {
+    const user = store().users.find((u) => u.id === userId);
+    if (!user) return [];
+    if (user.isPlatformAdmin) return store().tenants;
+    const allowed = new Set(demoMemberships[userId] ?? []);
+    return store().tenants.filter((t) => allowed.has(t.id));
+  },
+
+  async findUserById(id) {
+    const u = store().users.find((x) => x.id === id);
+    return u ? { id: u.id, email: u.email, name: u.name, isPlatformAdmin: u.isPlatformAdmin } : null;
+  },
+
+  async findUserByEmail(email) {
+    const u = store().users.find((x) => x.email === email.toLowerCase());
+    return u ? { user: { id: u.id, email: u.email, name: u.name, isPlatformAdmin: u.isPlatformAdmin }, passwordHash: u.passwordHash } : null;
   },
 
   async findTenantByApiKeyHash(hash) {

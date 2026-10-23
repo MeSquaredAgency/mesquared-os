@@ -31,6 +31,21 @@ Without `ANTHROPIC_API_KEY` the qualifier is the deterministic rule-based stub i
 `src/lib/qualify/rules.ts`. With it set, `src/lib/qualify/anthropic.ts` runs
 Claude with structured output and falls back to the stub on any API error.
 
+## Sign in
+
+The dashboard is behind email-and-password sign-in. Sessions are signed HttpOnly
+cookies (`AUTH_SECRET`), passwords are scrypt-hashed, and sign-in is rate limited
+to five failures per 15 minutes per email.
+
+- **Demo mode:** `operator@example.com` with `DEMO_OPERATOR_PASSWORD` (default
+  `mesquared-demo`). A second user, `marketing@example.com`, sees only the first
+  workspace, to exercise membership scoping.
+- **With a database:** `npm run db:seed` creates `operator@example.com` and prints
+  its password once (or set `SEED_OPERATOR_PASSWORD`).
+
+Which workspaces a user can switch between comes from `Membership` rows; platform
+admins see every active tenant. Inbound API routes use tenant API keys, not sessions.
+
 ## Try the intake endpoint
 
 Demo-mode key for the first tenant: `msq_live_demo_one_0000000000000000`.
@@ -57,6 +72,8 @@ src/app/api/v1/intake         Lead intake endpoint (auth → validate → dedupe
 src/app/api/v1/webhooks/*     Square + social lead-form webhook stubs
 src/lib/qualify/              Green/Red classifier (rule stub + Anthropic engine)
 src/lib/data/                 Tenant-scoped repository (Prisma or in-memory demo)
+src/lib/auth/                 Passwords (scrypt), signed session cookies, sign-in actions, rate limit
+src/middleware.ts             Redirects unauthenticated dashboard requests to /login
 src/lib/tenant/               API-key auth for inbound requests; cookie-based workspace switch
 src/components/dashboard/     Dashboard UI
 ```

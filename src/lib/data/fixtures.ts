@@ -1,5 +1,7 @@
+import { hashPasswordSync } from "@/lib/auth/password";
 import { hashApiKey } from "@/lib/crypto";
 import type {
+  UserRecord,
   ContentAssetRecord,
   LeadRecord,
   SocialPostRecord,
@@ -431,4 +433,32 @@ export const demoPosts: SocialPostRecord[] = [
 export const demoConnections: Record<string, SocialPostRecord["platform"][]> = {
   tenant_demo_one: ["FACEBOOK", "INSTAGRAM", "YOUTUBE"],
   tenant_demo_two: ["LINKEDIN", "FACEBOOK"],
+};
+
+/**
+ * Demo operator for sign-in without a database. The password comes from
+ * DEMO_OPERATOR_PASSWORD (default "mesquared-demo") and is hashed at startup.
+ */
+export const DEMO_OPERATOR_EMAIL = "operator@example.com";
+
+export const demoUsers: (UserRecord & { passwordHash: string })[] = [
+  {
+    id: "user_demo_operator",
+    email: DEMO_OPERATOR_EMAIL,
+    name: "Demo Operator",
+    isPlatformAdmin: true,
+    passwordHash: hashPasswordSync(process.env.DEMO_OPERATOR_PASSWORD ?? "mesquared-demo"),
+  },
+  {
+    id: "user_demo_marketing",
+    email: "marketing@example.com",
+    name: "Demo Marketer",
+    isPlatformAdmin: false,
+    passwordHash: hashPasswordSync(process.env.DEMO_OPERATOR_PASSWORD ?? "mesquared-demo"),
+  },
+];
+
+/** userId → tenantIds. Platform admins ignore this and see everything. */
+export const demoMemberships: Record<string, string[]> = {
+  user_demo_marketing: ["tenant_demo_one"],
 };
