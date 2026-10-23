@@ -18,14 +18,18 @@ jobs:
       # Build and tests run in demo mode: no database, no AI key, dev session secret.
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma validate
+      - name: Validate Prisma schema
+        # `prisma validate` requires the datasource env var to be set, even though it never connects.
+        run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
