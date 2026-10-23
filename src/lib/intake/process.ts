@@ -1,56 +1,74 @@
 import { repository } from "@/lib/data";
+import { emit } from "@/lib/events";
+import { opportunityValue } from "@/lib/opportunities/detect";
 import { getQualifier, type QualificationResult } from "@/lib/qualify";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
+import type { IntakeChannel } from "@/lib/data/repository";
 import { redactPayload, splitName, type IntakeBody } from "./schema";
 
 export type IntakeOutcome =
-  | { outcome: "created"; lead: LeadRecord; qualification: QualificationResult; bookingUrl: string | null; taskId: string }
+  | { outcome: "created"; lead: LeadRecord; qualification: QualificationResult; bookingUrl: string | null }
   | { outcome: "duplicate"; lead: LeadRecord }
   | { outcome: "dry_run"; qualification: QualificationResult };
 
+export interface IntakeMeta {
+  channel: IntakeChannel;
+  provider: string | null;
+}
+
+const CHANNEL_FOR_SOURCE: Partial<Record<IntakeBody["source"], IntakeChannel>> = {
+  WEB_FORM: "WEB_FORM",
+  LANDING_PAGE: "WEB_FORM",
+  META_LEAD_FORM: "META_LEAD_FORM",
+  GOOGLE_LEAD_FORM: "GOOGLE_LEAD_FORM",
+  SOCIAL_DM: "SOCIAL_DM",
+  SOCIAL_COMMENT: "SOCIAL_COMMENT",
+  PORTAL_EMAIL: "PORTAL_EMAIL",
+  EMAIL: "EMAIL_FORWARD",
+  PHONE: "CALL",
+};
+
 /**
- * Full intake pipeline for one lead:
- *   validate (caller) → dedupe → qualify → persist → route
+ * Full intake pipeline for one item, from any channel:
+ *   validate (caller) → dedupe → qualify → contact → lead on the default pipeline → playbook
  *
- * Dedupe runs before qualification so a duplicate never costs a model call.
- * Routing follows the Green/Red ticket model:
- *   GREEN → booking link generated (delivery is the messaging adapter's job), urgent follow-up task
- *   RED   → nurture task queued for automation
+ * Dedupe runs before qualification so a retry never costs a model call.
+ * GREEN leads get SLA deadlines from the tenant's service levels and a
+ * booking link ready for the messaging adapter; RED items are logged as
+ * handled. Everything emits events for the activity log and detectors.
  */
-export async function processIntake(tenant: TenantSummary, body: IntakeBody, rawPayload: Record<string, unknown>): Promise<IntakeOutcome> {
+export async function processIntake(tenant: TenantSummary, body: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
   const { firstName, lastName } = splitName(body);
   const payload = redactPayload(rawPayload) as Record<string, unknown>;
+  const channel: IntakeChannel = meta?.channel ?? CHANNEL_FOR_SOURCE[body.source] ?? "API";
+  const provider = meta?.provider ?? null;
+  const eventBase = { channel, provider, externalId: body.externalId, payload };
 
   if (!body.dryRun) {
-    const duplicate = await repository.findDuplicateLead(tenant.id, {
-      externalId: body.externalId,
-      email: body.email,
-      phone: body.phone,
-    });
+    const duplicate = await repository.findDuplicateLead(tenant.id, { externalId: body.externalId, email: body.email, phone: body.phone });
     if (duplicate) {
-      await repository.recordIntakeEvent(tenant.id, { leadId: duplicate.id, source: body.source, outcome: "DUPLICATE", payload, classifier: null });
+      await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: duplicate.contactId, leadId: duplicate.id, outcome: "DUPLICATE", classifier: null });
       return { outcome: "duplicate", lead: duplicate };
     }
   }
 
   const qualifier = await getQualifier();
   const qualification = await qualifier.qualify(
-    {
-      source: body.source,
-      firstName,
-      lastName,
-      email: body.email,
-      phone: body.phone,
-      company: body.company,
-      message: body.message,
-      attributes: body.fields,
-    },
+    { source: body.source, firstName, lastName, email: body.email, phone: body.phone, company: body.company, message: body.message, attributes: body.fields },
     tenant.qualificationRules,
   );
-
   if (body.dryRun) return { outcome: "dry_run", qualification };
 
+  const contact = await repository.upsertContact(tenant.id, { firstName, lastName, email: body.email, phone: body.phone, company: body.company });
+
+  const green = qualification.ticketType === "GREEN";
+  const config = green ? await repository.getTenantConfig(tenant.id) : null;
+  const pipeline = config?.pipelines.find((p) => p.isDefault) ?? config?.pipelines[0] ?? null;
+  const firstStage = pipeline?.stages[0] ?? null;
+  const now = Date.now();
+
   const { lead, created } = await repository.createLead(tenant.id, {
+    contactId: contact.id,
     source: body.source,
     externalId: body.externalId,
     firstName,
@@ -60,53 +78,65 @@ export async function processIntake(tenant: TenantSummary, body: IntakeBody, raw
     company: body.company,
     message: body.message,
     attributes: body.fields,
+    attribution: pickAttribution(body.fields),
     ticketType: qualification.ticketType,
     intentScore: qualification.intentScore,
     qualificationReason: qualification.reason,
     qualifiedBy: qualification.classifier,
+    pipelineId: pipeline?.id ?? null,
+    stageId: firstStage?.id ?? null,
+    valueCents: green ? opportunityValue(tenant, "NOT_BOOKED") : 0,
+    respondBy: green ? new Date(now + tenant.sla.firstResponseMinutes * 60_000) : null,
+    bookBy: green ? new Date(now + tenant.sla.bookingWindowHours * 60 * 60_000) : null,
   });
   if (!created) {
-    // Lost a race with a concurrent request carrying the same externalId.
-    await repository.recordIntakeEvent(tenant.id, { leadId: lead.id, source: body.source, outcome: "DUPLICATE", payload, classifier: qualification.classifier });
+    await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: contact.id, leadId: lead.id, outcome: "DUPLICATE", classifier: qualification.classifier });
     return { outcome: "duplicate", lead };
   }
 
+  await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: contact.id, leadId: lead.id, outcome: "CREATED", classifier: qualification.classifier });
+  await emit(tenant.id, "intake.received", { leadId: lead.id, contactId: contact.id, channel, source: body.source });
+  await emit(tenant.id, "lead.qualified", { leadId: lead.id, ticketType: qualification.ticketType, intentScore: qualification.intentScore, classifier: qualification.classifier });
+
   const displayName = [firstName, lastName].filter(Boolean).join(" ") || body.email || body.phone || "New lead";
   let bookingUrl: string | null = null;
-  let taskId: string;
 
-  if (qualification.ticketType === "GREEN") {
+  if (green) {
     bookingUrl = buildBookingUrl(tenant, lead);
     // `sent: false` until the messaging adapter confirms delivery; the lead stays QUALIFIED until then.
     await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
-    const task = await repository.createTask(tenant.id, {
+    await repository.recordAutomationRun(tenant.id, {
+      typeKey: "enquiry_auto_reply",
+      outcome: "SKIPPED",
+      summary: `${displayName} is waiting for a reply. The booking link is ready; automatic acknowledgement starts once messaging is connected.`,
       leadId: lead.id,
-      type: "GREEN",
-      title: `Follow up ${displayName} — booking link ready`,
-      description: qualification.reason,
-      priority: qualification.intentScore >= 85 ? "URGENT" : "HIGH",
-      dueAt: new Date(Date.now() + 60 * 60_000),
-      automationKey: "green:follow-up-call",
+      contactId: contact.id,
+      details: { bookingUrl },
     });
-    taskId = task.id;
-    // TODO(messaging): send the booking link to the lead and alert the account manager, then mark the booking sent.
+    await emit(tenant.id, "booking.link_ready", { leadId: lead.id, bookingUrl });
   } else {
-    const task = await repository.createTask(tenant.id, {
+    await repository.recordAutomationRun(tenant.id, {
+      typeKey: "enquiry_auto_reply",
+      outcome: "COMPLETED",
+      summary: `Answered ${displayName}'s enquiry automatically. Nothing needed from you.`,
+      details: { reason: qualification.reason },
       leadId: lead.id,
-      type: "RED",
-      title: `Nurture ${displayName}`,
-      description: qualification.reason,
-      priority: "LOW",
-      dueAt: null,
-      automationKey: "nurture:welcome",
+      contactId: contact.id,
     });
-    taskId = task.id;
-    // TODO(automation): enqueue the tenant's nurture sequence.
   }
 
-  await repository.recordIntakeEvent(tenant.id, { leadId: lead.id, source: body.source, outcome: "CREATED", payload, classifier: qualification.classifier });
+  return { outcome: "created", lead, qualification, bookingUrl };
+}
 
-  return { outcome: "created", lead, qualification, bookingUrl, taskId };
+/** Lifts UTM-style keys out of the form fields into structured attribution. */
+function pickAttribution(fields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const map: Record<string, string> = { utm_source: "source", utm_medium: "medium", utm_campaign: "campaign", utm_content: "content", utm_term: "term", gclid: "clickId", fbclid: "clickId" };
+  for (const [key, target] of Object.entries(map)) {
+    const v = fields[key];
+    if (typeof v === "string" && v) out[target] = v;
+  }
+  return out;
 }
 
 /**

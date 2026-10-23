@@ -6,12 +6,12 @@ import { formatDateTime, formatMoney, humanize, readableTextOn, startOfDayInZone
 describe("safeNext", () => {
   it("allows same-origin paths and rejects everything else", () => {
     assert.equal(safeNext("/feed?x=1"), "/feed?x=1");
-    assert.equal(safeNext("//evil.example"), "/dashboard");
-    assert.equal(safeNext("https://evil.example"), "/dashboard");
-    assert.equal(safeNext("/\\evil.example"), "/dashboard");
-    assert.equal(safeNext("/login?next=/x"), "/dashboard");
-    assert.equal(safeNext(undefined), "/dashboard");
-    assert.equal(safeNext("/a\r\nSet-Cookie: x"), "/dashboard");
+    assert.equal(safeNext("//evil.example"), "/");
+    assert.equal(safeNext("https://evil.example"), "/");
+    assert.equal(safeNext("/\\evil.example"), "/");
+    assert.equal(safeNext("/login?next=/x"), "/");
+    assert.equal(safeNext(undefined), "/");
+    assert.equal(safeNext("/a\r\nSet-Cookie: x"), "/");
   });
 });
 

@@ -1,6 +1,6 @@
 import { LoginForm } from "@/components/auth/login-form";
 import { dataMode } from "@/lib/data";
-import { DEMO_OPERATOR_EMAIL } from "@/lib/data/fixtures";
+import { DEMO_ACCOUNTS } from "@/lib/data/fixtures";
 
 export const metadata = { title: "Sign in" };
 
@@ -10,7 +10,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { next } = await searchParams;
   const demoHint =
     dataMode === "demo" && process.env.NODE_ENV !== "production"
-      ? `Demo mode: sign in as ${DEMO_OPERATOR_EMAIL} with the DEMO_OPERATOR_PASSWORD from .env (default "mesquared-demo").`
+      ? `Demo mode. Any of these sign in with DEMO_OPERATOR_PASSWORD (default "mesquared-demo"): ${DEMO_ACCOUNTS.map((a) => a.email).join(", ")}.`
       : undefined;
 
   return (

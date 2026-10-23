@@ -33,18 +33,29 @@ Claude with structured output and falls back to the stub on any API error.
 
 ## Sign in
 
-The dashboard is behind email-and-password sign-in. Sessions are signed HttpOnly
-cookies (`AUTH_SECRET`), passwords are scrypt-hashed, and sign-in is rate limited
-to five failures per 15 minutes per email.
+One sign-in for two surfaces. Me² operators land in the **Operator Console**
+(`/console`): a portfolio of every workspace they are assigned to, with health,
+SLA breaches, missed opportunities, the exception queue, content due, ad pacing
+and integration status, plus a drill-in per workspace. Client users land in the
+**Client Portal** (`/app/<workspace>`): "Needs you", missed opportunities with
+money at risk and recovered, money (if they may see it), content waiting for
+their approval, and the "Handled for you" summary.
 
-- **Demo mode:** `operator@example.com` with `DEMO_OPERATOR_PASSWORD` (default
-  `mesquared-demo`). A second user, `marketing@example.com`, sees only the first
-  workspace, to exercise membership scoping.
-- **With a database:** `npm run db:seed` creates `operator@example.com` and prints
-  its password once (or set `SEED_OPERATOR_PASSWORD`).
+Permissions are fixed (`VIEW_FINANCES`, `APPROVE_CONTENT`, `RECEIVE_LEAD_ALERTS`,
+`MANAGE_USERS`, `VIEW_ALL_RECORDS`); role names are set per tenant and seeded
+from the industry template (real estate names them Director, Region Manager,
+Property Manager, External accountant).
 
-Which workspaces a user can switch between comes from `Membership` rows; platform
-admins see every active tenant. Inbound API routes use tenant API keys, not sessions.
+- **Demo mode:** every account below signs in with `DEMO_OPERATOR_PASSWORD`
+  (default `mesquared-demo`):
+  - `operator@example.com` — platform admin, console, every workspace
+  - `ops@example.com` — operator assigned to both demo workspaces
+  - `director@harbor.example` — Harbor Realty Director (portal, all permissions)
+  - `pm@harbor.example` — Harbor Realty Property Manager (portal, own leads only)
+  - `owner@summit.example` — Summit Health & Fitness Owner (portal)
+- **With a database:** `npm run db:seed` applies the real-estate and
+  health-and-fitness templates to two fictional tenants and prints the
+  passwords and API keys once (or set `SEED_OPERATOR_PASSWORD`).
 
 ## Try the intake endpoint
 
@@ -64,18 +75,21 @@ Open `/feed` to watch leads arrive.
 ## Layout
 
 ```
-prisma/schema.prisma          Tenant, User, Membership, TenantApiKey, Lead, IntakeEvent,
-                              Task (GREEN|RED), StockItem, SquareIntegration, Transaction,
-                              Booking, SocialConnection, ContentAsset, SocialPost, SocialProofAsset
-src/app/(dashboard)/          Operator dashboard: tickets, marketing workbench, live feed
-src/app/api/v1/intake         Lead intake endpoint (auth → validate → dedupe → qualify → route)
-src/app/api/v1/webhooks/*     Square + social lead-form webhook stubs
-src/lib/qualify/              Green/Red classifier (rule stub + Anthropic engine)
-src/lib/data/                 Tenant-scoped repository (Prisma or in-memory demo)
-src/lib/auth/                 Passwords (scrypt), signed session cookies, sign-in actions, rate limit
-src/middleware.ts             Redirects unauthenticated dashboard requests to /login
-src/lib/tenant/               API-key auth for inbound requests; cookie-based workspace switch
-src/components/dashboard/     Dashboard UI
+docs/product-spec.md             What we are building and for whom (read first)
+docs/architecture.md             Domain model, surfaces, module system, phased plan
+prisma/schema.prisma             Tenant-scoped data model
+src/app/console                  Operator Console: portfolio, queue, workspace drill-in
+src/app/app/[tenant]             Client Portal: home, leads, missed opportunities, content, activity
+src/app/api/v1/intake            Lead intake: API key → zod → dedupe → qualify → contact → lead → playbook
+src/app/api/jobs/detect          Scheduled missed-opportunity detection (JOB_SECRET)
+src/lib/templates                Industry templates (real estate, health & fitness, generic)
+src/lib/modules, src/lib/automations   Module and automation registries
+src/lib/opportunities            Missed-opportunity detectors
+src/lib/events                   Tenant event stream with in-process subscribers
+src/lib/qualify                  Green/Red classifier (rule stub + Anthropic engine)
+src/lib/auth                     Passwords, sessions, permissions, access resolution
+src/lib/data                     Tenant-scoped repository (Prisma or in-memory demo)
+src/components/{shell,console,portal}   UI for the two surfaces
 ```
 
 ## Security model

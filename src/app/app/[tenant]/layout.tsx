@@ -1,0 +1,33 @@
+import { AppShell } from "@/components/shell/app-shell";
+import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
+import { getPortalContext } from "@/lib/auth/access";
+import { COPY } from "@/lib/copy";
+import { toTenantOption } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+export default async function PortalLayout({ children, params }: { children: React.ReactNode; params: Promise<{ tenant: string }> }) {
+  const { tenant: slug } = await params;
+  const { user, access, tenants } = await getPortalContext(slug);
+  const base = `/app/${slug}`;
+  return (
+    <AppShell
+      user={user}
+      nav={[
+        { href: base, label: "Home", hint: COPY.needsYou, icon: "home", exact: true },
+        { href: `${base}/leads`, label: "Leads", hint: "Everyone who enquired", icon: "users" },
+        { href: `${base}/opportunities`, label: COPY.missedOpportunities, hint: "Money at risk", icon: "trendingDown" },
+        { href: `${base}/content`, label: "Content", hint: "Approve drafts", icon: "fileCheck" },
+        { href: `${base}/activity`, label: COPY.activityLog, hint: COPY.handledForYou, icon: "activity" },
+      ]}
+      context={<WorkspaceSwitcher current={toTenantOption(access.tenant)} options={tenants.map((t) => toTenantOption(t.tenant))} basePath="/app" />}
+      footer={
+        <span>
+          {access.roleName ?? (access.via === "admin" ? "Platform admin" : "Operator")} · {access.tenant.timezone}
+        </span>
+      }
+    >
+      {children}
+    </AppShell>
+  );
+}

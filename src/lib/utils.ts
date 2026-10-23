@@ -122,3 +122,11 @@ export function formatLocalInput(local: string, locale: string) {
     new Date(Date.UTC(y, mo - 1, d, h, mi)),
   );
 }
+
+/** Midnight at the start of the current month in the given timezone, as a UTC instant. */
+export function startOfMonthInZone(timeZone: string, now: Date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const firstOfMonthLocal = `${get("year")}-${String(get("month")).padStart(2, "0")}-01T00:00`;
+  return zonedLocalToUtc(firstOfMonthLocal, timeZone) ?? startOfDayInZone(timeZone, now);
+}

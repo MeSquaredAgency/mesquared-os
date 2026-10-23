@@ -1,9 +1,11 @@
-// MeSquared OS — core data model
+// MeSquared OS — core data model (Phase 0 re-foundation)
 //
 // Multi-tenancy rule: every operational entity carries a `tenantId` and is
 // only ever read or written through a tenant-scoped query. No client-specific
-// branding, keys or rules live in code — they live on the Tenant row and its
-// integration rows so the platform stays client-agnostic.
+// code, branding or rules live in source: they live on the Tenant row, its
+// configuration rows, and are seeded from industry templates.
+//
+// See docs/product-spec.md and docs/architecture.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -15,76 +17,81 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Tenancy & identity
+// Identity, access and tenancy
 // ---------------------------------------------------------------------------
 
-model Tenant {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  timezone  String   @default("UTC")
-  /// BCP 47 tag used for date and number formatting in the dashboard.
-  locale    String   @default("en-AU")
-  currency  String   @default("USD")
-  /// Dynamic branding: { logoUrl, primaryColor, accentColor, fromName, replyTo }
-  branding  Json     @default("{}")
-  /// Tenant-configured qualification rules consumed by the AI classifier:
-  /// { greenKeywords[], redKeywords[], minBudget, highIntentServices[], notes }
-  qualificationRules Json @default("{}")
-  /// Free-form operational settings (booking defaults, nurture sequences, etc.)
-  settings  Json     @default("{}")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  memberships        Membership[]
-  apiKeys            TenantApiKey[]
-  leads              Lead[]
-  tasks              Task[]
-  stockItems         StockItem[]
-  squareIntegration  SquareIntegration?
-  transactions       Transaction[]
-  bookings           Booking[]
-  socialConnections  SocialConnection[]
-  contentAssets      ContentAsset[]
-  socialPosts        SocialPost[]
-  socialProofAssets  SocialProofAsset[]
-  intakeEvents       IntakeEvent[]
-}
-
+/// Platform-level person. Tenant users and Me² operators are both Users.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  avatarUrl    String?
-  passwordHash String?
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String?
+  avatarUrl       String?
+  passwordHash    String?
   /// Bumped on password change or "sign out everywhere"; sessions carry it and must match.
-  sessionVersion Int   @default(0)
-  isPlatformAdmin Boolean @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  sessionVersion  Int      @default(0)
+  /// Me² staff who work tenants through the Operator Console.
+  isOperator      Boolean  @default(false)
+  /// Sees every tenant; implies operator.
+  isPlatformAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  memberships   Membership[]
-  assignedLeads Lead[]       @relation("LeadOwner")
-  assignedTasks Task[]       @relation("TaskAssignee")
-  approvedAssets ContentAsset[] @relation("AssetApprover")
+  memberships         Membership[]
+  operatorAssignments OperatorAssignment[]
+  assignedLeads       Lead[]          @relation("LeadAssignee")
+  assignedExceptions  ExceptionItem[] @relation("ExceptionOperator")
+  escalatedExceptions ExceptionItem[] @relation("ExceptionEscalatedTo")
+  approvedAssets      ContentAsset[]  @relation("AssetApprover")
 }
 
-enum MembershipRole {
-  OWNER
-  ADMIN
-  OPERATOR
-  MARKETING
-  VIEWER
+/// Fixed capabilities. Tenants name their own roles; the permissions underneath never change.
+enum Permission {
+  VIEW_FINANCES
+  APPROVE_CONTENT
+  RECEIVE_LEAD_ALERTS
+  MANAGE_USERS
+  VIEW_ALL_RECORDS
 }
 
-/// A user may belong to many tenants (MeSquared operators work across clients).
+/// A tenant-named role, e.g. "Property Manager", carrying a set of permissions.
+model TenantRole {
+  id          String       @id @default(cuid())
+  tenantId    String
+  name        String
+  /// Which template this was seeded from (owner, manager, staff, accountant), if any.
+  templateKey String?
+  permissions Permission[] @default([])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([tenantId, name])
+}
+
+/// A user's seat in a tenant, with the role that decides what they may do and see.
 model Membership {
-  id        String         @id @default(cuid())
+  id        String   @id @default(cuid())
   tenantId  String
   userId    String
-  role      MembershipRole @default(OPERATOR)
-  createdAt DateTime       @default(now())
+  roleId    String
+  createdAt DateTime @default(now())
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   TenantRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+/// Me² operators are assigned to tenants; the console portfolio is built from these.
+model OperatorAssignment {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -93,8 +100,70 @@ model Membership {
   @@index([userId])
 }
 
-/// Inbound API keys used by web forms / landing pages / ad platforms to post
-/// into /api/v1/intake on behalf of a tenant. Only a hash is stored.
+enum Industry {
+  REAL_ESTATE
+  HEALTH_FITNESS
+  GENERIC
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  industry  Industry @default(GENERIC)
+  /// Which industry template was applied; configuration can diverge afterwards.
+  templateKey String?
+  /// ISO 3166-1 alpha-2 of the business's home region; drives messaging consent rules and defaults.
+  region    String   @default("AU")
+  timezone  String   @default("UTC")
+  /// BCP 47 tag used for date and number formatting in the dashboard.
+  locale    String   @default("en-AU")
+  currency  String   @default("USD")
+  /// Dynamic branding: { logoUrl, primaryColor, accentColor, fromName, replyTo }
+  branding  Json     @default("{}")
+  /// Tenant-configured qualification rules consumed by the classifier (see QualificationRules in src/lib/types.ts).
+  qualificationRules Json @default("{}")
+  /// Service levels: { firstResponseMinutes, bookingWindowHours, quietHours: {start,end} }
+  sla       Json     @default("{}")
+  /// What escalates to a named client person instead of an operator: { rules: [{ when, notifyUserId }] }
+  escalationRules Json @default("{}")
+  /// Estimated values per missed-opportunity type, in minor units: { NOT_BOOKED: 150000, ... }
+  opportunityValues Json @default("{}")
+  /// Free-form operational settings.
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles               TenantRole[]
+  memberships         Membership[]
+  operatorAssignments OperatorAssignment[]
+  apiKeys             TenantApiKey[]
+  modules             TenantModule[]
+  integrations        Integration[]
+  brandProfile        BrandProfile?
+  pipelines           Pipeline[]
+  stages              PipelineStage[]
+  contacts            Contact[]
+  leads               Lead[]
+  intakeEvents        IntakeEvent[]
+  conversations       Conversation[]
+  messages            Message[]
+  bookings            Booking[]
+  missedOpportunities MissedOpportunity[]
+  automations         TenantAutomation[]
+  automationRuns      AutomationRun[]
+  exceptions          ExceptionItem[]
+  events              DomainEvent[]
+  channels            Channel[]
+  contentAssets       ContentAsset[]
+  socialPosts         SocialPost[]
+  socialProofAssets   SocialProofAsset[]
+  transactions        Transaction[]
+  inventoryItems      InventoryItem[]
+}
+
+/// Inbound API keys used by web forms / landing pages / relays to post into /api/v1/intake. Only a hash is stored.
 model TenantApiKey {
   id         String    @id @default(cuid())
   tenantId   String
@@ -111,11 +180,175 @@ model TenantApiKey {
 }
 
 // ---------------------------------------------------------------------------
-// Leads, tickets, tasks
+// Configuration: modules, integrations, brand
 // ---------------------------------------------------------------------------
 
-/// GREEN = revenue intent (stock, high-intent lead, closing).
-/// RED   = secondary operational admin to automate or defer.
+/// A platform module switched on for a tenant, with its settings. Keys are declared in src/lib/modules.
+model TenantModule {
+  id        String   @id @default(cuid())
+  tenantId  String
+  moduleKey String
+  enabled   Boolean  @default(false)
+  settings  Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, moduleKey])
+}
+
+enum IntegrationProvider {
+  CALCOM
+  GOOGLE_CALENDAR
+  OUTLOOK_CALENDAR
+  META
+  GOOGLE_ADS
+  GOOGLE_LEAD_FORMS
+  TIKTOK
+  YOUTUBE
+  LINKEDIN
+  GOOGLE_BUSINESS
+  SQUARE
+  STRIPE
+  XERO
+  QUICKBOOKS
+  TWILIO
+  RESEND
+  WHATSAPP
+  REA
+  DOMAIN
+  PROPERTY_MANAGEMENT
+  EMAIL_FORWARDING
+  CALL_TRACKING
+  WEBSITE
+  OTHER
+}
+
+enum IntegrationStatus {
+  PENDING
+  CONNECTED
+  NEEDS_ATTENTION
+  DISCONNECTED
+}
+
+/// One connected external system per tenant. Credentials are encrypted by the application layer.
+model Integration {
+  id                String              @id @default(cuid())
+  tenantId          String
+  provider          IntegrationProvider
+  label             String?
+  status            IntegrationStatus   @default(PENDING)
+  externalAccountId String?
+  credentialsEnc    String?
+  scopes            String[]            @default([])
+  settings          Json                @default("{}")
+  lastSyncAt        DateTime?
+  lastError         String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channels Channel[]
+
+  @@index([tenantId, provider])
+  @@index([tenantId, status])
+}
+
+/// Voice, examples, banned phrases and the compliance block the content engine enforces on every asset.
+model BrandProfile {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  voice          String?
+  examples       String[] @default([])
+  bannedPhrases  String[] @default([])
+  /// { requiredFooter, prohibitedCombinations[], claimsPolicy, mustNot[] }
+  complianceBlock Json    @default("{}")
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Contacts, pipelines, leads
+// ---------------------------------------------------------------------------
+
+/// A person or organisation the business deals with. Leads, conversations and payments hang off it.
+model Contact {
+  id             String    @id @default(cuid())
+  tenantId       String
+  firstName      String?
+  lastName       String?
+  email          String?
+  phone          String?
+  company        String?
+  /// Per-channel consent: { sms: { granted, at, source }, email: {...}, whatsapp: {...} }
+  consent        Json      @default("{}")
+  tags           String[]  @default([])
+  lastActivityAt DateTime?
+  /// Set when the contact has been inactive long enough to count as lapsed.
+  lapsedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads               Lead[]
+  conversations       Conversation[]
+  intakeEvents        IntakeEvent[]
+  missedOpportunities MissedOpportunity[]
+  automationRuns      AutomationRun[]
+  exceptions          ExceptionItem[]
+  transactions        Transaction[]
+
+  @@index([tenantId, email])
+  @@index([tenantId, phone])
+  @@index([tenantId, lastActivityAt])
+}
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  name      String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stages PipelineStage[]
+  leads  Lead[]
+
+  @@unique([tenantId, key])
+}
+
+/// What moves a lead into the next stage automatically.
+enum StageAdvanceTrigger {
+  MANUAL
+  BOOKING_CREATED
+  BOOKING_COMPLETED
+  PAYMENT_RECEIVED
+  DOCUMENT_SIGNED
+}
+
+model PipelineStage {
+  id         String              @id @default(cuid())
+  tenantId   String
+  pipelineId String
+  key        String
+  name       String
+  order      Int
+  /// Event that advances a lead *into* this stage.
+  advanceOn  StageAdvanceTrigger @default(MANUAL)
+  isWon      Boolean             @default(false)
+  isLost     Boolean             @default(false)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  leads    Lead[]
+
+  @@unique([pipelineId, key])
+  @@index([tenantId])
+}
+
+/// GREEN = revenue intent ("Needs you"). RED = admin ("Handled for you"). Internal names only.
 enum TicketType {
   GREEN
   RED
@@ -125,8 +358,12 @@ enum LeadSource {
   WEB_FORM
   LANDING_PAGE
   META_LEAD_FORM
+  GOOGLE_LEAD_FORM
   TIKTOK_LEAD_FORM
   LINKEDIN_LEAD_FORM
+  SOCIAL_DM
+  SOCIAL_COMMENT
+  PORTAL_EMAIL
   YOUTUBE
   REFERRAL
   PHONE
@@ -146,51 +383,86 @@ enum LeadStatus {
   ARCHIVED
 }
 
+/// An opportunity on a contact, moving through a pipeline.
 model Lead {
-  id        String     @id @default(cuid())
-  tenantId  String
-  source    LeadSource @default(OTHER)
+  id          String     @id @default(cuid())
+  tenantId    String
+  contactId   String?
+  pipelineId  String?
+  stageId     String?
+  assigneeId  String?
+  source      LeadSource @default(OTHER)
   /// Idempotency key from the upstream system (form submission id, ad lead id).
-  externalId String?
-  firstName String?
-  lastName  String?
-  email     String?
-  phone     String?
-  company   String?
-  message   String?
+  externalId  String?
+  firstName   String?
+  lastName    String?
+  email       String?
+  phone       String?
+  company     String?
+  message     String?
   /// Normalised answers (budget, timeline, service, etc.) used by the classifier.
-  attributes Json    @default("{}")
+  attributes  Json       @default("{}")
+  /// Campaign attribution stamped at intake: { source, medium, campaign, content, term, clickId }
+  attribution Json       @default("{}")
 
   status      LeadStatus @default(NEW)
   ticketType  TicketType?
-  /// 0–100 intent score from the qualification engine.
   intentScore Int?
-  /// Human-readable rationale returned by the classifier.
   qualificationReason String?
   qualifiedAt DateTime?
-  qualifiedBy String?  // "stub" | "anthropic:<model>" | "operator:<userId>"
+  qualifiedBy String?
 
-  ownerId   String?
-  owner     User?   @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-
-  squareCustomerId String?
-  lifetimeValueCents Int @default(0)
+  /// Estimated value of the opportunity, in minor units.
+  valueCents      Int       @default(0)
+  /// SLA deadlines computed at intake from tenant config.
+  respondBy       DateTime?
+  bookBy          DateTime?
+  firstResponseAt DateTime?
+  bookedAt        DateTime?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  lifetimeValueCents Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tasks        Task[]
-  bookings     Booking[]
-  transactions Transaction[]
-  intakeEvents IntakeEvent[]
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact             Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  pipeline            Pipeline?           @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  stage               PipelineStage?      @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  assignee            User?               @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  bookings            Booking[]
+  intakeEvents        IntakeEvent[]
+  missedOpportunities MissedOpportunity[]
+  automationRuns      AutomationRun[]
+  exceptions          ExceptionItem[]
+  transactions        Transaction[]
 
   @@unique([tenantId, externalId])
   @@index([tenantId, status])
-  @@index([tenantId, ticketType])
-  @@index([tenantId, createdAt])
+  @@index([tenantId, ticketType, createdAt])
+  @@index([tenantId, assigneeId])
+  @@index([tenantId, respondBy])
+  @@index([tenantId, bookBy])
   @@index([tenantId, email])
   @@index([tenantId, phone])
+}
+
+// ---------------------------------------------------------------------------
+// Intake and conversations
+// ---------------------------------------------------------------------------
+
+enum IntakeChannel {
+  WEB_FORM
+  META_LEAD_FORM
+  GOOGLE_LEAD_FORM
+  SOCIAL_DM
+  SOCIAL_COMMENT
+  EMAIL_FORWARD
+  CALL
+  VOICEMAIL
+  PORTAL_EMAIL
+  API
 }
 
 enum IntakeOutcome {
@@ -199,162 +471,94 @@ enum IntakeOutcome {
   REJECTED
 }
 
-/// Immutable log of every inbound intake hit. `payload` is the redacted raw
-/// body as received, kept once here (not on Lead) for audit and re-qualification.
+/// One normalised event per inbound item from any channel. `payload` is the redacted raw body, kept once here.
 model IntakeEvent {
-  id         String   @id @default(cuid())
+  id         String        @id @default(cuid())
   tenantId   String
+  channel    IntakeChannel @default(API)
+  provider   String?
+  externalId String?
+  contactId  String?
   leadId     String?
-  source     LeadSource
   outcome    IntakeOutcome
   payload    Json
   classifier String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime      @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
 }
 
-enum TaskStatus {
-  OPEN
-  IN_PROGRESS
-  WAITING
-  DONE
-  CANCELLED
+enum MessageChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+  SOCIAL_DM
+  SOCIAL_COMMENT
+  PHONE
 }
 
-enum TaskPriority {
-  LOW
-  NORMAL
-  HIGH
-  URGENT
-}
-
-model Task {
-  id          String       @id @default(cuid())
-  tenantId    String
-  leadId      String?
-  type        TicketType
-  title       String
-  description String?
-  status      TaskStatus   @default(OPEN)
-  priority    TaskPriority @default(NORMAL)
-  dueAt       DateTime?
-  /// Automation that produced or should handle this task, e.g. "nurture:welcome".
-  automationKey String?
-  assigneeId  String?
-  completedAt DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lead     Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  assignee User?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-
-  @@index([tenantId, type, status])
-  @@index([tenantId, dueAt])
-}
-
-// ---------------------------------------------------------------------------
-// Stock control (a "green ticket" revenue driver)
-// ---------------------------------------------------------------------------
-
-enum StockStatus {
-  IN_STOCK
-  LOW
-  OUT_OF_STOCK
-  DISCONTINUED
-}
-
-model StockItem {
-  id            String      @id @default(cuid())
+/// One thread per contact per channel. The unified inbox and the forwarding inbox both read from here.
+model Conversation {
+  id            String         @id @default(cuid())
   tenantId      String
-  sku           String
-  name          String
-  description   String?
-  quantity      Int         @default(0)
-  reorderPoint  Int         @default(0)
-  unitCostCents Int?
-  priceCents    Int?
-  status        StockStatus @default(IN_STOCK)
-  squareCatalogObjectId String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  contactId     String?
+  channel       MessageChannel
+  subject       String?
+  externalId    String?
+  lastMessageAt DateTime?
+  /// True while the last message is inbound and nobody has replied.
+  awaitingReply Boolean        @default(false)
+  createdAt     DateTime       @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  messages Message[]
 
-  @@unique([tenantId, sku])
-  @@index([tenantId, status])
+  @@index([tenantId, awaitingReply, lastMessageAt])
 }
 
-// ---------------------------------------------------------------------------
-// Square (per tenant)
-// ---------------------------------------------------------------------------
-
-enum SquareEnvironment {
-  SANDBOX
-  PRODUCTION
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
 }
 
-model SquareIntegration {
-  id          String            @id @default(cuid())
-  tenantId    String            @unique
-  environment SquareEnvironment @default(SANDBOX)
-  merchantId  String?
-  locationId  String?
-  /// Encrypted at rest by the application layer before persisting.
-  accessTokenEnc  String
-  refreshTokenEnc String?
-  tokenExpiresAt  DateTime?
-  webhookSignatureKey String?
-  scopes      String[]          @default([])
-  lastSyncAt  DateTime?
-  isActive    Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+enum MessageSender {
+  CONTACT
+  AUTOMATION
+  OPERATOR
+  CLIENT_STAFF
 }
 
-enum TransactionKind {
-  CONSULTATION_FEE
-  RETAINER_DEPOSIT
-  PAYMENT
-  REFUND
-  OTHER
-}
-
-enum TransactionStatus {
-  PENDING
-  COMPLETED
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
   FAILED
-  REFUNDED
+  RECEIVED
 }
 
-/// Synced from Square Payments API; keyed on the Square payment id per tenant.
-model Transaction {
-  id              String            @id @default(cuid())
-  tenantId        String
-  leadId          String?
-  squarePaymentId String
-  squareCustomerId String?
-  squareOrderId   String?
-  kind            TransactionKind   @default(PAYMENT)
-  status          TransactionStatus @default(PENDING)
-  amountCents     Int
-  currency        String            @default("USD")
-  note            String?
-  occurredAt      DateTime
-  rawPayload      Json              @default("{}")
-  createdAt       DateTime          @default(now())
+model Message {
+  id                String           @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  direction         MessageDirection
+  sender            MessageSender
+  body              String
+  status            MessageStatus    @default(QUEUED)
+  providerMessageId String?
+  automationRunId   String?
+  sentAt            DateTime?
+  createdAt         DateTime         @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation  Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  automationRun AutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, squarePaymentId])
-  @@index([tenantId, occurredAt])
+  @@index([tenantId, conversationId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -378,26 +582,173 @@ enum BookingStatus {
 }
 
 model Booking {
-  id          String          @id @default(cuid())
-  tenantId    String
-  leadId      String
-  provider    BookingProvider @default(CALCOM)
-  externalId  String?
-  bookingUrl  String?
-  startsAt    DateTime?
-  endsAt      DateTime?
-  status      BookingStatus   @default(LINK_SENT)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id         String          @id @default(cuid())
+  tenantId   String
+  leadId     String
+  provider   BookingProvider @default(CALCOM)
+  externalId String?
+  bookingUrl String?
+  startsAt   DateTime?
+  endsAt     DateTime?
+  status     BookingStatus   @default(LINK_PENDING)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, startsAt])
+  @@index([tenantId, status])
 }
 
 // ---------------------------------------------------------------------------
-// Omnichannel social engine
+// Missed opportunities, automation, exceptions, events
+// ---------------------------------------------------------------------------
+
+enum MissedOpportunityType {
+  UNANSWERED_ENQUIRY
+  MISSED_CALL
+  ABANDONED_FORM
+  NOT_BOOKED
+  NO_SHOW
+  QUIET_QUOTE
+  UNREPLIED_DM
+  UNREPLIED_COMMENT
+  UNANSWERED_REVIEW
+  LAPSED_CUSTOMER
+}
+
+enum MissedOpportunityStatus {
+  DETECTED
+  RECOVERING
+  RECOVERED
+  ESCALATED
+  EXPIRED
+}
+
+/// Revenue leaking out of the business, detected continuously and recovered automatically or by an operator.
+model MissedOpportunity {
+  id                  String                  @id @default(cuid())
+  tenantId            String
+  type                MissedOpportunityType
+  status              MissedOpportunityStatus @default(DETECTED)
+  contactId           String?
+  leadId              String?
+  estimatedValueCents Int                     @default(0)
+  recoveredValueCents Int                     @default(0)
+  summary             String
+  detectedAt          DateTime                @default(now())
+  resolvedAt          DateTime?
+  /// Idempotency: one open item per (lead or contact, type).
+  dedupeKey           String
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact   Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead      Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  exception ExceptionItem?
+  runs      AutomationRun[]
+
+  @@unique([tenantId, dedupeKey])
+  @@index([tenantId, status, detectedAt])
+}
+
+/// A reusable automation type switched on for a tenant. Types are declared in src/lib/automations.
+model TenantAutomation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  typeKey   String
+  enabled   Boolean  @default(false)
+  settings  Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, typeKey])
+}
+
+enum AutomationOutcome {
+  SENT
+  COMPLETED
+  SKIPPED
+  ESCALATED
+  FAILED
+}
+
+/// Every automation execution. `summary` is the human line that "Handled for you" shows.
+model AutomationRun {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  typeKey             String
+  outcome             AutomationOutcome
+  summary             String
+  details             Json              @default("{}")
+  contactId           String?
+  leadId              String?
+  missedOpportunityId String?
+  createdAt           DateTime          @default(now())
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  missedOpportunity MissedOpportunity? @relation(fields: [missedOpportunityId], references: [id], onDelete: SetNull)
+  messages          Message[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, typeKey])
+}
+
+enum ExceptionStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+/// The operator queue: anything automation is not confident about, or that tenant rules escalate to a named person.
+model ExceptionItem {
+  id                  String          @id @default(cuid())
+  tenantId            String
+  reason              String
+  suggestedAction     String?
+  confidence          Float?
+  status              ExceptionStatus @default(OPEN)
+  assignedOperatorId  String?
+  escalatedToUserId   String?
+  contactId           String?
+  leadId              String?
+  missedOpportunityId String?         @unique
+  resolution          String?
+  resolvedAt          DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedOperator  User?              @relation("ExceptionOperator", fields: [assignedOperatorId], references: [id], onDelete: SetNull)
+  escalatedTo       User?              @relation("ExceptionEscalatedTo", fields: [escalatedToUserId], references: [id], onDelete: SetNull)
+  contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  missedOpportunity MissedOpportunity? @relation(fields: [missedOpportunityId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt])
+  @@index([assignedOperatorId, status])
+}
+
+/// Append-only stream every module subscribes to: automations, detectors, pipeline advancement, the activity log.
+model DomainEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  type        String
+  payload     Json     @default("{}")
+  causationId String?
+  occurredAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, type])
+}
+
+// ---------------------------------------------------------------------------
+// Content and social (kept from the first build; extended in Phase 3)
 // ---------------------------------------------------------------------------
 
 enum SocialPlatform {
@@ -406,26 +757,24 @@ enum SocialPlatform {
   TIKTOK
   YOUTUBE
   LINKEDIN
+  GOOGLE_BUSINESS
 }
 
-/// One connected channel per platform per tenant (page, IG business account,
-/// TikTok creator, YouTube channel, LinkedIn org page).
-model SocialConnection {
-  id             String         @id @default(cuid())
-  tenantId       String
-  platform       SocialPlatform
+/// A connected destination (page, IG account, channel, GBP listing) under an Integration.
+model Channel {
+  id                String         @id @default(cuid())
+  tenantId          String
+  integrationId     String?
+  platform          SocialPlatform
   externalAccountId String
-  displayName    String?
-  accessTokenEnc String
-  refreshTokenEnc String?
-  tokenExpiresAt DateTime?
-  scopes         String[]       @default([])
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  displayName       String?
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  posts  SocialPost[]
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  posts       SocialPost[]
 
   @@unique([tenantId, platform, externalAccountId])
 }
@@ -442,6 +791,10 @@ enum ContentAssetKind {
   YOUTUBE_META
   SHORT_FORM_SCRIPT
   IMAGE
+  WEB_PAGE
+  BLOG_POST
+  AD_COPY
+  EMAIL
 }
 
 enum ContentStatus {
@@ -453,26 +806,25 @@ enum ContentStatus {
   PUBLISHED
 }
 
-/// Anything the content engine ingests or generates. Generated assets point
-/// back to the raw asset they were derived from via `parentId`.
+/// Anything the content engine ingests or generates. Generated assets point back to their source via `parentId`.
 model ContentAsset {
-  id          String           @id @default(cuid())
-  tenantId    String
-  parentId    String?
-  kind        ContentAssetKind
-  title       String?
-  body        String?
-  fileUrl     String?
-  /// Platform the asset was tailored for, if any.
+  id             String           @id @default(cuid())
+  tenantId       String
+  parentId       String?
+  kind           ContentAssetKind
+  title          String?
+  body           String?
+  fileUrl        String?
   targetPlatform SocialPlatform?
-  status      ContentStatus    @default(DRAFT)
-  /// Model/prompt metadata for generated assets.
-  generation  Json             @default("{}")
-  approvedById String?
-  approvedAt  DateTime?
-  rejectionNote String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  status         ContentStatus    @default(DRAFT)
+  /// True when the asset mentions prices, named people or claims and therefore needs client sign-off.
+  needsClientSignoff Boolean      @default(false)
+  generation     Json             @default("{}")
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectionNote  String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   parent     ContentAsset?  @relation("AssetLineage", fields: [parentId], references: [id], onDelete: SetNull)
@@ -494,14 +846,12 @@ enum PostStatus {
   FAILED
 }
 
-/// A single scheduled publication to one platform. Posting the same asset to
-/// all five platforms creates five SocialPost rows sharing a `batchId`.
+/// A single scheduled publication to one channel. One "post everywhere" action creates one row per channel sharing a `batchId`.
 model SocialPost {
   id             String         @id @default(cuid())
   tenantId       String
-  connectionId   String?
+  channelId      String?
   contentAssetId String?
-  /// Groups the posts created by one "post everywhere" action.
   batchId        String?
   platform       SocialPlatform
   caption        String
@@ -513,14 +863,13 @@ model SocialPost {
   externalPostId String?
   permalink      String?
   errorMessage   String?
-  /// Engagement snapshot: { likes, comments, shares, views, lastSyncedAt }
   metrics        Json           @default("{}")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  connection   SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
-  contentAsset ContentAsset?     @relation(fields: [contentAssetId], references: [id], onDelete: SetNull)
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channel      Channel?      @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  contentAsset ContentAsset? @relation(fields: [contentAssetId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, scheduledFor])
   @@index([tenantId, batchId])
@@ -537,22 +886,113 @@ enum SocialProofKind {
 
 /// Reviews, testimonials and results the content engine can quote from.
 model SocialProofAsset {
-  id          String          @id @default(cuid())
-  tenantId    String
-  kind        SocialProofKind
-  authorName  String?
-  authorTitle String?
-  quote       String?
-  rating      Int?
-  sourceUrl   String?
-  fileUrl     String?
-  consentGiven Boolean        @default(false)
-  capturedAt  DateTime?
-  tags        String[]        @default([])
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id           String          @id @default(cuid())
+  tenantId     String
+  kind         SocialProofKind
+  authorName   String?
+  authorTitle  String?
+  quote        String?
+  rating       Int?
+  sourceUrl    String?
+  fileUrl      String?
+  consentGiven Boolean         @default(false)
+  capturedAt   DateTime?
+  tags         String[]        @default([])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, kind])
+}
+
+// ---------------------------------------------------------------------------
+// Finance (connector layer; extended in Phase 4)
+// ---------------------------------------------------------------------------
+
+enum FinanceProvider {
+  SQUARE
+  STRIPE
+  XERO
+  QUICKBOOKS
+  MANUAL
+}
+
+enum TransactionKind {
+  CONSULTATION_FEE
+  RETAINER_DEPOSIT
+  PAYMENT
+  INVOICE
+  REFUND
+  OTHER
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  OVERDUE
+}
+
+/// Money in or out, from any connected finance provider, keyed on the provider's id per tenant.
+model Transaction {
+  id         String            @id @default(cuid())
+  tenantId   String
+  contactId  String?
+  leadId     String?
+  provider   FinanceProvider   @default(MANUAL)
+  providerId String
+  kind       TransactionKind   @default(PAYMENT)
+  status     TransactionStatus @default(PENDING)
+  amountCents Int
+  currency   String            @default("USD")
+  note       String?
+  occurredAt DateTime
+  rawPayload Json              @default("{}")
+  createdAt  DateTime          @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, providerId])
+  @@index([tenantId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (optional module, off by default)
+// ---------------------------------------------------------------------------
+
+enum InventoryType {
+  LISTING
+  CAPACITY
+  STOCK
+}
+
+enum InventoryStatus {
+  ACTIVE
+  LOW
+  UNAVAILABLE
+  ARCHIVED
+}
+
+/// Whatever a business tracks when the inventory module is on: listings and rent roll, appointment capacity, or stock.
+model InventoryItem {
+  id         String          @id @default(cuid())
+  tenantId   String
+  type       InventoryType
+  externalId String?
+  name       String
+  status     InventoryStatus @default(ACTIVE)
+  quantity   Int?
+  valueCents Int?
+  attributes Json            @default("{}")
+  source     String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type, status])
 }

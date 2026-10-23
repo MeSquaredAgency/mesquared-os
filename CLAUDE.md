@@ -43,13 +43,15 @@ tested modules free of `next/*` imports and JSX.
 
 ## Where things live
 
-- `src/app/api/v1/intake` — lead intake: API key → zod → dedupe → qualify → route
-- `src/lib/qualify` — Green/Red classifier (rule stub + Anthropic engine)
-- `src/lib/intake` — intake schema and pipeline
-- `src/lib/auth` — passwords, signed session cookie, sign-in actions, rate limit
-- `src/lib/tenant` — API-key resolution for inbound requests; current workspace
-- `src/app/(dashboard)` — operator UI; `src/components/dashboard` — its parts
-- `prisma/schema.prisma` — the data model; `prisma/seed.ts` — demo tenants
+- `src/app/console` — Operator Console (portfolio, queue, drill-in); `src/app/app/[tenant]` — Client Portal
+- `src/lib/auth/access.ts` — `getConsoleContext` / `getPortalContext` resolve the user and their permissions; every page starts there
+- `src/lib/templates` — industry templates; applying one is the only way a tenant gets configured
+- `src/lib/modules`, `src/lib/automations` — registries of module keys and automation types
+- `src/lib/opportunities/detect.ts` — SLA detectors; `src/app/api/jobs/detect` runs them
+- `src/lib/events` — `emit()` appends to the tenant stream and runs subscribers
+- `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
+- `src/lib/data` — repository contract with Prisma and in-memory implementations
+- `src/lib/copy.ts` — the only place client-facing words for green/red live
 
 ## Conventions
 

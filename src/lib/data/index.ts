@@ -3,7 +3,7 @@ import type { Repository } from "./repository";
 import { memoryRepository } from "./memory";
 import { prismaRepository } from "./prisma-repository";
 
-export type { Repository, TicketBoard, Workbench } from "./repository";
+export type { Repository, Workbench } from "./repository";
 export { TenantMismatchError } from "./repository";
 
 /**

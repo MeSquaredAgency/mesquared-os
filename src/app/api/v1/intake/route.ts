@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
         intentScore: result.qualification.intentScore,
         reason: result.qualification.reason,
         classifier: result.qualification.classifier,
-        taskId: result.taskId,
         bookingUrl: result.bookingUrl,
       },
       { status: 201 },
