@@ -1,0 +1,546 @@
+// MeSquared OS — core data model
+//
+// Multi-tenancy rule: every operational entity carries a `tenantId` and is
+// only ever read or written through a tenant-scoped query. No client-specific
+// branding, keys or rules live in code — they live on the Tenant row and its
+// integration rows so the platform stays client-agnostic.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  timezone  String   @default("UTC")
+  currency  String   @default("USD")
+  /// Dynamic branding: { logoUrl, primaryColor, accentColor, fromName, replyTo }
+  branding  Json     @default("{}")
+  /// Tenant-configured qualification rules consumed by the AI classifier:
+  /// { greenKeywords[], redKeywords[], minBudget, highIntentServices[], notes }
+  qualificationRules Json @default("{}")
+  /// Free-form operational settings (booking defaults, nurture sequences, etc.)
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships        Membership[]
+  apiKeys            TenantApiKey[]
+  leads              Lead[]
+  tasks              Task[]
+  stockItems         StockItem[]
+  squareIntegration  SquareIntegration?
+  transactions       Transaction[]
+  bookings           Booking[]
+  socialConnections  SocialConnection[]
+  contentAssets      ContentAsset[]
+  socialPosts        SocialPost[]
+  socialProofAssets  SocialProofAsset[]
+  intakeEvents       IntakeEvent[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  avatarUrl    String?
+  passwordHash String?
+  isPlatformAdmin Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   Membership[]
+  assignedLeads Lead[]       @relation("LeadOwner")
+  assignedTasks Task[]       @relation("TaskAssignee")
+  approvedAssets ContentAsset[] @relation("AssetApprover")
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  OPERATOR
+  MARKETING
+  VIEWER
+}
+
+/// A user may belong to many tenants (MeSquared operators work across clients).
+model Membership {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      MembershipRole @default(OPERATOR)
+  createdAt DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+/// Inbound API keys used by web forms / landing pages / ad platforms to post
+/// into /api/v1/intake on behalf of a tenant. Only a hash is stored.
+model TenantApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  label      String
+  keyHash    String    @unique
+  keyPrefix  String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Leads, tickets, tasks
+// ---------------------------------------------------------------------------
+
+/// GREEN = revenue intent (stock, high-intent lead, closing).
+/// RED   = secondary operational admin to automate or defer.
+enum TicketType {
+  GREEN
+  RED
+}
+
+enum LeadSource {
+  WEB_FORM
+  LANDING_PAGE
+  META_LEAD_FORM
+  TIKTOK_LEAD_FORM
+  LINKEDIN_LEAD_FORM
+  YOUTUBE
+  REFERRAL
+  PHONE
+  EMAIL
+  MANUAL
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  BOOKING_SENT
+  BOOKED
+  NURTURING
+  WON
+  LOST
+  ARCHIVED
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  tenantId  String
+  source    LeadSource @default(OTHER)
+  /// Idempotency key from the upstream system (form submission id, ad lead id).
+  externalId String?
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+  company   String?
+  message   String?
+  /// Raw payload exactly as received, for audit and re-qualification.
+  rawPayload Json    @default("{}")
+  /// Normalised answers (budget, timeline, service, etc.) used by the classifier.
+  attributes Json    @default("{}")
+
+  status      LeadStatus @default(NEW)
+  ticketType  TicketType?
+  /// 0–100 intent score from the qualification engine.
+  intentScore Int?
+  /// Human-readable rationale returned by the classifier.
+  qualificationReason String?
+  qualifiedAt DateTime?
+  qualifiedBy String?  // "stub" | "anthropic:<model>" | "operator:<userId>"
+
+  ownerId   String?
+  owner     User?   @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  squareCustomerId String?
+  lifetimeValueCents Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+  bookings     Booking[]
+  transactions Transaction[]
+  intakeEvents IntakeEvent[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, status])
+  @@index([tenantId, ticketType])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, email])
+}
+
+/// Immutable log of every inbound intake hit (accepted, deduped or rejected).
+model IntakeEvent {
+  id         String   @id @default(cuid())
+  tenantId   String
+  leadId     String?
+  source     LeadSource
+  outcome    String   // "created" | "duplicate" | "rejected"
+  payload    Json
+  classifier String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  tenantId    String
+  leadId      String?
+  type        TicketType
+  title       String
+  description String?
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(NORMAL)
+  dueAt       DateTime?
+  /// Automation that produced or should handle this task, e.g. "nurture:welcome".
+  automationKey String?
+  assigneeId  String?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead     Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  assignee User?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, type, status])
+  @@index([tenantId, dueAt])
+}
+
+// ---------------------------------------------------------------------------
+// Stock control (a "green ticket" revenue driver)
+// ---------------------------------------------------------------------------
+
+enum StockStatus {
+  IN_STOCK
+  LOW
+  OUT_OF_STOCK
+  DISCONTINUED
+}
+
+model StockItem {
+  id            String      @id @default(cuid())
+  tenantId      String
+  sku           String
+  name          String
+  description   String?
+  quantity      Int         @default(0)
+  reorderPoint  Int         @default(0)
+  unitCostCents Int?
+  priceCents    Int?
+  status        StockStatus @default(IN_STOCK)
+  squareCatalogObjectId String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Square (per tenant)
+// ---------------------------------------------------------------------------
+
+enum SquareEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+model SquareIntegration {
+  id          String            @id @default(cuid())
+  tenantId    String            @unique
+  environment SquareEnvironment @default(SANDBOX)
+  merchantId  String?
+  locationId  String?
+  /// Encrypted at rest by the application layer before persisting.
+  accessTokenEnc  String
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  webhookSignatureKey String?
+  scopes      String[]          @default([])
+  lastSyncAt  DateTime?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum TransactionKind {
+  CONSULTATION_FEE
+  RETAINER_DEPOSIT
+  PAYMENT
+  REFUND
+  OTHER
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+/// Synced from Square Payments API; keyed on the Square payment id per tenant.
+model Transaction {
+  id              String            @id @default(cuid())
+  tenantId        String
+  leadId          String?
+  squarePaymentId String
+  squareCustomerId String?
+  squareOrderId   String?
+  kind            TransactionKind   @default(PAYMENT)
+  status          TransactionStatus @default(PENDING)
+  amountCents     Int
+  currency        String            @default("USD")
+  note            String?
+  occurredAt      DateTime
+  rawPayload      Json              @default("{}")
+  createdAt       DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, squarePaymentId])
+  @@index([tenantId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+enum BookingProvider {
+  CALCOM
+  GOOGLE_CALENDAR
+  MANUAL
+}
+
+enum BookingStatus {
+  LINK_SENT
+  SCHEDULED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+model Booking {
+  id          String          @id @default(cuid())
+  tenantId    String
+  leadId      String
+  provider    BookingProvider @default(CALCOM)
+  externalId  String?
+  bookingUrl  String?
+  startsAt    DateTime?
+  endsAt      DateTime?
+  status      BookingStatus   @default(LINK_SENT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startsAt])
+}
+
+// ---------------------------------------------------------------------------
+// Omnichannel social engine
+// ---------------------------------------------------------------------------
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  LINKEDIN
+}
+
+/// One connected channel per platform per tenant (page, IG business account,
+/// TikTok creator, YouTube channel, LinkedIn org page).
+model SocialConnection {
+  id             String         @id @default(cuid())
+  tenantId       String
+  platform       SocialPlatform
+  externalAccountId String
+  displayName    String?
+  accessTokenEnc String
+  refreshTokenEnc String?
+  tokenExpiresAt DateTime?
+  scopes         String[]       @default([])
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posts  SocialPost[]
+
+  @@unique([tenantId, platform, externalAccountId])
+}
+
+enum ContentAssetKind {
+  RAW_TEXT
+  RAW_AUDIO
+  RAW_VIDEO
+  TRANSCRIPT
+  HOOK
+  QUOTE
+  POST_COPY
+  CAROUSEL
+  YOUTUBE_META
+  SHORT_FORM_SCRIPT
+  IMAGE
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHED
+}
+
+/// Anything the content engine ingests or generates. Generated assets point
+/// back to the raw asset they were derived from via `parentId`.
+model ContentAsset {
+  id          String           @id @default(cuid())
+  tenantId    String
+  parentId    String?
+  kind        ContentAssetKind
+  title       String?
+  body        String?
+  fileUrl     String?
+  /// Platform the asset was tailored for, if any.
+  targetPlatform SocialPlatform?
+  status      ContentStatus    @default(DRAFT)
+  /// Model/prompt metadata for generated assets.
+  generation  Json             @default("{}")
+  approvedById String?
+  approvedAt  DateTime?
+  rejectionNote String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent     ContentAsset?  @relation("AssetLineage", fields: [parentId], references: [id], onDelete: SetNull)
+  children   ContentAsset[] @relation("AssetLineage")
+  approvedBy User?          @relation("AssetApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  posts      SocialPost[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, kind])
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+/// A single scheduled publication to one platform. Posting the same asset to
+/// all five platforms creates five SocialPost rows sharing a `batchId`.
+model SocialPost {
+  id             String         @id @default(cuid())
+  tenantId       String
+  connectionId   String?
+  contentAssetId String?
+  /// Groups the posts created by one "post everywhere" action.
+  batchId        String?
+  platform       SocialPlatform
+  caption        String
+  mediaUrls      String[]       @default([])
+  tags           String[]       @default([])
+  status         PostStatus     @default(DRAFT)
+  scheduledFor   DateTime?
+  publishedAt    DateTime?
+  externalPostId String?
+  permalink      String?
+  errorMessage   String?
+  /// Engagement snapshot: { likes, comments, shares, views, lastSyncedAt }
+  metrics        Json           @default("{}")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection   SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  contentAsset ContentAsset?     @relation(fields: [contentAssetId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, scheduledFor])
+  @@index([tenantId, batchId])
+}
+
+enum SocialProofKind {
+  TESTIMONIAL
+  REVIEW
+  CASE_STUDY
+  SCREENSHOT
+  VIDEO
+  STAT
+}
+
+/// Reviews, testimonials and results the content engine can quote from.
+model SocialProofAsset {
+  id          String          @id @default(cuid())
+  tenantId    String
+  kind        SocialProofKind
+  authorName  String?
+  authorTitle String?
+  quote       String?
+  rating      Int?
+  sourceUrl   String?
+  fileUrl     String?
+  consentGiven Boolean        @default(false)
+  capturedAt  DateTime?
+  tags        String[]        @default([])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind])
+}
