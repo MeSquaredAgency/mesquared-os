@@ -3,6 +3,13 @@
 Multi-tenant B2B operations, marketing and revenue platform. Next.js 15 App
 Router, TypeScript, Tailwind v4, Prisma/PostgreSQL, zod v4, Anthropic SDK.
 
+**Read first:** `docs/product-spec.md` (what we are building and for whom) and
+`docs/architecture.md` (domain model, surfaces, phased plan). The spec
+supersedes the first-build dashboard: the equal-column green/red board, the
+manual compose box, stock as a core concept and the Square home-screen feed are
+being replaced. Clients never see "green" or "red"; they see "Needs you",
+"Handled for you" and "Recovered".
+
 ## Non-negotiables
 
 - **Tenant isolation.** Every operational row carries `tenantId`. All reads and
