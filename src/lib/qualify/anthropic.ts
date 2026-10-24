@@ -32,12 +32,25 @@ Be conservative: when the message is ambiguous and the lead gave no contact deta
  * bounds the result. Falls back to the stub on any API failure so intake
  * never blocks on the model.
  */
-export function createAnthropicQualifier(opts: { apiKey?: string; model?: string } = {}): Qualifier {
-  const client = new Anthropic(opts.apiKey ? { apiKey: opts.apiKey } : undefined);
+export interface AnthropicQualifierOptions {
+  apiKey?: string;
+  model?: string;
+  /** Alternative API host, e.g. `${NEON_AI_GATEWAY_BASE_URL}/anthropic` for the Neon AI Gateway. */
+  baseURL?: string;
+  /** Recorded on each lead as `anthropic/<via>:<model>` so operators can see which route classified it. */
+  via?: string;
+}
+
+export function createAnthropicQualifier(opts: AnthropicQualifierOptions = {}): Qualifier {
+  const client = new Anthropic({
+    ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
+    ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+  });
   const model = opts.model ?? process.env.QUALIFIER_MODEL ?? DEFAULT_MODEL;
+  const name = `anthropic${opts.via ? `/${opts.via}` : ""}:${model}`;
 
   return {
-    name: `anthropic:${model}`,
+    name,
     async qualify(input: QualificationInput, rules: QualificationRules): Promise<QualificationResult> {
       const baseline = scoreLead(input, rules);
       const fallback = (): QualificationResult => ({ ...baseline, classifier: `${baseline.classifier} (llm fallback)` });
@@ -73,12 +86,12 @@ export function createAnthropicQualifier(opts: { apiKey?: string; model?: string
           ticketType,
           intentScore: score,
           reason: reason || baseline.reason,
-          classifier: `anthropic:${model}`,
+          classifier: name,
           signals: v.signals.map((s) => s.slice(0, 120)),
         };
       } catch (error) {
         if (error instanceof Anthropic.APIError) {
-          console.error(`[qualify] Anthropic API error ${error.status}: ${error.message}`);
+          console.error(`[qualify] ${name} API error ${error.status}: ${error.message}`);
         } else {
           console.error("[qualify] unexpected qualifier error", error instanceof Error ? error.message : error);
         }

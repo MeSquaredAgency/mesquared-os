@@ -1,12 +1,9 @@
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { StatusBadge } from "@/components/shell/status-badge";
+import { LeadRows, LiveLeads } from "@/components/portal/lead-rows";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
-import { ticketLabel } from "@/lib/copy";
 import { repository } from "@/lib/data";
-import { classifierLabel, leadDisplayName } from "@/lib/leads";
-import { formatDateTime, humanize } from "@/lib/utils";
+import { isRealtimeConfigured, LIVE_LEADS_LIMIT, realtimeUrl, sealLeadsQuery, toLiveLeadRow } from "@/lib/realtime/server";
 
 export const metadata = { title: "Leads" };
 
@@ -15,10 +12,23 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
   const { user, access } = await getPortalContext(slug);
   const tenant = access.tenant;
   const viewAll = hasPermission(access, "VIEW_ALL_RECORDS");
+  const onlyAssigneeId = viewAll ? null : user.id;
   const config = await repository.getTenantConfig(tenant.id);
-  const stageName = new Map(config.pipelines.flatMap((p) => p.stages.map((s) => [s.id, `${p.name} · ${s.name}`])));
-  const leads = (await repository.listRecentLeads(tenant.id, 100)).filter((l) => viewAll || l.assigneeId === user.id || l.assigneeId === null);
+  const stageNames = Object.fromEntries(config.pipelines.flatMap((p) => p.stages.map((s) => [s.id, `${p.name} · ${s.name}`])));
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
+
+  // With Neon Realtime the list stays live: the same tenant-scoped query is
+  // rendered here as initial rows and sealed for the browser to subscribe to.
+  let sealed = null;
+  if (isRealtimeConfigured()) {
+    try {
+      sealed = await sealLeadsQuery(tenant.id, { onlyAssigneeId });
+    } catch (error) {
+      console.error("[realtime] could not seal the lead list; rendering it static", error instanceof Error ? error.message : error);
+    }
+  }
+  const limit = sealed ? LIVE_LEADS_LIMIT : 100;
+  const rows = (await repository.listRecentLeads(tenant.id, limit)).filter((l) => viewAll || l.assigneeId === user.id || l.assigneeId === null).map(toLiveLeadRow);
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,38 +38,10 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
       </div>
       <Card>
         <CardContent>
-          {leads.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No leads yet.</p>
+          {sealed ? (
+            <LiveLeads key={sealed.queryFingerprint} tenantSlug={slug} userId={user.id} realtimeUrl={realtimeUrl()} sealedQuery={sealed} rows={rows} fmt={fmt} stageNames={stageNames} />
           ) : (
-            <ul className="divide-y">
-              {leads.map((l) => (
-                <li key={l.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      {leadDisplayName(l)}
-                      <Badge variant={l.ticketType === "GREEN" ? "green" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
-                    </p>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">{l.message ?? "No message"}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {humanize(l.source)} · {formatDateTime(l.createdAt, fmt)} · {classifierLabel(l.qualifiedBy)}
-                      {l.stageId && stageName.has(l.stageId) && <> · {stageName.get(l.stageId)}</>}
-                    </p>
-                    {l.qualificationReason && (
-                      <details className="text-xs text-muted-foreground">
-                        <summary className="cursor-pointer">Why it was classified this way</summary>
-                        <p className="mt-1">{l.qualificationReason}</p>
-                      </details>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm font-semibold tabular-nums" title="Intent score out of 100">
-                      {l.intentScore ?? "–"}
-                    </span>
-                    <StatusBadge status={l.status} />
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <LeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
           )}
         </CardContent>
       </Card>

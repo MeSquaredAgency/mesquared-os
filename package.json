@@ -17,7 +17,8 @@
     "db:studio": "prisma studio",
     "db:local": "node scripts/local-postgres.mjs start",
     "db:local:stop": "node scripts/local-postgres.mjs stop",
-    "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts"
+    "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts",
+    "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -27,14 +28,23 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "@neon/config": "^1.9.3",
+    "@neon/env": "^1.6.4",
+    "@neon/functions": "^0.11.0",
+    "@neon/realtime": "^0.1.2",
+    "@neon/realtime-react": "^0.1.1",
     "@prisma/client": "^6.19.0",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "hono": "^4.13.13",
     "lucide-react": "^0.546.0",
     "next": "^15.5.6",
+    "pg": "^8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "resend": "^6.2.0",
@@ -46,6 +56,7 @@
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.1.14",
     "@types/node": "^24.9.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "embedded-postgres": "^18.4.0-beta.17",

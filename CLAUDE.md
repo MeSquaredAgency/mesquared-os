@@ -28,6 +28,10 @@ being replaced. Clients never see "green" or "red"; they see "Needs you",
   `atLeast` from `src/lib/auth/roles.ts` with the role on `tenant.role`.
 - **Client components get `TenantOption`, never `TenantSummary`.** Rules,
   settings and branding internals stay on the server.
+- **Neon services are optional.** Postgres, the AI Gateway, Object Storage and
+  Realtime are detected with `neonServices()` in `src/lib/neon.ts`; every
+  integration degrades when its variables are missing. Never put a `NEON_*` or
+  `AWS_*` value, a sealed query or a presigned URL into a log.
 
 ## Commands
 
@@ -35,6 +39,7 @@ being replaced. Clients never see "green" or "red"; they see "Needs you",
 npm run dev          # http://localhost:3000, demo mode unless DATABASE_URL is set
 npm run typecheck && npm run lint && npm test && npm run build   # what CI runs
 npm run db:migrate && npm run db:seed                            # with Postgres
+neon deploy --env .env && npm run neon:check                     # provision the Neon branch, prove each service
 ```
 
 Tests use Node's built-in runner with type stripping (`src/test/*.test.ts`).
@@ -52,6 +57,8 @@ tested modules free of `next/*` imports and JSX.
 - `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
 - `src/lib/data` — repository contract with Prisma and in-memory implementations
 - `src/lib/copy.ts` — the only place client-facing words for green/red live
+- `neon.ts` — Neon branch config (AI Gateway, `assets` bucket, `ops` Function with its minute trigger, Realtime); `neon/functions/ops.ts` is the Function
+- `src/lib/neon.ts` — which Neon services are configured; `src/lib/storage.ts` — tenant-prefixed object storage; `src/lib/realtime` — sealed live queries
 
 ## Conventions
 

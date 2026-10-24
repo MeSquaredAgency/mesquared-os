@@ -5,6 +5,7 @@ import { PLATFORM_LABEL } from "@/components/shell/platform";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
+import { getTenantObjectUrl, isStorageConfigured, storageKeyFromFileUrl } from "@/lib/storage";
 import { formatDateTime, humanize } from "@/lib/utils";
 
 export const metadata = { title: "Content" };
@@ -17,6 +18,22 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
   const decided = wb.assets.filter((a) => a.status !== "IN_REVIEW");
 
+  // Files on Neon Object Storage are read through short-lived presigned URLs minted here, per tenant.
+  const fileLinks: Record<string, string> = {};
+  if (isStorageConfigured()) {
+    await Promise.all(
+      wb.assets.map(async (a) => {
+        const key = storageKeyFromFileUrl(a.fileUrl);
+        if (!key) return;
+        try {
+          fileLinks[a.id] = await getTenantObjectUrl(tenant.id, key, 3600);
+        } catch (error) {
+          console.error("[storage] could not presign asset", a.id, error instanceof Error ? error.message : error);
+        }
+      }),
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -25,7 +42,7 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
           Drafts from the engine for {wb.connectedPlatforms.map((p) => PLATFORM_LABEL[p]).join(", ") || "your channels"}. Approve what goes live.
         </p>
       </div>
-      <ContentApprovals tenantSlug={slug} assets={wb.assets} canApprove={hasPermission(access, "APPROVE_CONTENT")} isMember={access.via === "member"} />
+      <ContentApprovals tenantSlug={slug} assets={wb.assets} fileLinks={fileLinks} canApprove={hasPermission(access, "APPROVE_CONTENT")} isMember={access.via === "member"} />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card aria-labelledby="decided-title">
           <CardHeader>
@@ -44,6 +61,14 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
                       <p className="text-xs text-muted-foreground">
                         {humanize(a.kind)}
                         {a.targetPlatform ? ` · ${PLATFORM_LABEL[a.targetPlatform]}` : ""}
+                        {fileLinks[a.id] && (
+                          <>
+                            {" · "}
+                            <a className="underline" href={fileLinks[a.id]} target="_blank" rel="noreferrer">
+                              View file
+                            </a>
+                          </>
+                        )}
                       </p>
                     </div>
                     <StatusBadge status={a.status} />

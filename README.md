@@ -7,8 +7,9 @@ tickets"): stock, high-intent leads and closing.
 ## Stack
 
 Next.js 15 (App Router, TypeScript) · Tailwind CSS v4 + Radix/shadcn-style UI ·
-PostgreSQL + Prisma · Anthropic SDK (lead qualification) · Square, Resend,
-Cal.com adapters to follow.
+Neon (Lakebase Postgres + Prisma, AI Gateway, Object Storage, Functions,
+Realtime) · Anthropic SDK (lead qualification) · Square, Resend, Cal.com
+adapters to follow.
 
 ## Run it
 
@@ -81,7 +82,8 @@ prisma/schema.prisma             Tenant-scoped data model
 src/app/console                  Operator Console: portfolio, queue, workspace drill-in
 src/app/app/[tenant]             Client Portal: home, leads, missed opportunities, content, activity
 src/app/api/v1/intake            Lead intake: API key → zod → dedupe → qualify → contact → lead → playbook
-src/app/api/jobs/detect          Scheduled missed-opportunity detection (JOB_SECRET)
+src/app/api/jobs/tick            Scheduler tick: missed-opportunity detectors + due scheduled actions (JOB_SECRET)
+src/app/book/[tenant]            Platform booking fallback page (Cal.com when connected, otherwise a callback request)
 src/lib/templates                Industry templates (real estate, health & fitness, generic)
 src/lib/modules, src/lib/automations   Module and automation registries
 src/lib/opportunities            Missed-opportunity detectors
@@ -131,13 +133,49 @@ src/components/{shell,console,portal}   UI for the two surfaces
 prints its connection string. Then:
 
 ```bash
-export DATABASE_URL=postgresql://postgres:postgres@localhost:54329/mesquared_os DIRECT_URL=$DATABASE_URL
+export DATABASE_URL=postgresql://postgres:postgres@localhost:54329/mesquared_os
+export DATABASE_URL_UNPOOLED=$DATABASE_URL   # separate line: zsh leaves it empty when combined with the one above
 npm run db:migrate && SEED_OPERATOR_PASSWORD=choose-one npm run db:seed
 MESSAGING_MODE=log npm run db:parity   # real flows against the Prisma repository
 ```
 
-For a shared or hosted database use Neon: put the pooled string in
-`DATABASE_URL` and the direct string in `DIRECT_URL`.
+For a shared or hosted database use Neon (see [Neon services](#neon-services)):
+`neon deploy` writes the pooled string to `DATABASE_URL` and the direct one to
+`DATABASE_URL_UNPOOLED`, which Prisma Migrate uses.
+
+## Neon services
+
+The hosted backend is a Neon project: `.neon` links this checkout to it and
+`neon.ts` declares what every branch gets. One command provisions the branch
+and writes its credentials into `.env` (create it from `.env.example` first,
+without the two local `DATABASE_URL*` lines):
+
+```bash
+npm i -g neon            # once; then `neon login`
+neon deploy --env .env   # apply neon.ts to the linked branch and pull its env vars
+npx prisma migrate deploy && npm run db:seed
+npm run neon:check       # proves each configured service end to end
+```
+
+To keep other local runs in demo mode, deploy with `--no-env-pull` and pull
+into a file Next.js does not auto-load, then source it when you need it:
+`neon env pull --file .env.neon.local` (gitignored; `npm run neon:check` reads it).
+
+| Service | Env vars (written by `neon deploy`) | Where it is used |
+|---|---|---|
+| Lakebase Postgres | `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED` | Prisma: the app queries through the pooler, Migrate uses the direct string (`prisma/schema.prisma`) |
+| AI Gateway | `NEON_AI_GATEWAY_BASE_URL`, `NEON_AI_GATEWAY_TOKEN` | Lead qualification runs Claude through the branch gateway (`src/lib/qualify`); `QUALIFIER_MODEL` names the catalog model, `ANTHROPIC_API_KEY` is only the fallback |
+| Object Storage | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Private bucket `assets`: `POST /api/v1/assets` (tenant API key, multipart `file`) stores under `tenants/<id>/…` and creates a `ContentAsset`; every read is a presigned URL (`src/lib/storage.ts`, portal content page, `GET /api/v1/assets/:id`) |
+| Functions | injected on the function | `ops` (`neon/functions/ops.ts`): `GET /` reports database status next to the data; `POST /tick` receives the one-minute trigger and forwards `POST /api/jobs/tick` once `NEXT_PUBLIC_APP_URL` is a public URL and `JOB_SECRET` is in `.env` at deploy time |
+| Realtime | `NEON_REALTIME_URL`, `NEON_REALTIME_SECRET` | The portal's lead list is a live, tenant-scoped query sealed on the server (`src/lib/realtime`, renewed via `POST /api/v1/live/leads`); the secret never reaches the browser |
+
+Everything degrades: with a variable unset the app falls back (demo data, the
+rule qualifier, no uploads, a static list) and `GET /api/v1/health` reports
+`services` and `qualifier` so you can see what a deployment has. Functions,
+Object Storage, the AI Gateway and Realtime need the project in one of Neon's
+supported AWS regions; the AI Gateway also needs a paid plan. Pass
+`--function-url <invocation url>` (from `neon functions get ops`) to
+`npm run neon:check` to exercise the Function too.
 
 ## Tests and CI
 
@@ -168,6 +206,9 @@ email.
 | Meta lead forms | `GET/POST /api/v1/webhooks/meta` (handshake + signed leadgen events, Graph fetch) | page id on the tenant's META integration |
 | Forwarding inbox (REA, Domain, anything) | `POST /api/v1/inbound/email` (generic inbound-webhook JSON) | recipient address on the tenant's EMAIL_FORWARDING integration |
 | Cal.com bookings | `POST /api/v1/webhooks/calcom` (signed) | `metadata[tenant]` + `metadata[leadId]` on the booking |
+| Twilio inbound SMS | `POST /api/v1/inbound/sms` (signature-checked with `TWILIO_AUTH_TOKEN`; STOP/UNSUBSCRIBE withdraws SMS consent, START restores it) | the tenant's number |
+| Missed calls | `POST /api/v1/inbound/call` (tenant API key required; the business number is no longer accepted as a credential) | API key |
+| Booking fallback | `/book/[tenant]?lead=…` forwards to Cal.com when connected, otherwise takes a callback request | tenant slug |
 
 When a lead is green the playbook runs off the `lead.qualified` event: an
 acknowledgement with a booking link goes out by SMS, WhatsApp or email
@@ -176,9 +217,10 @@ the lead is marked responded and "booking link sent", the members holding
 `RECEIVE_LEAD_ALERTS` are emailed, and every step is logged for "Handled for
 you". Messaging providers are platform-level (Twilio, Resend) but each tenant
 sends under its own name, number and reply-to. Set `MESSAGING_MODE=log` to
-print instead of send. The SLA watch (`POST /api/jobs/detect`, run it every
-few minutes) turns leads that miss the response or booking window into missed
-opportunities for an operator.
+print instead of send. The scheduler tick (`POST /api/jobs/tick`, run it every
+minute) runs the SLA watch that turns leads which miss the response or booking
+window into missed opportunities for an operator, then the due scheduled
+actions; there is no separate detect route.
 
 ## Missed opportunities and automations
 

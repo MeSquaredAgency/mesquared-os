@@ -18,10 +18,12 @@ interface Props {
   canApprove: boolean;
   /** Tenant members may sign off assets flagged for the client; operators approve the routine ones. */
   isMember: boolean;
+  /** Asset id → presigned URL for assets with a file on Neon Object Storage (minted on the server). */
+  fileLinks?: Record<string, string>;
 }
 
 /** Content waiting for approval. Decisions persist through a server action with an optimistic overlay. */
-export function ContentApprovals({ tenantSlug, assets, canApprove, isMember }: Props) {
+export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fileLinks }: Props) {
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [items, apply] = useOptimistic(assets, (current: ContentAssetRecord[], change: { id: string; status: ContentStatus }) =>
@@ -67,6 +69,11 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember }: P
                   </div>
                   <p className="text-sm font-medium">{a.title}</p>
                   <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
+                  {fileLinks?.[a.id] && (
+                    <a className="mt-1 inline-block text-xs underline" href={fileLinks[a.id]} target="_blank" rel="noreferrer">
+                      View file
+                    </a>
+                  )}
                   {canApprove ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="green" onClick={() => decide(a.id, "APPROVED")} disabled={pending || blocked} title={blocked ? "Mentions prices, names or claims: the client signs this off" : undefined}>
