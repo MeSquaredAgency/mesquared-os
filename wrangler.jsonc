@@ -1,0 +1,17 @@
+{
+  // Cloudflare Workers deployment (spike). Build with `npm run cf:build`, try with `npm run cf:preview`, ship with `npm run cf:deploy`.
+  // Secrets (AUTH_SECRET, DATABASE_URL, JOB_SECRET, ...) are set with `wrangler secret put NAME`, never here.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mesquared-os",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "mesquared-os" }],
+  // The scheduler: one tick a minute, forwarded to /api/jobs/tick through the self-reference binding (see cloudflare/worker.ts).
+  "triggers": { "crons": ["* * * * *"] },
+  // The tick runs every tenant's detectors and due actions in one request; give it headroom beyond the 30 s default.
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true },
+  "vars": { "NEXTJS_ENV": "production" }
+}
