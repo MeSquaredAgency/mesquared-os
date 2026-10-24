@@ -38,8 +38,9 @@ export async function middleware(req: NextRequest) {
   return res;
 }
 
-// Everything is protected except API routes (API-key auth) and static assets.
-// New pages are therefore private by default.
+// Everything is protected except API routes (API-key auth), static assets and the
+// two public surfaces leads and customers land on: tracked links (/r/<code>) and the
+// booking fallback page (/book/<tenant>). New pages are therefore private by default.
 export const config = {
-  matcher: ["/((?!api/|_next/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)"],
+  matcher: ["/((?!api/|_next/|r/|book/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)"],
 };
