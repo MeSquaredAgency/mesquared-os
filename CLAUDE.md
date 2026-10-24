@@ -52,7 +52,8 @@ tested modules free of `next/*` imports and JSX.
 - `src/lib/auth/access.ts` — `getConsoleContext` / `getPortalContext` resolve the user and their permissions; every page starts there
 - `src/lib/templates` — industry templates; applying one is the only way a tenant gets configured
 - `src/lib/modules`, `src/lib/automations` — registries of module keys and automation types
-- `src/lib/opportunities/detect.ts` — SLA detectors; `src/app/api/jobs/detect` runs them
+- `src/lib/opportunities/detect.ts` — SLA detectors; `POST /api/jobs/tick` (`src/lib/jobs/tick.ts`) runs them together with due scheduled actions, every minute
+- `src/lib/messaging` — the only place outbound policy lives: destination allow-list, consent by region, quiet hours, daily caps; every automated send goes through `sendMessage`
 - `src/lib/events` — `emit()` appends to the tenant stream and runs subscribers
 - `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
 - `src/lib/data` — repository contract with Prisma and in-memory implementations
