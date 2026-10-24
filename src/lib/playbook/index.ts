@@ -1,7 +1,7 @@
 import { repository } from "@/lib/data";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, sendMessage, templates, type OutboundChannel } from "@/lib/messaging";
+import { channelFor, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
 import { safeTopic } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
@@ -31,14 +31,15 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
       await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SKIPPED", summary: `${name} left no phone or email, so no acknowledgement could be sent.`, leadId: lead.id, contactId: lead.contactId });
     } else {
       const topic = safeTopic(typeof lead.attributes.service === "string" ? lead.attributes.service : null, tenant.qualificationRules.highIntentServices);
+      const identity = await senderIdentity(tenant, lead.assigneeId);
       let channel = candidates[0];
       let result = null as Awaited<ReturnType<typeof sendMessage>> | null;
       const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Acknowledged ${name} with a booking link.`, leadId: lead.id, contactId: lead.contactId, details: { bookingLink: "prefilled" } });
       const notConfigured: string[] = [];
       for (const candidate of candidates) {
         channel = candidate;
-        const content = channel === "EMAIL" ? templates.acknowledgementEmail({ tenant, firstName: lead.firstName, bookingUrl, topic }) : { subject: undefined, body: templates.acknowledgementSms({ tenant, firstName: lead.firstName, bookingUrl, topic }) };
-        result = await sendMessage({ tenant, contactId: lead.contactId, channel, to: channel === "EMAIL" ? lead.email! : lead.phone!, body: content.body, subject: content.subject, automationRunId: run.id, transactional: true });
+        const content = channel === "EMAIL" ? templates.acknowledgementEmail({ tenant, firstName: lead.firstName, bookingUrl, topic, signedBy: identity.signedBy }) : { subject: undefined, body: templates.acknowledgementSms({ tenant, firstName: lead.firstName, bookingUrl, topic, signedBy: identity.signedBy }) };
+        result = await sendMessage({ tenant, contactId: lead.contactId, channel, to: channel === "EMAIL" ? lead.email! : lead.phone!, body: content.body, subject: content.subject, automationRunId: run.id, transactional: true, replyTo: identity.replyTo });
         if (result.ok || !result.simulated) break; // sent, or a real provider error worth surfacing; only "not configured" falls through
         notConfigured.push(channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp");
       }

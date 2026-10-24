@@ -14,6 +14,7 @@ export const realEstateTemplate: IndustryTemplate = {
     { key: "owner", name: "Director", permissions: ["VIEW_FINANCES", "APPROVE_CONTENT", "RECEIVE_LEAD_ALERTS", "MANAGE_USERS", "VIEW_ALL_RECORDS"] },
     { key: "manager", name: "Region Manager", permissions: ["APPROVE_CONTENT", "RECEIVE_LEAD_ALERTS", "MANAGE_USERS", "VIEW_ALL_RECORDS"] },
     { key: "staff", name: "Property Manager", permissions: ["RECEIVE_LEAD_ALERTS"] },
+    { key: "team", name: "Team member", permissions: [] },
     { key: "accountant", name: "External accountant", permissions: ["VIEW_FINANCES"] },
   ],
   pipelines: [
@@ -88,6 +89,7 @@ export const realEstateTemplate: IndustryTemplate = {
     { key: "ads_sync", settings: { pacingDriftPct: 25 } },
     { key: "payment_reminders", settings: { remindDaysBefore: 3, chaseEveryDays: 7, maxChases: 3 } },
     { key: "finance_sync" },
+    { key: "inventory_sync" },
     { key: "website_analytics" },
   ],
   brand: {

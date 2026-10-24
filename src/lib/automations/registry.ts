@@ -26,6 +26,7 @@ export const AUTOMATIONS: AutomationDefinition[] = [
   { key: "social_sync", name: "Social inbox and analytics sync", description: "Pulls comments, messages, reviews and channel numbers from connected platforms.", triggers: ["schedule"], defaultEnabled: true },
   { key: "ads_sync", name: "Ad spend and pacing", description: "Pulls daily spend from connected ad accounts and flags when the month is running over or under budget.", triggers: ["schedule"], defaultEnabled: true },
   { key: "finance_sync", name: "Finance sync", description: "Pulls payments, expenses and invoices from connected finance providers.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "inventory_sync", name: "Listings sync", description: "Pulls listings and the rent roll from the property management software every day; new listings become content material.", triggers: ["schedule"], defaultEnabled: true },
   { key: "website_analytics", name: "Website numbers", description: "Rolls up visits, form starts and submissions from the site beacon every day.", triggers: ["schedule"], defaultEnabled: true },
   { key: "messaging", name: "Held messages", description: "Sends messages held during quiet hours when the morning comes.", triggers: ["schedule"], defaultEnabled: true },
 ];

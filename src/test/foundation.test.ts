@@ -29,7 +29,7 @@ describe("industry templates", () => {
 
   it("real estate template names roles the way the brief describes and keeps management as default", () => {
     const t = getTemplate("real_estate");
-    assert.deepEqual(t.roles.map((r) => r.name), ["Director", "Region Manager", "Property Manager", "External accountant"]);
+    assert.deepEqual(t.roles.map((r) => r.name), ["Director", "Region Manager", "Property Manager", "Team member", "External accountant"]);
     assert.equal(t.pipelines.find((p) => p.isDefault)?.key, "management");
     assert.equal(t.qualificationRules.requirePhone, true);
   });

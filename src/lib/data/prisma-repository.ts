@@ -1050,6 +1050,10 @@ export const prismaRepository: Repository = {
     ];
   },
 
+  async setUserFlags(userId, flags) {
+    await getPrisma().user.update({ where: { id: userId }, data: { ...(flags.isOperator !== undefined ? { isOperator: flags.isOperator } : {}), ...(flags.isPlatformAdmin !== undefined ? { isPlatformAdmin: flags.isPlatformAdmin } : {}) } });
+  },
+
   async createUser(data) {
     const db = getPrisma();
     const email = data.email.toLowerCase();

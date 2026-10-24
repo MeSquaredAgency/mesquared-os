@@ -325,6 +325,22 @@ compliance line) and land in `/console/<slug>/settings`, which holds:
   name a listing get its details in the automatic reply).
 
 The portal gains `/app/<slug>/inventory` when the inventory module is on.
+Listings can also come straight from the client's property management
+software: the `PROPERTY_MANAGEMENT` integration names the vendor (PropertyMe
+today, `src/lib/inventory/providers/`) and holds its encrypted token; the
+daily `inventory_sync` automation pulls the rent roll and vacancies.
+`INVENTORY_MODE=log` simulates it with two sample listings.
+
+Messages can be signed by the person a lead is assigned to (Settings →
+Business → "Sign messages as the person assigned to the lead"): their first
+name goes in the sign-off and replies go to their email, while the business
+name, number and sending domain stay the same. Unassigned leads are signed by
+the business.
+
+Real workspaces are provisioned from a JSON definition kept outside the
+repository (`tenants/` is ignored): `npm run tenant:provision -- tenants/<slug>.json`
+creates or refreshes the workspace, its people, operators and platform admins
+against whatever `DATABASE_URL` points at, and never prints a password.
 Everything is a repository method, so it runs identically in demo mode and on
 Postgres; `npm run db:parity` provisions a throwaway workspace to prove it.
 Runbooks live in `docs/runbooks/` and the launch gate is

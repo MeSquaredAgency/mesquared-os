@@ -237,3 +237,78 @@ describe("inventory", () => {
     assert.doesNotMatch(reply!.summary, /\b(green|red)\b/i);
   });
 });
+
+describe("signing as the assigned person", () => {
+  it("resolves the assignee's first name and email only when the switch is on and the lead is assigned to a member", async () => {
+    const { senderIdentity, templates } = await import("@/lib/messaging");
+    const dana = (await repository.listTenantPeople(fresh.id)).find((p) => p.via === "member")!;
+    assert.deepEqual(await senderIdentity(fresh, dana.userId), { signedBy: null, replyTo: null, userId: null }, "off by default");
+    fresh = (await repository.updateTenant(fresh.id, { branding: { ...fresh.branding, signAsAssignee: true } }))!;
+    const identity = await senderIdentity(fresh, dana.userId);
+    assert.equal(identity.signedBy, "Dana");
+    assert.equal(identity.replyTo, "owner@coastline.example");
+    assert.deepEqual(await senderIdentity(fresh, null), { signedBy: null, replyTo: null, userId: null }, "unassigned leads are signed by the business");
+    assert.equal((await senderIdentity(fresh, "user_ops")).signedBy, null, "operators never sign client messages");
+
+    const signed = templates.bookingConfirmation({ tenant: fresh, firstName: "Sam", when: null, channel: "EMAIL", signedBy: "Dana" });
+    assert.match(signed.body, /Kind regards,\nDana, Coastline Property\n/);
+    assert.match(signed.body, /automated message from Dana at Coastline Property Group/);
+    const sms = templates.acknowledgementSms({ tenant: fresh, firstName: "Sam", bookingUrl: "https://x/y", topic: null, signedBy: "Dana" });
+    assert.match(sms, /Dana will get back to you/);
+    assert.match(sms, /automated reply from Dana at Coastline Property Group/);
+    const unsigned = templates.bookingConfirmation({ tenant: fresh, firstName: "Sam", when: null, channel: "EMAIL" });
+    assert.doesNotMatch(unsigned.body, /Dana/);
+    assert.equal(templates.acknowledgementSms({ tenant: fresh, firstName: null, bookingUrl: "https://x/y", topic: null, signedBy: "http://evil" }).includes("evil"), false, "a bad name is dropped, not sent");
+  });
+
+  it("the acknowledgement goes out signed by the assignee, with replies to them", async () => {
+    const { runGreenLeadPlaybook } = await import("@/lib/playbook");
+    const dana = (await repository.listTenantPeople(fresh.id)).find((p) => p.via === "member")!;
+    const result = await processIntake(fresh, intakeSchema.parse({ source: "WEB_FORM", firstName: "Priya", email: "priya@example.com", phone: "+61400111222", message: "I would like a sales appraisal of my home in Glenelg, I am the owner." }), {});
+    assert.ok(result.outcome === "created" && result.lead.ticketType === "GREEN", `green lead expected, got ${result.outcome}`);
+    await repository.assignLead(fresh.id, result.lead.id, dana.userId);
+    const lead = (await repository.findLeadById(fresh.id, result.lead.id))!;
+    assert.equal(lead.assigneeId, dana.userId);
+    // The log provider prints the first 120 characters of every send; that is enough to see who signed it.
+    const logged: string[] = [];
+    const original = console.info;
+    console.info = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+    try {
+      await runGreenLeadPlaybook(fresh, lead);
+    } finally {
+      console.info = original;
+    }
+    const ack = logged.find((l) => /priya@example\.com/.test(l) && /Thank you for getting in touch/.test(l));
+    assert.ok(ack, `acknowledgement email logged: ${logged.slice(-3).join(" | ")}`);
+    assert.match(ack!, /and Dana will be/);
+    const runs = await repository.listAutomationRuns(fresh.id, 10);
+    assert.ok(runs.some((r) => r.typeKey === "enquiry_auto_reply" && r.outcome === "SENT" && /Acknowledged Priya/.test(r.summary)), "acknowledgement logged as sent");
+  });
+});
+
+describe("listings sync from property management software", () => {
+  it("pulls the rent roll through the provider, upserts it, and records what it did", async () => {
+    process.env.INVENTORY_MODE = "log";
+    const { connectInventoryVendor, loadInventoryConnection, runInventorySync } = await import("@/lib/inventory/sync");
+    assert.equal((await runInventorySync(fresh)).skipped, "no property management software connected");
+    await connectInventoryVendor(fresh.id, "propertyme", { accessToken: "test-token", refreshToken: "r", clientId: "c", clientSecret: "s" }, { label: "PropertyMe" });
+    const connection = await loadInventoryConnection(fresh.id);
+    assert.equal(connection?.vendor, "propertyme");
+    assert.equal(connection?.creds.accessToken, "test-token", "token round-trips through encryption");
+    assert.equal((await repository.getTenantConfig(fresh.id)).integrations.find((i) => i.provider === "PROPERTY_MANAGEMENT")?.status, "CONNECTED");
+    const first = await runInventorySync(fresh);
+    assert.deepEqual(first, { created: 2, updated: 0, skipped: null });
+    const again = await runInventorySync(fresh);
+    assert.equal(again.created, 0);
+    const items = await repository.listInventory(fresh.id);
+    const harbour = items.find((i) => i.externalId === "log-lot-1");
+    assert.ok(harbour && harbour.status === "ACTIVE" && harbour.source === "propertyme" && harbour.attributes.rentPerWeekCents === 65_000);
+    assert.equal(items.find((i) => i.externalId === "log-lot-2")?.status, "UNAVAILABLE");
+    const runs = await repository.listAutomationRuns(fresh.id, 10);
+    assert.ok(runs.some((r) => r.typeKey === "inventory_sync" && r.outcome === "COMPLETED" && /2 listings from propertyme/.test(r.summary)), "sync run recorded");
+    assert.equal((await findListingMentioned(fresh.id, "is 7 harbour view terrace still available?"))?.externalId, "log-lot-1", "synced listings answer enquiries");
+    assert.equal((await repository.listInventory(harbor.id)).some((i) => i.externalId === "log-lot-1"), false, "isolated");
+    await repository.setAutomation(fresh.id, "inventory_sync", { enabled: false });
+    assert.equal((await runInventorySync(fresh)).skipped, "listings sync off");
+  });
+});

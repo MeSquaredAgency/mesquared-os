@@ -516,6 +516,8 @@ export interface Repository {
   // --- users and access -----------------------------------------------------
   findUserById(id: string): Promise<UserRecord | null>;
   findUserByEmail(email: string): Promise<{ user: UserRecord; passwordHash: string | null } | null>;
+  /** Operator and platform-admin flags; the only way they change after creation. */
+  setUserFlags(userId: string, flags: { isOperator?: boolean; isPlatformAdmin?: boolean }): Promise<void>;
   /** Every tenant the user can open: memberships (with role), operator assignments, or all for platform admins. */
   listTenantAccess(userId: string): Promise<TenantAccess[]>;
   findTenantBySlug(slug: string): Promise<TenantSummary | null>;

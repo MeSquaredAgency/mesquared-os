@@ -15,3 +15,6 @@ coverage/
 
 # personal Claude Code settings
 .claude/settings.local.json
+
+# Real client workspace definitions used by `npm run tenant:provision`: data, never source.
+/tenants/

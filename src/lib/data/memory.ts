@@ -1113,6 +1113,13 @@ export const memoryRepository: Repository = {
     return out;
   },
 
+  async setUserFlags(userId, flags) {
+    const u = store().users.find((x) => x.id === userId);
+    if (!u) throw new Error("User not found.");
+    if (flags.isOperator !== undefined) u.isOperator = flags.isOperator;
+    if (flags.isPlatformAdmin !== undefined) u.isPlatformAdmin = flags.isPlatformAdmin;
+  },
+
   async createUser(data) {
     const s = store();
     const email = data.email.toLowerCase();

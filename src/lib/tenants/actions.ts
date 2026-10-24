@@ -79,6 +79,7 @@ const settingsSchema = z.object({
   fromName: z.string().trim().max(80).optional(),
   replyTo: z.string().trim().email().or(z.literal("")).optional(),
   primaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).or(z.literal("")).optional(),
+  signAsAssignee: z.boolean().optional(),
   firstResponseMinutes: z.number().int().min(1).max(1440).optional(),
   bookingWindowHours: z.number().int().min(1).max(720).optional(),
   quietStart: z.number().int().min(0).max(23).optional(),
@@ -103,7 +104,7 @@ export async function saveTenantSettingsAction(tenantId: string, input: z.input<
     const parsed = settingsSchema.safeParse(input);
     if (!parsed.success) return { ok: false, message: "Some values are out of range; check the numbers and the email address." };
     const d = parsed.data;
-    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}) };
+    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}) };
     const sla = { ...tenant.sla, ...(d.firstResponseMinutes ? { firstResponseMinutes: d.firstResponseMinutes } : {}), ...(d.bookingWindowHours ? { bookingWindowHours: d.bookingWindowHours } : {}), ...(d.quietStart !== undefined && d.quietEnd !== undefined ? { quietHours: { start: d.quietStart, end: d.quietEnd } } : {}) };
     const q = { ...tenant.qualificationRules };
     const areas = list(d.serviceAreas);

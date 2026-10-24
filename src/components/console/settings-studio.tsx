@@ -142,6 +142,7 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
     fromName: tenant.branding.fromName ?? "",
     replyTo: tenant.branding.replyTo ?? "",
     primaryColor: tenant.branding.primaryColor ?? "",
+    signAsAssignee: Boolean(tenant.branding.signAsAssignee),
     firstResponseMinutes: String(tenant.sla.firstResponseMinutes),
     bookingWindowHours: String(tenant.sla.bookingWindowHours),
     quietStart: String(tenant.sla.quietHours?.start ?? 21),
@@ -187,6 +188,9 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
             {field("Quiet hours start (0–23)", "quietStart", { type: "number", min: 0, max: 23 })}
             {field("Quiet hours end (0–23)", "quietEnd", { type: "number", min: 0, max: 23 })}
           </div>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={f.signAsAssignee} onChange={(e) => setF({ ...f, signAsAssignee: e.target.checked })} /> Sign messages as the person assigned to the lead (replies go to them; the business name and number stay the same)
+          </label>
         </CardContent>
       </Card>
       <Card>
@@ -215,6 +219,7 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
                   fromName: f.fromName,
                   replyTo: f.replyTo,
                   primaryColor: f.primaryColor,
+                  signAsAssignee: f.signAsAssignee,
                   firstResponseMinutes: Number(f.firstResponseMinutes),
                   bookingWindowHours: Number(f.bookingWindowHours),
                   quietStart: Number(f.quietStart),

@@ -54,6 +54,8 @@ export interface TenantBranding {
   accentColor?: string;
   fromName?: string;
   replyTo?: string;
+  /** Sign automated messages as the person assigned to the lead (their first name, replies to their email); the business otherwise. */
+  signAsAssignee?: boolean;
 }
 
 /** Tenant-configured rules consumed by the qualification engine. */

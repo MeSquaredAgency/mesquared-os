@@ -223,7 +223,8 @@ levels, escalation rules, opportunity values, modules, automations), people
 with one-time passwords, scoped API keys issued and revoked in the UI,
 inventory module with CSV import feeding the content engine and the
 listing-aware enquiry reply, launch readiness for the workspace and the
-deployment, runbooks and the launch checklist against the success test. Real
+deployment, runbooks and the launch checklist against the success test;
+messages signed by the assigned person; a PropertyMe listings sync. Real
 tenants are provisioned as data on the production database once their
 details are confirmed.
 

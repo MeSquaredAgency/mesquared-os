@@ -5,6 +5,22 @@ into code: not their name, licence line, keys, phrasing or rules. If a client
 needs something the template cannot express, extend the template or add a
 setting; never add a branch for them.
 
+## 0. Or do it from a file
+
+For a real client, write a definition under `tenants/` (ignored by git; see
+the comment at the top of `scripts/provision.ts` for the shape) and run:
+
+```bash
+npm run tenant:provision -- tenants/<slug>.json
+```
+
+It creates or refreshes the workspace, applies the template, invites the
+people with their roles, assigns operators and confirms platform admins, and
+prints the readiness score. Passwords are never printed: reset each person's
+from Settings → People and hand the one-time password over privately. Steps
+1 to 3 below are what the file does for you; 4 to 6 still happen in the
+console.
+
 ## 1. Create the workspace
 
 Console → **New workspace** (platform admins only).
@@ -45,10 +61,17 @@ currency. The values drive the money figures the client sees.
 - Connect the integrations the client uses (Meta lead forms, Cal.com, Twilio
   number, Google Business Profile, Facebook and Instagram pages, ad accounts,
   finance provider). Credentials are encrypted per integration row.
-- Real estate: switch **Inventory** on (it is, by template) and import the
-  listings or rent roll from CSV under Settings → **Inventory**. New active
-  listings become content material and enquiries that name one get its link
-  in the automatic reply.
+- Real estate: switch **Inventory** on (it is, by template) and either import
+  the listings or rent roll from CSV under Settings → **Inventory**, or connect
+  the property management software (PropertyMe: an OAuth token with the
+  `property:read` and `offline_access` scopes, stored with
+  `connectInventoryVendor` in `src/lib/inventory/sync.ts`). The daily sync
+  then keeps the rent roll current. New active listings become content
+  material and enquiries that name one get its link in the automatic reply.
+- If the client wants messages signed by the agent looking after each lead,
+  tick "Sign messages as the person assigned to the lead" under Settings →
+  Business. The lead must be assigned for it to apply; unassigned leads are
+  signed by the business.
 
 ## 5. Modules and automations
 

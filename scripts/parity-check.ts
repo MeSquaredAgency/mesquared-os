@@ -23,6 +23,7 @@ import { markOverdue, runInvoiceReminders } from "@/lib/finance/sync";
 import { rollupSite } from "@/lib/website/rollup";
 import { hashApiKey } from "@/lib/crypto";
 import { csvToInventory, findListingMentioned, importInventory, registerInventory } from "@/lib/inventory";
+import { connectInventoryVendor, loadInventoryConnection, runInventorySync } from "@/lib/inventory/sync";
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
 
@@ -266,6 +267,11 @@ await step("launch: provision a workspace, invite, API key, inventory import, re
   assert.equal(imported.created, 1);
   assert.equal(await importInventory(fresh, csvToInventory(`address,status\n"${stamp} Parity Street",leased`).items).then((r) => r.updated), 1, "same address updates");
   assert.equal(await findListingMentioned(fresh.id, `about ${stamp} parity street`), null, "leased listing not offered");
+  process.env.INVENTORY_MODE = "log";
+  await connectInventoryVendor(fresh.id, "propertyme", { accessToken: "parity-token" }, { label: "PropertyMe" });
+  const synced = await runInventorySync(fresh);
+  assert.equal(synced.created, 2, "rent roll pulled through the simulated provider");
+  assert.equal((await loadInventoryConnection(fresh.id))?.creds.accessToken, "parity-token", "token round-trips through encryption on Postgres");
   const readiness = readinessSummary(await tenantReadiness(fresh));
   assert.ok(readiness.requiredTotal > 0 && readiness.requiredPassed > 0);
   await repository.revokeApiKey(fresh.id, issued.key.id);

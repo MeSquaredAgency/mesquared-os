@@ -2,7 +2,7 @@ import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel } from "@/lib/messaging";
+import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity } from "@/lib/messaging";
 import { whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
@@ -10,6 +10,7 @@ import { runAdsSync } from "@/lib/ads/sync";
 import { runFinanceSync } from "@/lib/finance/sync";
 import { rollupSite } from "@/lib/website/rollup";
 import { describeListing, findListingMentioned } from "@/lib/inventory";
+import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -51,7 +52,9 @@ interface SendAndLogInput {
   /** Who the message goes to; the channel order comes from the region (phone first) with the other as fallback. */
   recipient: { email: string | null; phone: string | null };
   /** Builds the message for whichever channel ends up being used. */
-  compose: (channel: OutboundChannel) => { body: string; subject?: string };
+  compose: (channel: OutboundChannel, signedBy: string | null) => { body: string; subject?: string };
+  /** Who signs it; resolved from the lead's assignee by callers that have one. Defaults to the business. */
+  identity?: SenderIdentity;
   /** Restrict to these channels (e.g. a missed-call reply is never an email). */
   only?: OutboundChannel[];
   contactId: string | null;
@@ -93,8 +96,8 @@ export async function sendAndLog(input: SendAndLogInput) {
   const notConnected: string[] = [];
   for (const candidate of candidates) {
     channel = candidate;
-    const msg = input.compose(channel);
-    result = await sendMessage({ tenant, contactId: input.contactId, channel, to: addressFor(channel, input.recipient), body: msg.body, subject: msg.subject, automationRunId: run.id, transactional: input.transactional });
+    const msg = input.compose(channel, input.identity?.signedBy ?? null);
+    result = await sendMessage({ tenant, contactId: input.contactId, channel, to: addressFor(channel, input.recipient), body: msg.body, subject: msg.subject, automationRunId: run.id, transactional: input.transactional, replyTo: input.identity?.replyTo ?? null });
     if (result.ok || !result.simulated) break;
     notConnected.push(channelName(channel));
   }
@@ -143,7 +146,7 @@ export async function onBookingCreated(tenant: TenantSummary, lead: LeadRecord, 
   // Idempotent: a redelivered webhook never confirms twice.
   if (!booking?.confirmedAt || rescheduled) {
     await repository.updateBooking(tenant.id, bookingId, { confirmedAt: new Date() });
-    await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel) => templates.bookingConfirmation({ tenant, firstName: lead.firstName, when, channel, rescheduled }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `${rescheduled ? "Confirmed the new time of" : "Confirmed"} ${name}'s appointment${when ? ` ${when}` : ""}.`, who: name, verb: "confirm the appointment for" });
+    await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel, signedBy) => templates.bookingConfirmation({ tenant, firstName: lead.firstName, when, channel, rescheduled, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `${rescheduled ? "Confirmed the new time of" : "Confirmed"} ${name}'s appointment${when ? ` ${when}` : ""}.`, who: name, verb: "confirm the appointment for" });
   }
 
   if (startsAt) {
@@ -186,7 +189,7 @@ export async function onBookingCancelled(tenant: TenantSummary, lead: LeadRecord
   const settings = await automationSettings(tenant.id, "booking_lifecycle");
   if (!settings) return;
   const bookingUrl = await bookingLinkFor(tenant, lead);
-  await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel) => templates.bookingCancelled({ tenant, firstName: lead.firstName, bookingUrl, channel }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Offered ${leadDisplayName(lead)} another time after they cancelled.`, who: leadDisplayName(lead), verb: "offer another time to" });
+  await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel, signedBy) => templates.bookingCancelled({ tenant, firstName: lead.firstName, bookingUrl, channel, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Offered ${leadDisplayName(lead)} another time after they cancelled.`, who: leadDisplayName(lead), verb: "offer another time to" });
   void bookingId;
 }
 
@@ -234,7 +237,7 @@ export async function onRedEnquiry(tenant: TenantSummary, lead: LeadRecord) {
   const listing = await findListingMentioned(tenant.id, `${lead.message ?? ""} ${typeof lead.attributes.property === "string" ? lead.attributes.property : ""}`);
   const infoUrl = (listing && typeof listing.attributes.url === "string" ? listing.attributes.url : null) ?? (typeof settings.renterReplyUrl === "string" ? settings.renterReplyUrl : null);
   const custom = typeof settings.redReplyText === "string" ? settings.redReplyText : listing ? `thanks for your message to ${tenant.name} about ${describeListing(listing, tenant.locale, tenant.currency)}.${infoUrl ? ` Details and inspection times are here: ${infoUrl}.` : ""} If your question is about something else, reply here and a person will pick it up.` : null;
-  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom, infoUrl }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically${listing ? ` with the details for ${listing.name}` : ""}. Nothing needed from you.`, who: name, verb: "reply to" });
+  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel, signedBy) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom, infoUrl, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically${listing ? ` with the details for ${listing.name}` : ""}. Nothing needed from you.`, who: name, verb: "reply to" });
   if (result.ok) await repository.markLeadResponded(tenant.id, lead.id, new Date());
 }
 
@@ -265,6 +268,10 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       await rollupSite(tenant);
       return;
     }
+    case "inventory_sync:run": {
+      await runInventorySync(tenant, new Date());
+      return;
+    }
     case "social_sync:run": {
       await runSocialSync(tenant, new Date());
       return;
@@ -293,7 +300,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       const when = whenPhrase(tenant, booking.startsAt);
       // Stamp before sending so a retry after a late failure never sends twice.
       await repository.updateBooking(tenant.id, booking.id, { remindedAt: new Date() });
-      await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel) => templates.bookingReminder({ tenant, firstName: lead.firstName, when, channel }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Reminded ${name} about their appointment${when ? ` ${when}` : ""}.`, who: name, verb: "remind" });
+      await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel, signedBy) => templates.bookingReminder({ tenant, firstName: lead.firstName, when, channel, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Reminded ${name} about their appointment${when ? ` ${when}` : ""}.`, who: name, verb: "remind" });
       return;
     }
     case "booking_lifecycle:auto_complete": {
@@ -308,7 +315,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       if (!booking || !lead || booking.status !== "COMPLETED" || booking.followedUpAt) return;
       const name = leadDisplayName(lead);
       await repository.updateBooking(tenant.id, booking.id, { followedUpAt: new Date() });
-      await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel) => templates.bookingFollowUp({ tenant, firstName: lead.firstName, channel, uncertain: action.payload.uncertain === true }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Followed up with ${name} after their appointment.`, who: name, verb: "follow up with" });
+      await sendAndLog({ tenant, typeKey: "booking_lifecycle", recipient: lead, compose: (channel, signedBy) => templates.bookingFollowUp({ tenant, firstName: lead.firstName, channel, uncertain: action.payload.uncertain === true, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Followed up with ${name} after their appointment.`, who: name, verb: "follow up with" });
       return;
     }
     case "review_request:ask": {
@@ -347,7 +354,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       if (!contact) return;
       // Count the chase before sending so a retry cannot send it twice.
       await repository.updateInformationRequest(tenant.id, request.id, { chaseCount: request.chaseCount + 1, lastChasedAt: new Date() });
-      await sendAndLog({ tenant, typeKey: "chase_information", recipient: contact, compose: (channel) => templates.chase({ tenant, firstName: contact.firstName, what: request.description, channel }), contactId: contact.id, leadId: request.leadId, transactional: true, sent: `Reminded ${who} about ${request.description} (${request.chaseCount + 1} of ${maxChases}).`, who, verb: "remind" });
+      await sendAndLog({ tenant, typeKey: "chase_information", recipient: contact, compose: (channel, signedBy) => templates.chase({ tenant, firstName: contact.firstName, what: request.description, channel, signedBy }), identity: await senderIdentity(tenant, request.leadId ? (await repository.findLeadById(tenant.id, request.leadId))?.assigneeId : null), contactId: contact.id, leadId: request.leadId, transactional: true, sent: `Reminded ${who} about ${request.description} (${request.chaseCount + 1} of ${maxChases}).`, who, verb: "remind" });
       await schedule(tenant.id, { typeKey: "chase_information", action: "chase", runAt: new Date(Date.now() + num(settings, "chaseEveryDays", 2) * 86_400_000), payload: { requestId: request.id }, dedupeKey: `request:${request.id}:chase:${request.chaseCount + 1}` });
       return;
     }

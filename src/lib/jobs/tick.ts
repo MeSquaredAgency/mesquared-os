@@ -40,7 +40,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
     // Daily money and website jobs, early morning local time (after the content batch).
     const morning = quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000));
     const dailyAt = morning > now ? now : new Date(morning.getTime() + 30 * 60_000);
-    for (const [typeKey, action] of [["ads_sync", "run"], ["finance_sync", "run"], ["website_analytics", "rollup"]] as const) {
+    for (const [typeKey, action] of [["ads_sync", "run"], ["finance_sync", "run"], ["website_analytics", "rollup"], ["inventory_sync", "run"]] as const) {
       await repository.scheduleAction(tenant.id, { typeKey, action, runAt: dailyAt, payload: {}, dedupeKey: `${typeKey}:${day}` }).catch(() => {});
     }
     const hourBucket = now.toISOString().slice(0, 13);

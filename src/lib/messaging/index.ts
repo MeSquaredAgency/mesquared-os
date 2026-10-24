@@ -24,6 +24,32 @@ export interface SendOptions {
    * consent. Everything else (review requests, reactivation) is marketing.
    */
   transactional?: boolean;
+  /** Replies go here instead of the tenant's default reply-to (the assigned person's address). Email only. */
+  replyTo?: string | null;
+}
+
+export interface SenderIdentity {
+  /** First name to sign with, or null to sign as the business. */
+  signedBy: string | null;
+  /** Reply-to address for email, or null for the business default. */
+  replyTo: string | null;
+  userId: string | null;
+}
+
+export const businessIdentity: SenderIdentity = { signedBy: null, replyTo: null, userId: null };
+
+/**
+ * Who a message is signed by. When the tenant has "sign as the assigned
+ * person" on and the lead is assigned to a member of the workspace, the
+ * message carries that person's first name and replies go to their email.
+ * The business name, number and sending domain never change.
+ */
+export async function senderIdentity(tenant: TenantSummary, assigneeId: string | null | undefined): Promise<SenderIdentity> {
+  if (!tenant.branding.signAsAssignee || !assigneeId) return businessIdentity;
+  const person = (await repository.listTenantPeople(tenant.id)).find((p) => p.userId === assigneeId && p.via === "member");
+  if (!person) return businessIdentity;
+  const first = person.name?.trim().split(/\s+/)[0] ?? null;
+  return { signedBy: first || null, replyTo: person.email, userId: person.userId };
 }
 
 /** Caps on automated sends, per tenant per day and per recipient per day. Overridable for big tenants. */
@@ -31,13 +57,13 @@ const DAILY_TENANT_CAP = Number.parseInt(process.env.MESSAGING_DAILY_CAP ?? "500
 const DAILY_RECIPIENT_CAP = Number.parseInt(process.env.MESSAGING_RECIPIENT_DAILY_CAP ?? "4", 10) || 4;
 
 /** The sender identity for a channel: the tenant's number or address, with its name. */
-async function senderFor(tenant: TenantSummary, channel: OutboundChannel): Promise<OutboundMessage["from"] | null> {
+async function senderFor(tenant: TenantSummary, channel: OutboundChannel, replyToOverride?: string | null): Promise<OutboundMessage["from"] | null> {
   const name = tenant.branding.fromName ?? tenant.name;
   if (channel === "EMAIL") {
     // Email goes out from the platform's verified sending domain under the tenant's name;
-    // replies go straight to the tenant's own address.
+    // replies go straight to the tenant's own address, or to the assigned person's when the tenant signs as them.
     const platform = process.env.DEFAULT_FROM_EMAIL || null;
-    const replyTo = tenant.branding.replyTo ?? null;
+    const replyTo = replyToOverride || tenant.branding.replyTo || null;
     const address = platform ?? replyTo;
     return address ? { name, address, replyTo } : null;
   }
@@ -106,7 +132,7 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
   if (tenantCount >= DAILY_TENANT_CAP) return refuse(`This workspace has reached its daily limit of ${DAILY_TENANT_CAP} automated messages.`);
   if (recipientCount >= DAILY_RECIPIENT_CAP) return refuse(`Already sent ${recipientCount} automated messages to this recipient today; holding back.`);
 
-  const from = await senderFor(tenant, opts.channel);
+  const from = await senderFor(tenant, opts.channel, opts.replyTo);
   if (!from) return refuse(`No sender identity configured for ${opts.channel} on this workspace.`, true);
 
   const result = await providerFor(opts.channel).send({ channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject, from }, tenant);
