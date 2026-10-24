@@ -159,7 +159,7 @@ describe("neon.ts declares what the app wires", () => {
   it("declares the assets bucket, the ops function and its minute trigger", () => {
     const config = neonConfig as unknown as { buckets?: Record<string, unknown>; functions?: Record<string, { source: string }>; triggers?: Record<string, { function: string; cron?: string; functionPath?: string }>; aiGateway?: unknown };
     assert.ok(config.buckets?.assets, "bucket `assets` (src/lib/storage.ts relies on it)");
-    assert.ok(config.aiGateway, "aiGateway enabled");
+    assert.equal(config.aiGateway, false, "aiGateway off: the qualifier uses ANTHROPIC_API_KEY");
     const ops = config.functions?.ops;
     assert.ok(ops && existsSync(resolve(root, ops.source)), "ops function source exists");
     const tick = config.triggers?.["tick-every-minute"];

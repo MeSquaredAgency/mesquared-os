@@ -156,7 +156,7 @@ if (!services.realtime) {
   await step("realtime", "subscribe to the tenant's live lead list", async () => {
     subscription = await realtime.subscribe(leadsLiveQuery(tenant.id, { onlyAssigneeId: null }));
     await subscription.awaitRows(() => true, 20_000);
-    return `${subscription.getSnapshot().data?.length ?? 0} rows, state ${subscription.getState()}`;
+    return `${subscription.getSnapshot().data?.length ?? 0} rows, status ${subscription.getSnapshot().status}`;
   });
   await step("realtime", "a lead created through the intake pipeline arrives on the subscription", async () => {
     assert.ok(subscription, "no subscription");

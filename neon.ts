@@ -5,7 +5,7 @@ import { defineConfig } from "@neon/config/v1";
  *
  * - Postgres is implicit on every branch: Prisma reads the pooled `DATABASE_URL`
  *   and migrates over `DATABASE_URL_UNPOOLED`.
- * - `aiGateway` gives the lead qualifier (src/lib/qualify) one credential for Claude.
+ * - `aiGateway` is off: the qualifier uses ANTHROPIC_API_KEY; flip it on (paid plan) to use the gateway.
  * - The private `assets` bucket holds tenant uploads (src/lib/storage.ts).
  * - The `ops` Function reports database health next to the data and, on a
  *   one-minute trigger, forwards the scheduler tick to the app.
@@ -33,7 +33,9 @@ const allowedOrigins = Array.from(new Set(["http://localhost:3000", originOf(app
 
 export default defineConfig({
   auth: false,
-  aiGateway: true,
+  // Off by decision (24 Oct 2026): lead qualification uses a direct ANTHROPIC_API_KEY. The
+  // gateway code path in src/lib/qualify stays; set this to true (paid plan) to switch over.
+  aiGateway: false,
   buckets: {
     // Tenant files live under tenants/<tenantId>/…; the app presigns reads, nothing is public.
     assets: { access: "private" },

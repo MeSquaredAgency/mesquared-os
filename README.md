@@ -164,7 +164,7 @@ into a file Next.js does not auto-load, then source it when you need it:
 | Service | Env vars (written by `neon deploy`) | Where it is used |
 |---|---|---|
 | Lakebase Postgres | `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED` | Prisma: the app queries through the pooler, Migrate uses the direct string (`prisma/schema.prisma`) |
-| AI Gateway | `NEON_AI_GATEWAY_BASE_URL`, `NEON_AI_GATEWAY_TOKEN` | Lead qualification runs Claude through the branch gateway (`src/lib/qualify`); `QUALIFIER_MODEL` names the catalog model, `ANTHROPIC_API_KEY` is only the fallback |
+| AI Gateway (off) | `NEON_AI_GATEWAY_BASE_URL`, `NEON_AI_GATEWAY_TOKEN` | Disabled in `neon.ts`: lead qualification uses a direct `ANTHROPIC_API_KEY`. The gateway path in `src/lib/qualify` stays; set `aiGateway: true` (paid Neon plan) to use it |
 | Object Storage | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Private bucket `assets`: `POST /api/v1/assets` (tenant API key, multipart `file`) stores under `tenants/<id>/…` and creates a `ContentAsset`; every read is a presigned URL (`src/lib/storage.ts`, portal content page, `GET /api/v1/assets/:id`) |
 | Functions | injected on the function | `ops` (`neon/functions/ops.ts`): `GET /` reports database status next to the data; `POST /tick` receives the one-minute trigger and forwards `POST /api/jobs/tick` once `NEXT_PUBLIC_APP_URL` is a public URL and `JOB_SECRET` is in `.env` at deploy time |
 | Realtime | `NEON_REALTIME_URL`, `NEON_REALTIME_SECRET` | The portal's lead list is a live, tenant-scoped query sealed on the server (`src/lib/realtime`, renewed via `POST /api/v1/live/leads`); the secret never reaches the browser |
