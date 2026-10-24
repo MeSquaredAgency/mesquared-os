@@ -14,13 +14,16 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:local": "node scripts/local-postgres.mjs start",
+    "db:local:stop": "node scripts/local-postgres.mjs stop",
+    "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts"
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "prisma": {
-    "seed": "node --experimental-strip-types prisma/seed.ts"
+    "seed": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -45,6 +48,7 @@
     "@types/node": "^24.9.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9.38.0",
     "eslint-config-next": "^15.5.6",
     "prisma": "^6.19.0",

@@ -34,3 +34,39 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  parity:
+    name: Postgres parity (migrate, seed, real flows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: mesquared_os
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/mesquared_os
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/mesquared_os
+      MESSAGING_MODE: log
+      DEFAULT_FROM_EMAIL: ci@example.com
+      SEED_OPERATOR_PASSWORD: ci-password-not-secret
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - run: npx prisma db seed
+      - run: npm run db:parity

@@ -78,6 +78,21 @@ describe("green-lead playbook (log provider)", () => {
     assert.ok(events.some((e) => e.type === "alert.sent" && e.payload.leadId === lead!.id));
   });
 
+  it("falls back to email when the preferred channel has no sender configured", async () => {
+    // Summit has no TWILIO integration and DEFAULT_FROM_NUMBER is unset, so SMS cannot be sent; the lead also gave an email.
+    const summit = demoTenants[1];
+    const body = intakeSchema.parse({ source: "WEB_FORM", externalId: "pb_fallback_1", name: "Fallback Lead", email: "fallback@example.com", phone: "+61400222444", message: "Keen to join and start personal training, can I book a trial?" });
+    const result = await processIntake(summit, body, {});
+    assert.equal(result.outcome, "created");
+    if (result.outcome !== "created") return;
+    assert.equal(result.qualification.ticketType, "GREEN");
+    const lead = await repository.findLeadById(summit.id, result.lead.id);
+    assert.ok(lead?.firstResponseAt, "acknowledged via the fallback channel");
+    const runs = (await repository.listAutomationRuns(summit.id, 30)).filter((r) => r.leadId === lead!.id);
+    assert.ok(runs.some((r) => /Acknowledged Fallback Lead by email/.test(r.summary)), "email acknowledgement run");
+    assert.ok(runs.some((r) => /SMS isn.t set up/.test(r.summary)), "honest note about SMS");
+  });
+
   it("alert recipients are the members holding RECEIVE_LEAD_ALERTS", async () => {
     const recipients = await repository.listAlertRecipients(harbor.id);
     assert.deepEqual(recipients.map((r) => r.email).sort(), ["director@harbor.example", "pm@harbor.example"]);

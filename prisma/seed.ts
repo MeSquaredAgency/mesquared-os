@@ -63,8 +63,8 @@ async function applyTemplate(tenantId: string, templateKey: string) {
     for (const [order, s] of p.stages.entries()) {
       await prisma.pipelineStage.upsert({
         where: { pipelineId_key: { pipelineId: pipeline.id, key: s.key } },
-        update: { name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost) },
-        create: { tenantId, pipelineId: pipeline.id, key: s.key, name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost) },
+        update: { name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost), quietAfterDays: s.quietAfterDays ?? null },
+        create: { tenantId, pipelineId: pipeline.id, key: s.key, name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost), quietAfterDays: s.quietAfterDays ?? null },
       });
     }
   }

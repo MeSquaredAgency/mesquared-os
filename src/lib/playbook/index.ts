@@ -1,7 +1,7 @@
 import { repository } from "@/lib/data";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, sendMessage, templates } from "@/lib/messaging";
+import { channelFor, sendMessage, templates, type OutboundChannel } from "@/lib/messaging";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
 
@@ -21,24 +21,35 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
   const name = leadDisplayName(lead);
   const bookingUrl = await bookingLinkFor(tenant, lead);
 
-  // 2. Acknowledge
+  // 2. Acknowledge: preferred channel for the region first, the other channel if that one isn't set up.
   if (enabled("enquiry_auto_reply")) {
-    const channel = channelFor(tenant, lead);
-    if (!channel) {
+    const preferred = channelFor(tenant, lead);
+    const candidates: OutboundChannel[] = preferred ? [preferred, ...(preferred !== "EMAIL" && lead.email ? ["EMAIL" as const] : []), ...(preferred === "EMAIL" && lead.phone ? ["SMS" as const] : [])] : [];
+    if (candidates.length === 0) {
       await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SKIPPED", summary: `${name} left no phone or email, so no acknowledgement could be sent.`, leadId: lead.id, contactId: lead.contactId });
     } else {
       const topic = typeof lead.attributes.service === "string" ? lead.attributes.service : null;
-      const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Acknowledged ${name} by ${channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp"} with a booking link.`, leadId: lead.id, contactId: lead.contactId, details: { bookingUrl, channel } });
-      const content = channel === "EMAIL" ? templates.acknowledgementEmail({ tenant, firstName: lead.firstName, bookingUrl, topic }) : { subject: undefined, body: templates.acknowledgementSms({ tenant, firstName: lead.firstName, bookingUrl, topic }) };
-      const result = await sendMessage({ tenant, contactId: lead.contactId, channel, to: channel === "EMAIL" ? lead.email! : lead.phone!, body: content.body, subject: content.subject, automationRunId: run.id, transactional: true });
-      if (result.ok) {
+      let channel = candidates[0];
+      let result = null as Awaited<ReturnType<typeof sendMessage>> | null;
+      let run = null as Awaited<ReturnType<typeof repository.recordAutomationRun>> | null;
+      for (const candidate of candidates) {
+        channel = candidate;
+        const content = channel === "EMAIL" ? templates.acknowledgementEmail({ tenant, firstName: lead.firstName, bookingUrl, topic }) : { subject: undefined, body: templates.acknowledgementSms({ tenant, firstName: lead.firstName, bookingUrl, topic }) };
+        run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Acknowledged ${name} by ${channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp"} with a booking link.`, leadId: lead.id, contactId: lead.contactId, details: { bookingUrl, channel } });
+        result = await sendMessage({ tenant, contactId: lead.contactId, channel, to: channel === "EMAIL" ? lead.email! : lead.phone!, body: content.body, subject: content.subject, automationRunId: run.id, transactional: true });
+        if (result.ok || !result.simulated) break; // sent, or a real provider error worth surfacing; only "not configured" falls through
+        await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SKIPPED", summary: `${channel === "EMAIL" ? "Email" : channel === "SMS" ? "SMS" : "WhatsApp"} isn't set up for this workspace; trying another way to reach ${name}.`, leadId: lead.id, contactId: lead.contactId });
+      }
+      const outcome = result!;
+      const lastRun = run!;
+      if (outcome.ok) {
         await repository.markLeadResponded(tenant.id, lead.id, new Date());
         await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: true });
-        await emit(tenant.id, "message.sent", { leadId: lead.id, channel, automationRunId: run.id, simulated: result.simulated }, run.id);
+        await emit(tenant.id, "message.sent", { leadId: lead.id, channel, automationRunId: lastRun.id, simulated: outcome.simulated }, lastRun.id);
       } else {
         await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
-        await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: result.simulated ? "SKIPPED" : "FAILED", summary: result.simulated ? `${name} is waiting for a reply: messaging isn’t connected for this workspace yet (booking link is ready).` : `Couldn’t send the acknowledgement to ${name}: ${result.error}`, leadId: lead.id, contactId: lead.contactId, details: { error: result.error, bookingUrl } });
-        if (!result.simulated) await repository.createException(tenant.id, { reason: `Acknowledgement to ${name} failed: ${result.error}`, suggestedAction: "Reply by hand, then check the messaging integration.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
+        await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: outcome.simulated ? "SKIPPED" : "FAILED", summary: outcome.simulated ? `${name} is waiting for a reply: messaging isn’t connected for this workspace yet (booking link is ready).` : `Couldn’t send the acknowledgement to ${name}: ${outcome.error}`, leadId: lead.id, contactId: lead.contactId, details: { error: outcome.error, bookingUrl } });
+        if (!outcome.simulated) await repository.createException(tenant.id, { reason: `Acknowledgement to ${name} failed: ${outcome.error}`, suggestedAction: "Reply by hand, then check the messaging integration.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
       }
     }
   } else {

@@ -124,14 +124,31 @@ src/components/{shell,console,portal}   UI for the two surfaces
   integration credentials live on the tenant's rows.
 - Inbound API keys are stored as SHA-256 hashes; the raw key is shown once at creation.
 
+## Local PostgreSQL without installing anything
+
+`npm run db:local` starts an embedded PostgreSQL (binaries downloaded into
+`node_modules`, data in `.pg/`, no admin rights needed) on port 54329 and
+prints its connection string. Then:
+
+```bash
+export DATABASE_URL=postgresql://postgres:postgres@localhost:54329/mesquared_os DIRECT_URL=$DATABASE_URL
+npm run db:migrate && SEED_OPERATOR_PASSWORD=choose-one npm run db:seed
+MESSAGING_MODE=log npm run db:parity   # real flows against the Prisma repository
+```
+
+For a shared or hosted database use Neon: put the pooled string in
+`DATABASE_URL` and the direct string in `DIRECT_URL`.
+
 ## Tests and CI
 
 ```bash
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-That is exactly what `.github/workflows/ci.yml` runs on every push and pull
-request, in demo mode (no database or AI key needed). Tests use Node's built-in
+That is what the first CI job runs on every push and pull request, in demo
+mode. A second job starts PostgreSQL, applies the migrations, seeds both
+tenants from templates and runs `npm run db:parity`, so the Prisma repository
+is exercised on every change too. Tests use Node's built-in
 runner with type stripping (Node 22.12+; `.nvmrc` pins 24). `src/test/setup.mjs`
 resolves the `@/` alias so pipeline modules can be tested unbundled: the suite
 covers the classifier, intake schema and phone normalisation, the full intake
