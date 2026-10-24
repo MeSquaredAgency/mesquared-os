@@ -211,7 +211,7 @@ approval chain; calendar; publishing to Facebook, Instagram, YouTube
 (TikTok on confirmation); Google Business Profile; unified inbox; review
 collection; channel analytics.
 
-**Phase 4 — Money and attribution (weeks 7–8).** Meta and Google Ads spend;
+**Phase 4 — Money and attribution (weeks 7–8). Code shipped 24 Oct.** Meta and Google Ads spend;
 tracking links and attribution; CPL, CPA, ROAS and pacing alerts; finance
 connectors (Square, Stripe, Xero) read-only; invoices and overdue reminders;
 portal "Money" panel; website forms and analytics for apnre.com.au.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { repository } from "@/lib/data";
 import { processIntake } from "@/lib/intake/process";
+import { ATTRIBUTION_COOKIE, parseAttributionCookie } from "@/lib/attribution/links";
 import { clientIpFromHeaders } from "@/lib/auth/client-ip";
 import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { intakeSchema } from "@/lib/intake/schema";
@@ -64,6 +65,8 @@ export async function POST(req: NextRequest) {
   const reserved = new Set(["_key", "_redirect", "_hp", "_session", "name", "first_name", "last_name", "firstName", "lastName", "email", "phone", "company", "message", "source", "external_id"]);
   const fields: Record<string, string> = {};
   for (const [k, v] of form.entries()) if (!reserved.has(k) && typeof v === "string" && v) fields[k] = v;
+  // A tracked-link cookie fills in the campaign when the form itself carried no UTMs.
+  for (const [k, v] of Object.entries(parseAttributionCookie(req.cookies.get(ATTRIBUTION_COOKIE)?.value))) if (!fields[k]) fields[k] = v;
 
   const parsed = intakeSchema.safeParse({
     source: get("source") ?? "WEB_FORM",
@@ -83,6 +86,11 @@ export async function POST(req: NextRequest) {
     const result = await processIntake(auth.tenant, parsed.data, Object.fromEntries([...form.entries()].filter(([k]) => k !== "_key").map(([k, v]) => [k, typeof v === "string" ? v : "(file)"])), { channel: "WEB_FORM", provider: fields.utm_source || "website" });
     const session = get("_session");
     if (session) await repository.updateFormSession(auth.tenant.id, session, { submittedAt: new Date(), ...(result.outcome !== "dry_run" ? { convertedLeadId: result.lead.id } : {}) });
+    let path: string | null = null;
+    try {
+      path = req.headers.get("referer") ? new URL(req.headers.get("referer")!).pathname : null;
+    } catch {}
+    await repository.recordWebEvents(auth.tenant.id, [{ kind: "FORM_SUBMIT", path, referrer: null, source: fields.utm_source?.toLowerCase() ?? null, sessionKey: session ?? null }]).catch(() => {});
     return finish(true, { outcome: result.outcome }, result.outcome === "created" ? 201 : 200);
   } catch (error) {
     console.error(`[intake/form] failed for ${auth.tenant.slug}: ${error instanceof Error ? error.message : error}`);

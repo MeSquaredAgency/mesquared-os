@@ -596,7 +596,9 @@ export interface ChannelMetricSnapshotRecord {
 }
 
 export type FinanceProvider = "SQUARE" | "STRIPE" | "XERO" | "QUICKBOOKS" | "MANUAL";
-export type TransactionKind = "CONSULTATION_FEE" | "RETAINER_DEPOSIT" | "PAYMENT" | "INVOICE" | "REFUND" | "OTHER";
+/** Providers that can actually be connected (MANUAL is the ledger's own entries). */
+export type ConnectedFinanceProvider = Exclude<FinanceProvider, "MANUAL">;
+export type TransactionKind = "CONSULTATION_FEE" | "RETAINER_DEPOSIT" | "PAYMENT" | "INVOICE" | "REFUND" | "EXPENSE" | "OTHER";
 export type TransactionStatus = "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED" | "OVERDUE";
 
 export interface TransactionRecord {
@@ -625,6 +627,134 @@ export interface MoneySummary {
   /** Null when there is no spend or no leads to divide by. */
   costPerLeadCents: number | null;
   currency: string;
+  /** Invoices sent and not yet paid, and the overdue part of that. */
+  outstandingCents?: number;
+  overdueCents?: number;
+  overdueCount?: number;
+  /** Revenue minus expenses minus ad spend, this month. */
+  profitMonthCents?: number;
+  expensesMonthCents?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Ads, attribution, finance, website (Phase 4)
+// ---------------------------------------------------------------------------
+
+export type AdPlatform = "META" | "GOOGLE_ADS";
+
+export interface AdAccountRecord {
+  id: string;
+  tenantId: string;
+  platform: AdPlatform;
+  /** Meta: "act_123"; Google Ads: the customer id "123-456-7890" (digits only when stored). */
+  externalAccountId: string;
+  name: string | null;
+  currency: string;
+  /** The tenant's planned spend per calendar month, for pacing. */
+  monthlyBudgetCents: number | null;
+  isActive: boolean;
+  lastSyncAt: Date | null;
+  lastError: string | null;
+  settings: Record<string, unknown>;
+}
+
+export interface AdSpendSnapshotRecord {
+  id: string;
+  tenantId: string;
+  adAccountId: string;
+  platform: AdPlatform;
+  /** UTC midnight of the day described. */
+  date: Date;
+  campaignId: string | null;
+  campaignName: string | null;
+  spendCents: number;
+  impressions: number | null;
+  clicks: number | null;
+  /** Leads the platform itself reports (lead-form submissions, conversions). */
+  platformLeads: number | null;
+}
+
+export type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "OVERDUE" | "VOID";
+
+export interface InvoiceRecord {
+  id: string;
+  tenantId: string;
+  contactId: string | null;
+  provider: FinanceProvider;
+  externalId: string;
+  number: string | null;
+  amountCents: number;
+  amountDueCents: number;
+  currency: string;
+  status: InvoiceStatus;
+  issuedAt: Date | null;
+  dueAt: Date | null;
+  paidAt: Date | null;
+  url: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  remindersSent: number;
+  lastReminderAt: Date | null;
+}
+
+export interface TrackedLinkRecord {
+  id: string;
+  tenantId: string;
+  /** Short code in /r/<code>. */
+  code: string;
+  destination: string;
+  label: string | null;
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  content: string | null;
+  clicks: number;
+  createdAt: Date;
+}
+
+export type WebEventKind = "PAGEVIEW" | "FORM_START" | "FORM_SUBMIT" | "LINK_CLICK";
+
+export interface WebEventRecord {
+  id: string;
+  tenantId: string;
+  kind: WebEventKind;
+  path: string | null;
+  referrer: string | null;
+  source: string | null;
+  sessionKey: string | null;
+  occurredAt: Date;
+}
+
+export interface SiteMetricSnapshotRecord {
+  id: string;
+  tenantId: string;
+  /** UTC midnight of the day described. */
+  date: Date;
+  sessions: number;
+  pageviews: number;
+  formStarts: number;
+  formSubmits: number;
+  linkClicks: number;
+  /** Path → pageviews, top ten. */
+  topPages: Record<string, number>;
+  /** utm_source or referrer host → sessions, top ten. */
+  topSources: Record<string, number>;
+}
+
+/** One row of the attribution report: a channel (source/campaign) with what it cost and what it brought. */
+export interface AttributionRow {
+  key: string;
+  source: string;
+  campaign: string | null;
+  spendCents: number;
+  leads: number;
+  booked: number;
+  won: number;
+  revenueCents: number;
+  costPerLeadCents: number | null;
+  costPerAcquisitionCents: number | null;
+  /** Revenue per dollar of spend, or null without spend. */
+  roas: number | null;
 }
 
 /** What the client portal home renders. */

@@ -8,8 +8,14 @@ import {
   type InformationRequest,
   type Review,
   type ScheduledAction,
+  type AdAccount,
+  type AdSpendSnapshot,
   type Channel,
   type ChannelMetricSnapshot,
+  type Invoice,
+  type SiteMetricSnapshot,
+  type TrackedLink,
+  type WebEvent,
   type ContentAsset,
   type DomainEvent,
   type Message,
@@ -27,6 +33,8 @@ import {
 import { healthScore } from "@/lib/health";
 import { getPrisma } from "@/lib/prisma";
 import type {
+  AdAccountRecord,
+  AdSpendSnapshotRecord,
   AutomationRunRecord,
   BookingRecord,
   ChannelMetricSnapshotRecord,
@@ -40,6 +48,7 @@ import type {
   FormSessionRecord,
   InformationRequestRecord,
   IntegrationRecord,
+  InvoiceRecord,
   LeadRecord,
   MessageRecord,
   MissedOpportunityRecord,
@@ -51,13 +60,16 @@ import type {
   ReviewRecord,
   ScheduledActionRecord,
   ServiceLevels,
+  SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantAccess,
   TenantBranding,
   TenantRoleRecord,
   TenantSummary,
+  TrackedLinkRecord,
   TransactionRecord,
   UserRecord,
+  WebEventRecord,
 } from "@/lib/types";
 import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
@@ -152,6 +164,13 @@ const toMissed = (m: MissedOpportunity): MissedOpportunityRecord => ({ id: m.id,
 const toRun = (r: AutomationRun): AutomationRunRecord => ({ id: r.id, tenantId: r.tenantId, typeKey: r.typeKey, outcome: r.outcome, summary: r.summary, leadId: r.leadId, contactId: r.contactId, missedOpportunityId: r.missedOpportunityId, createdAt: r.createdAt });
 const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, createdAt: e.createdAt });
 const toEvent = (e: DomainEvent): DomainEventRecord => ({ id: e.id, tenantId: e.tenantId, type: e.type, payload: obj(e.payload), causationId: e.causationId, occurredAt: e.occurredAt });
+const toAdAccount = (a: AdAccount): AdAccountRecord => ({ id: a.id, tenantId: a.tenantId, platform: a.platform, externalAccountId: a.externalAccountId, name: a.name, currency: a.currency, monthlyBudgetCents: a.monthlyBudgetCents, isActive: a.isActive, lastSyncAt: a.lastSyncAt, lastError: a.lastError, settings: obj(a.settings) });
+const toAdSpend = (x: AdSpendSnapshot): AdSpendSnapshotRecord => ({ id: x.id, tenantId: x.tenantId, adAccountId: x.adAccountId, platform: x.platform, date: x.date, campaignId: x.campaignId, campaignName: x.campaignName, spendCents: x.spendCents, impressions: x.impressions, clicks: x.clicks, platformLeads: x.platformLeads });
+const toInvoice = (i: Invoice): InvoiceRecord => ({ id: i.id, tenantId: i.tenantId, contactId: i.contactId, provider: i.provider, externalId: i.externalId, number: i.number, amountCents: i.amountCents, amountDueCents: i.amountDueCents, currency: i.currency, status: i.status, issuedAt: i.issuedAt, dueAt: i.dueAt, paidAt: i.paidAt, url: i.url, customerName: i.customerName, customerEmail: i.customerEmail, remindersSent: i.remindersSent, lastReminderAt: i.lastReminderAt });
+const toLink = (l: TrackedLink): TrackedLinkRecord => ({ id: l.id, tenantId: l.tenantId, code: l.code, destination: l.destination, label: l.label, source: l.source, medium: l.medium, campaign: l.campaign, content: l.content, clicks: l.clicks, createdAt: l.createdAt });
+const toWebEvent = (e: WebEvent): WebEventRecord => ({ id: e.id, tenantId: e.tenantId, kind: e.kind, path: e.path, referrer: e.referrer, source: e.source, sessionKey: e.sessionKey, occurredAt: e.occurredAt });
+const toSiteMetrics = (m: SiteMetricSnapshot): SiteMetricSnapshotRecord => ({ id: m.id, tenantId: m.tenantId, date: m.date, sessions: m.sessions, pageviews: m.pageviews, formStarts: m.formStarts, formSubmits: m.formSubmits, linkClicks: m.linkClicks, topPages: obj(m.topPages) as Record<string, number>, topSources: obj(m.topSources) as Record<string, number> });
+const utcDay = (d: Date) => new Date(`${d.toISOString().slice(0, 10)}T00:00:00Z`);
 const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.tenantId, contactId: t.contactId, leadId: t.leadId, provider: t.provider, providerId: t.providerId, kind: t.kind, status: t.status, amountCents: t.amountCents, currency: t.currency, note: t.note, occurredAt: t.occurredAt });
 const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, parentId: a.parentId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, tags: a.tags, scheduledFor: a.scheduledFor, generation: obj(a.generation) as ContentAssetRecord["generation"], rejectionNote: a.rejectionNote, approvedAt: a.approvedAt, createdAt: a.createdAt });
 const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, channelId: p.channelId, contentAssetId: p.contentAssetId, platform: p.platform, caption: p.caption, mediaUrls: p.mediaUrls, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, publishedAt: p.publishedAt, externalPostId: p.externalPostId, permalink: p.permalink, errorMessage: p.errorMessage, attempts: p.attempts, metrics: obj(p.metrics) as Record<string, number>, batchId: p.batchId, createdAt: p.createdAt });
@@ -924,13 +943,155 @@ export const prismaRepository: Repository = {
     return rows.map(toTxn);
   },
 
+  // --- ads, attribution, finance, website (Phase 4) --------------------------------
+
+  async listAdAccounts(tenantId, opts = {}) {
+    const rows = await getPrisma().adAccount.findMany({ where: { tenantId, ...(opts.activeOnly ? { isActive: true } : {}) }, orderBy: { createdAt: "asc" } });
+    return rows.map(toAdAccount);
+  },
+
+  async upsertAdAccount(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.adAccount.findUnique({ where: { tenantId_platform_externalAccountId: { tenantId, platform: data.platform, externalAccountId: data.externalAccountId } } });
+    const row = existing
+      ? await db.adAccount.update({ where: { id: existing.id }, data: { name: data.name ?? existing.name, currency: data.currency ?? existing.currency, monthlyBudgetCents: data.monthlyBudgetCents === undefined ? existing.monthlyBudgetCents : data.monthlyBudgetCents, isActive: data.isActive ?? existing.isActive, settings: json({ ...obj(existing.settings), ...(data.settings ?? {}) }) } })
+      : await db.adAccount.create({ data: { tenantId, platform: data.platform, externalAccountId: data.externalAccountId, name: data.name ?? null, currency: data.currency ?? "AUD", monthlyBudgetCents: data.monthlyBudgetCents ?? null, isActive: data.isActive ?? true, settings: json(data.settings ?? {}) } });
+    return toAdAccount(row);
+  },
+
+  async updateAdAccount(tenantId, adAccountId, patch) {
+    await getPrisma().adAccount.updateMany({ where: { id: adAccountId, tenantId }, data: patch });
+  },
+
+  async recordAdSpend(tenantId, rows) {
+    const db = getPrisma();
+    let n = 0;
+    for (const r of rows) {
+      const date = utcDay(r.date);
+      const values = { campaignName: r.campaignName, spendCents: r.spendCents, impressions: r.impressions ?? null, clicks: r.clicks ?? null, platformLeads: r.platformLeads ?? null, raw: json(r.raw ?? {}) };
+      // Prisma cannot upsert on a unique that includes a nullable column, so find-then-write.
+      const existing = await db.adSpendSnapshot.findFirst({ where: { adAccountId: r.adAccountId, date, campaignId: r.campaignId ?? null } });
+      if (existing) await db.adSpendSnapshot.update({ where: { id: existing.id }, data: values });
+      else await db.adSpendSnapshot.create({ data: { tenantId, adAccountId: r.adAccountId, platform: r.platform, date, campaignId: r.campaignId ?? null, ...values } });
+      n++;
+    }
+    return n;
+  },
+
+  async listAdSpend(tenantId, opts) {
+    const rows = await getPrisma().adSpendSnapshot.findMany({ where: { tenantId, date: { gte: opts.from, ...(opts.to ? { lt: opts.to } : {}) }, ...(opts.adAccountId ? { adAccountId: opts.adAccountId } : {}) }, orderBy: { date: "asc" } });
+    return rows.map(toAdSpend);
+  },
+
+  async sumAdSpend(tenantId, from, to) {
+    const agg = await getPrisma().adSpendSnapshot.aggregate({ where: { tenantId, date: { gte: from, ...(to ? { lt: to } : {}) } }, _sum: { spendCents: true } });
+    return agg._sum.spendCents ?? 0;
+  },
+
+  async listLeadsBetween(tenantId, from, to, limit = 2000) {
+    const rows = await getPrisma().lead.findMany({ where: { tenantId, createdAt: { gte: from, ...(to ? { lt: to } : {}) } }, orderBy: { createdAt: "desc" }, take: limit });
+    return rows.map(toLead);
+  },
+
+  async upsertTransactions(tenantId, rows) {
+    const db = getPrisma();
+    let fresh = 0;
+    for (const r of rows) {
+      const contactId = r.contactId ?? (r.customerEmail ? (await db.contact.findFirst({ where: { tenantId, email: r.customerEmail.toLowerCase() }, select: { id: true } }))?.id ?? null : null);
+      const existing = await db.transaction.findUnique({ where: { tenantId_provider_providerId: { tenantId, provider: r.provider, providerId: r.providerId } } });
+      if (existing) {
+        await db.transaction.update({ where: { id: existing.id }, data: { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: existing.contactId ?? contactId } });
+        continue;
+      }
+      await db.transaction.create({ data: { tenantId, contactId, leadId: r.leadId ?? null, provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt, rawPayload: json(r.rawPayload ?? {}) } });
+      fresh++;
+    }
+    return fresh;
+  },
+
+  async listTransactions(tenantId, opts) {
+    const rows = await getPrisma().transaction.findMany({ where: { tenantId, occurredAt: { gte: opts.from, ...(opts.to ? { lt: opts.to } : {}) }, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.kinds ? { kind: { in: opts.kinds } } : {}) }, orderBy: { occurredAt: "desc" }, take: opts.limit ?? 500 });
+    return rows.map(toTxn);
+  },
+
+  async upsertInvoices(tenantId, rows) {
+    const db = getPrisma();
+    const paidNow: InvoiceRecord[] = [];
+    let written = 0;
+    for (const r of rows) {
+      const contactId = r.contactId ?? (r.customerEmail ? (await db.contact.findFirst({ where: { tenantId, email: r.customerEmail.toLowerCase() }, select: { id: true } }))?.id ?? null : null);
+      const existing = await db.invoice.findUnique({ where: { tenantId_provider_externalId: { tenantId, provider: r.provider, externalId: r.externalId } } });
+      const values = { number: r.number ?? existing?.number ?? null, amountCents: r.amountCents, amountDueCents: r.amountDueCents, currency: r.currency, status: r.status, issuedAt: r.issuedAt ?? existing?.issuedAt ?? null, dueAt: r.dueAt ?? existing?.dueAt ?? null, paidAt: r.paidAt ?? existing?.paidAt ?? null, url: r.url ?? existing?.url ?? null, customerName: r.customerName ?? existing?.customerName ?? null, customerEmail: r.customerEmail ?? existing?.customerEmail ?? null, rawPayload: json(r.rawPayload ?? {}) };
+      const row = existing
+        ? await db.invoice.update({ where: { id: existing.id }, data: { ...values, contactId: existing.contactId ?? contactId } })
+        : await db.invoice.create({ data: { tenantId, contactId, provider: r.provider, externalId: r.externalId, ...values } });
+      written++;
+      if (row.status === "PAID" && existing?.status !== "PAID") paidNow.push(toInvoice(row));
+    }
+    return { written, paidNow };
+  },
+
+  async listInvoices(tenantId, opts = {}) {
+    const rows = await getPrisma().invoice.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.dueBefore ? { dueAt: { lt: opts.dueBefore } } : {}) }, orderBy: { dueAt: "asc" }, take: opts.limit ?? 200 });
+    return rows.map(toInvoice);
+  },
+
+  async updateInvoice(tenantId, invoiceId, patch) {
+    await getPrisma().invoice.updateMany({ where: { id: invoiceId, tenantId }, data: patch });
+  },
+
+  async createTrackedLink(tenantId, data) {
+    const row = await getPrisma().trackedLink.create({ data: { tenantId, code: data.code, destination: data.destination, label: data.label ?? null, source: data.source ?? null, medium: data.medium ?? null, campaign: data.campaign ?? null, content: data.content ?? null } });
+    return toLink(row);
+  },
+
+  async listTrackedLinks(tenantId, limit = 100) {
+    const rows = await getPrisma().trackedLink.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: limit });
+    return rows.map(toLink);
+  },
+
+  async findTrackedLinkByCode(code) {
+    const row = await getPrisma().trackedLink.findUnique({ where: { code } });
+    return row ? toLink(row) : null;
+  },
+
+  async incrementTrackedLinkClicks(linkId) {
+    await getPrisma().trackedLink.update({ where: { id: linkId }, data: { clicks: { increment: 1 } } });
+  },
+
+  async recordWebEvents(tenantId, events) {
+    if (events.length === 0) return;
+    await getPrisma().webEvent.createMany({ data: events.map((e) => ({ tenantId, kind: e.kind, path: e.path ?? null, referrer: e.referrer ?? null, source: e.source ?? null, sessionKey: e.sessionKey ?? null, occurredAt: e.occurredAt ?? new Date() })) });
+  },
+
+  async listWebEvents(tenantId, from, to, limit = 20_000) {
+    const rows = await getPrisma().webEvent.findMany({ where: { tenantId, occurredAt: { gte: from, lt: to } }, orderBy: { occurredAt: "asc" }, take: limit });
+    return rows.map(toWebEvent);
+  },
+
+  async pruneWebEvents(tenantId, before) {
+    const { count } = await getPrisma().webEvent.deleteMany({ where: { tenantId, occurredAt: { lt: before } } });
+    return count;
+  },
+
+  async recordSiteMetrics(tenantId, data) {
+    const date = utcDay(data.date);
+    const values = { sessions: data.sessions, pageviews: data.pageviews, formStarts: data.formStarts, formSubmits: data.formSubmits, linkClicks: data.linkClicks, topPages: json(data.topPages), topSources: json(data.topSources) };
+    await getPrisma().siteMetricSnapshot.upsert({ where: { tenantId_date: { tenantId, date } }, create: { tenantId, date, ...values }, update: values });
+  },
+
+  async listSiteMetrics(tenantId, since) {
+    const rows = await getPrisma().siteMetricSnapshot.findMany({ where: { tenantId, date: { gte: since } }, orderBy: { date: "asc" } });
+    return rows.map(toSiteMetrics);
+  },
+
   async getPortalHome(tenantId, opts) {
     const db = getPrisma();
     const monthStart = startOfMonthInZone(opts.timezone);
     const dayStart = startOfDayInZone(opts.timezone);
     const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60_000);
 
-    const [needsYou, open, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek] = await Promise.all([
+    const [needsYou, open, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
       this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 }),
       db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED } }, orderBy: { detectedAt: "desc" }, take: 20 }),
       db.missedOpportunity.aggregate({ where: { tenantId, status: "RECOVERED", resolvedAt: { gte: monthStart } }, _sum: { recoveredValueCents: true } }),
@@ -940,13 +1101,30 @@ export const prismaRepository: Repository = {
       db.automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 6 }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
+      this.sumAdSpend(tenantId, monthStart),
+      db.transaction.aggregate({ where: { tenantId, kind: "EXPENSE", status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
+      db.invoice.findMany({ where: { tenantId, status: { in: ["SENT", "OVERDUE"] } }, select: { amountDueCents: true, status: true, dueAt: true } }),
     ]);
-    const adSpendMonthCents = 0; // Ads module lands in Phase 4.
     const revenueMonthCents = revenue._sum.amountCents ?? 0;
+    const expensesMonthCents = expenses._sum.amountCents ?? 0;
+    const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
     return {
       needsYou,
       missed: { open: open.map(toMissed), atRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0), recoveredCents: recovered._sum.recoveredValueCents ?? 0 },
-      money: opts.canViewFinances ? { revenueMonthCents, adSpendMonthCents, leadsMonth, costPerLeadCents: adSpendMonthCents > 0 && leadsMonth > 0 ? Math.round(adSpendMonthCents / leadsMonth) : null, currency: opts.currency } : null,
+      money: opts.canViewFinances
+        ? {
+            revenueMonthCents,
+            adSpendMonthCents,
+            leadsMonth,
+            costPerLeadCents: adSpendMonthCents > 0 && leadsMonth > 0 ? Math.round(adSpendMonthCents / leadsMonth) : null,
+            currency: opts.currency,
+            outstandingCents: openInvoices.reduce((sum, i) => sum + i.amountDueCents, 0),
+            overdueCents: overdue.reduce((sum, i) => sum + i.amountDueCents, 0),
+            overdueCount: overdue.length,
+            expensesMonthCents,
+            profitMonthCents: revenueMonthCents - expensesMonthCents - adSpendMonthCents,
+          }
+        : null,
       contentAwaiting: contentAwaiting.map(toAsset),
       handled: { runs: runs.map(toRun), countToday, countWeek },
     } satisfies PortalHome;
@@ -957,14 +1135,19 @@ export const prismaRepository: Repository = {
     const rows: PortfolioRow[] = [];
     for (const tenant of tenants) {
       const dayStart = startOfDayInZone(tenant.timezone, now);
-      const [{ respond, book }, open, exceptionsOpen, contentDue, integrations, leadsToday] = await Promise.all([
+      const monthStart = startOfMonthInZone(tenant.timezone, now);
+      const [{ respond, book }, open, exceptionsOpen, contentDue, integrations, leadsToday, budget, spentCents] = await Promise.all([
         this.listLeadsPastSla(tenant.id, now),
         db.missedOpportunity.findMany({ where: { tenantId: tenant.id, status: { in: OPEN_MISSED } }, select: { estimatedValueCents: true } }),
         db.exceptionItem.count({ where: { tenantId: tenant.id, status: { not: "RESOLVED" } } }),
         db.contentAsset.count({ where: { tenantId: tenant.id, status: "IN_REVIEW" } }),
         db.integration.findMany({ where: { tenantId: tenant.id }, select: { provider: true, status: true, lastError: true } }),
         db.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: dayStart } } }),
+        db.adAccount.aggregate({ where: { tenantId: tenant.id, isActive: true }, _sum: { monthlyBudgetCents: true } }),
+        this.sumAdSpend(tenant.id, monthStart),
       ]);
+      const budgetCents = budget._sum.monthlyBudgetCents ?? 0;
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const base = {
         tenant,
         slaBreaches: respond.length + book.length,
@@ -972,7 +1155,7 @@ export const prismaRepository: Repository = {
         missedAtRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0),
         exceptionsOpen,
         contentDue,
-        adPacing: null,
+        adPacing: budgetCents > 0 ? { spentCents, budgetCents, daysElapsed: now.getDate(), daysInMonth } : null,
         integrations,
         leadsToday,
       };

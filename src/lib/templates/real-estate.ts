@@ -85,6 +85,10 @@ export const realEstateTemplate: IndustryTemplate = {
     { key: "social_sync" },
     { key: "inbox_triage", settings: { autoReplyRoutine: false } },
     { key: "messaging" },
+    { key: "ads_sync", settings: { pacingDriftPct: 25 } },
+    { key: "payment_reminders", settings: { remindDaysBefore: 3, chaseEveryDays: 7, maxChases: 3 } },
+    { key: "finance_sync" },
+    { key: "website_analytics" },
   ],
   brand: {
     voice: "Local, knowledgeable and calm. Plain English for owners and investors. No hard sell.",

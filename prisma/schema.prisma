@@ -159,6 +159,12 @@ model Tenant {
   events              DomainEvent[]
   channels            Channel[]
   channelMetrics ChannelMetricSnapshot[]
+  adAccounts     AdAccount[]
+  adSpend        AdSpendSnapshot[]
+  invoices       Invoice[]
+  trackedLinks   TrackedLink[]
+  webEvents      WebEvent[]
+  siteMetrics    SiteMetricSnapshot[]
   contentAssets       ContentAsset[]
   socialPosts         SocialPost[]
   socialProofAssets   SocialProofAsset[]
@@ -309,6 +315,7 @@ model Contact {
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
   transactions        Transaction[]
+  invoices     Invoice[]
   informationRequests InformationRequest[]
 
   @@index([tenantId, email])
@@ -1102,6 +1109,7 @@ enum TransactionKind {
   PAYMENT
   INVOICE
   REFUND
+  EXPENSE
   OTHER
 }
 
@@ -1173,4 +1181,160 @@ model InventoryItem {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, type, status])
+}
+
+// ---------------------------------------------------------------------------
+// Ads, attribution, invoices, website (Phase 4)
+// ---------------------------------------------------------------------------
+
+enum AdPlatform {
+  META
+  GOOGLE_ADS
+}
+
+/// A connected ad account. Credentials live on the tenant's META / GOOGLE_ADS Integration row.
+model AdAccount {
+  id                String     @id @default(cuid())
+  tenantId          String
+  platform          AdPlatform
+  externalAccountId String
+  name              String?
+  currency          String     @default("AUD")
+  /// Planned spend per calendar month, for pacing alerts.
+  monthlyBudgetCents Int?
+  isActive          Boolean    @default(true)
+  lastSyncAt        DateTime?
+  lastError         String?
+  settings          Json       @default("{}")
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  snapshots AdSpendSnapshot[]
+
+  @@unique([tenantId, platform, externalAccountId])
+}
+
+/// Daily spend and results per campaign, from the platform's reporting API.
+model AdSpendSnapshot {
+  id            String     @id @default(cuid())
+  tenantId      String
+  adAccountId   String
+  platform      AdPlatform
+  /// UTC midnight of the day described.
+  date          DateTime
+  campaignId    String?
+  campaignName  String?
+  spendCents    Int
+  impressions   Int?
+  clicks        Int?
+  platformLeads Int?
+  raw           Json       @default("{}")
+  createdAt     DateTime   @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  adAccount AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([adAccountId, date, campaignId])
+  @@index([tenantId, date])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+/// An invoice the tenant issued, mirrored from the finance provider so reminders and the Money panel can work from it.
+model Invoice {
+  id             String          @id @default(cuid())
+  tenantId       String
+  contactId      String?
+  provider       FinanceProvider @default(MANUAL)
+  externalId     String
+  number         String?
+  amountCents    Int
+  amountDueCents Int
+  currency       String          @default("AUD")
+  status         InvoiceStatus   @default(SENT)
+  issuedAt       DateTime?
+  dueAt          DateTime?
+  paidAt         DateTime?
+  url            String?
+  customerName   String?
+  customerEmail  String?
+  remindersSent  Int             @default(0)
+  lastReminderAt DateTime?
+  rawPayload     Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, provider, externalId])
+  @@index([tenantId, status, dueAt])
+}
+
+/// A short link (/r/<code>) that stamps UTMs onto the destination and counts clicks, so offline and social placements attribute.
+model TrackedLink {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   @unique
+  destination String
+  label       String?
+  source      String?
+  medium      String?
+  campaign    String?
+  content     String?
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+enum WebEventKind {
+  PAGEVIEW
+  FORM_START
+  FORM_SUBMIT
+  LINK_CLICK
+}
+
+/// Raw website beacon hits, rolled up daily into SiteMetricSnapshot and pruned after 35 days.
+model WebEvent {
+  id         String       @id @default(cuid())
+  tenantId   String
+  kind       WebEventKind
+  path       String?
+  referrer   String?
+  source     String?
+  sessionKey String?
+  occurredAt DateTime     @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+}
+
+/// One row per tenant per day of website numbers.
+model SiteMetricSnapshot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  date        DateTime
+  sessions    Int      @default(0)
+  pageviews   Int      @default(0)
+  formStarts  Int      @default(0)
+  formSubmits Int      @default(0)
+  linkClicks  Int      @default(0)
+  topPages    Json     @default("{}")
+  topSources  Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
 }

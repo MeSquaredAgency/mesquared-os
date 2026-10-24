@@ -279,6 +279,33 @@ reviews into one inbox. Triage drafts a reply, flags complaints and enquiries fo
 answers routine thanks only when the tenant switches `autoReplyRoutine` on. Channel numbers
 (followers, reach, engagements) are snapshotted daily and summarised in the portal.
 
+## Money: ads, attribution, finance, website
+
+Phase 4. All of it runs in demo mode (`ADS_MODE=log`, `FINANCE_MODE=log`) on the fixtures.
+
+**Ad spend and pacing.** Operators connect Meta and Google Ads accounts in the console (read-only
+tokens, encrypted on the account row). A daily job pulls spend per campaign per day; each account
+carries a monthly budget and the month is checked against it. More than 25% over or under plan
+raises one exception for an operator (threshold in the `ads_sync` automation settings).
+
+**Attribution.** Leads keep the UTMs they arrive with. Tracked links (`/r/<code>`, made in the
+console) redirect with UTMs stamped on, count clicks, and drop a first-party cookie so a form
+filled later still carries the campaign. The report (portal Money page, last 30 days) groups
+leads by source and campaign, joins ad spend by campaign name, and shows cost per lead, cost per
+won deal and revenue per dollar.
+
+**Finance.** Read-only connectors for Xero, Square and Stripe pull payments, expenses and
+invoices daily; Square and Stripe also push through per-workspace webhooks
+(`/api/v1/webhooks/<provider>/<integrationId>`, signature-checked with the tenant's own secret).
+The `payment_reminders` automation reminds before the due date, chases overdue invoices on a
+schedule, then hands the last one to a person. The Money panel shows revenue, profit after
+expenses and ads, what is owed and what is overdue.
+
+**Website.** A beacon (`POST /api/v1/track/page`, intake key) records page views, form starts
+(from the form beacon) and submissions (from the form endpoint). A daily roll-up turns them into
+visits, top pages, where visitors came from, and form conversion; raw events are pruned after
+35 days.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

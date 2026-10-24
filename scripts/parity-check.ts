@@ -17,6 +17,10 @@ import { registerPlaybook } from "@/lib/playbook";
 import { generateFromSource, ingestSource, scheduleApproved } from "@/lib/content/engine";
 import { ingestInboxItems, replyToConversation } from "@/lib/social/inbox";
 import { publishDuePosts } from "@/lib/social/publish";
+import { pacingStatus, runAdsSync } from "@/lib/ads/sync";
+import { buildAttributionReport } from "@/lib/attribution/report";
+import { markOverdue, runInvoiceReminders } from "@/lib/finance/sync";
+import { rollupSite } from "@/lib/website/rollup";
 
 process.env.MESSAGING_MODE ??= "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
@@ -209,6 +213,33 @@ await step("content engine: material → drafts → approval → scheduled post 
   const reply = await replyToConversation(harbor!, convo!.id, "Thank you!", "OPERATOR");
   assert.equal(reply.ok, true);
   assert.equal((await repository.findConversationById(harbor!.id, convo!.id))?.awaitingReply, false);
+});
+
+await step("money: ad spend, pacing, attribution, invoices, reminders, website roll-up", async () => {
+  process.env.ADS_MODE = "log";
+  process.env.FINANCE_MODE = "log";
+  const account = await repository.upsertAdAccount(harbor!.id, { platform: "META", externalAccountId: `act_parity_${stamp}`, name: "Parity Meta", currency: "AUD", monthlyBudgetCents: 100_000 });
+  const sync = await runAdsSync(harbor!);
+  assert.ok(sync.rows > 0, "spend rows recorded through the log provider");
+  assert.equal(await repository.recordAdSpend(harbor!.id, [{ adAccountId: account.id, platform: "META", date: new Date(), campaignId: "demo_campaign_1", campaignName: "Landlord leads", spendCents: 999 }]), 1, "same day+campaign upserts");
+  const pacing = await pacingStatus(harbor!);
+  assert.ok(pacing && pacing.budgetCents >= 100_000);
+  const report = await buildAttributionReport(harbor!, new Date(Date.now() - 30 * 86_400_000));
+  assert.ok(report.totals.spendCents > 0 && report.rows.some((r) => r.source === "facebook"));
+  await repository.upsertInvoices(harbor!.id, [{ provider: "XERO", externalId: `parity_inv_${stamp}`, number: `P-${stamp}`, amountCents: 12_000, amountDueCents: 12_000, currency: "AUD", status: "SENT", dueAt: new Date(Date.now() - 86_400_000), customerName: "Parity Customer", customerEmail: `parity-inv-${stamp}@example.com` }]);
+  assert.ok((await markOverdue(harbor!)) >= 1);
+  const reminders = await runInvoiceReminders(harbor!);
+  assert.ok(reminders.chased >= 1, "overdue invoice chased");
+  const { paidNow } = await repository.upsertInvoices(harbor!.id, [{ provider: "XERO", externalId: `parity_inv_${stamp}`, amountCents: 12_000, amountDueCents: 0, currency: "AUD", status: "PAID", paidAt: new Date() }]);
+  assert.equal(paidNow.length, 1, "PAID transition reported once");
+  const link = await repository.createTrackedLink(harbor!.id, { code: `parity-${stamp}`, destination: "https://example.com/x", source: "signboard" });
+  await repository.incrementTrackedLinkClicks(link.id);
+  assert.equal((await repository.findTrackedLinkByCode(link.code))?.clicks, 1);
+  await repository.recordWebEvents(harbor!.id, [{ kind: "PAGEVIEW", path: "/", sessionKey: `s_${stamp}` }, { kind: "FORM_START", path: "/", sessionKey: `s_${stamp}` }]);
+  const rolled = await rollupSite(harbor!, new Date());
+  assert.ok(rolled.pageviews >= 1);
+  const home = await repository.getPortalHome(harbor!.id, { timezone: harbor!.timezone, currency: harbor!.currency, onlyAssigneeId: null, canViewFinances: true });
+  assert.ok(home.money && home.money.adSpendMonthCents > 0 && typeof home.money.profitMonthCents === "number");
 });
 
 console.log(failures === 0 ? "\nAll parity steps passed." : `\n${failures} parity step(s) FAILED.`);

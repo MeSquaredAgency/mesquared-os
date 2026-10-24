@@ -35,6 +35,12 @@ export async function tick(now = new Date()): Promise<TickResult> {
     // Recurring per-tenant work rides the same queue: one content batch a day (after quiet hours end), one social sync an hour.
     const day = localKey(tenant.timezone, now);
     await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)) > now ? now : quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)), payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
+    // Daily money and website jobs, early morning local time (after the content batch).
+    const morning = quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000));
+    const dailyAt = morning > now ? now : new Date(morning.getTime() + 30 * 60_000);
+    for (const [typeKey, action] of [["ads_sync", "run"], ["finance_sync", "run"], ["website_analytics", "rollup"]] as const) {
+      await repository.scheduleAction(tenant.id, { typeKey, action, runAt: dailyAt, payload: {}, dedupeKey: `${typeKey}:${day}` }).catch(() => {});
+    }
     const hourBucket = now.toISOString().slice(0, 13);
     await repository.scheduleAction(tenant.id, { typeKey: "social_sync", action: "run", runAt: now, payload: {}, dedupeKey: `social:sync:${hourBucket}` }).catch(() => {});
   }

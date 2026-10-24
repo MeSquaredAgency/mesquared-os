@@ -1,30 +1,36 @@
 import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import type {
+  AdAccountRecord,
+  AdSpendSnapshotRecord,
   AutomationRunRecord,
   BookingRecord,
-  ContactRecord,
-  ConversationRecord,
-  FormSessionRecord,
-  InformationRequestRecord,
-  ReviewRecord,
-  ScheduledActionRecord,
   ChannelMetricSnapshotRecord,
   ChannelRecord,
+  ContactRecord,
   ContentAssetRecord,
+  ConversationRecord,
   DomainEventRecord,
-  MessageRecord,
   ExceptionRecord,
+  FormSessionRecord,
+  InformationRequestRecord,
   IntegrationRecord,
+  InvoiceRecord,
   LeadRecord,
+  MessageRecord,
   MissedOpportunityRecord,
   PortalHome,
   PortfolioRow,
+  ReviewRecord,
+  ScheduledActionRecord,
+  SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantAccess,
   TenantSummary,
+  TrackedLinkRecord,
   TransactionRecord,
   UserRecord,
+  WebEventRecord,
 } from "@/lib/types";
 import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import {
@@ -34,11 +40,16 @@ import {
   type NewContentAsset,
   type NewMessage,
   type NewSocialPost,
+  type NewTransaction,
   type NewMissedOpportunity,
   type Repository,
 } from "./repository";
 import {
-  demoAdSpendMonthCents,
+  demoAdAccounts,
+  demoAdSpend,
+  demoInvoices,
+  demoSiteMetrics,
+  demoTrackedLinks,
   demoIntegrationSettings,
   demoApiKeyHashes,
   demoAssets,
@@ -84,6 +95,12 @@ interface MemoryStore {
   channels: ChannelRecord[];
   channelMetrics: ChannelMetricSnapshotRecord[];
   transactions: TransactionRecord[];
+  adAccounts: AdAccountRecord[];
+  adSpend: AdSpendSnapshotRecord[];
+  invoices: InvoiceRecord[];
+  trackedLinks: TrackedLinkRecord[];
+  webEvents: WebEventRecord[];
+  siteMetrics: SiteMetricSnapshotRecord[];
 }
 
 /** Keeps demo memory bounded if a long-running dev server receives a lot of traffic. */
@@ -116,6 +133,12 @@ function store(): MemoryStore {
       channels: [...demoChannels],
       channelMetrics: [...demoChannelMetrics],
       transactions: [...demoTransactions],
+      adAccounts: [...demoAdAccounts],
+      adSpend: [...demoAdSpend],
+      invoices: [...demoInvoices],
+      trackedLinks: [...demoTrackedLinks],
+      webEvents: [],
+      siteMetrics: [...demoSiteMetrics],
     };
   }
   return g.__msqMemoryStore;
@@ -988,6 +1011,163 @@ export const memoryRepository: Repository = {
       .slice(0, limit);
   },
 
+  // --- ads, attribution, finance, website (Phase 4) --------------------------------
+
+  async listAdAccounts(tenantId, opts = {}) {
+    return store().adAccounts.filter((a) => a.tenantId === tenantId && (!opts.activeOnly || a.isActive));
+  },
+
+  async upsertAdAccount(tenantId, data) {
+    const existing = store().adAccounts.find((a) => a.tenantId === tenantId && a.platform === data.platform && a.externalAccountId === data.externalAccountId);
+    if (existing) {
+      Object.assign(existing, { name: data.name ?? existing.name, currency: data.currency ?? existing.currency, monthlyBudgetCents: data.monthlyBudgetCents === undefined ? existing.monthlyBudgetCents : data.monthlyBudgetCents, isActive: data.isActive ?? existing.isActive, settings: { ...existing.settings, ...(data.settings ?? {}) } });
+      return existing;
+    }
+    const row: AdAccountRecord = { id: id("ad"), tenantId, platform: data.platform, externalAccountId: data.externalAccountId, name: data.name ?? null, currency: data.currency ?? "AUD", monthlyBudgetCents: data.monthlyBudgetCents ?? null, isActive: data.isActive ?? true, lastSyncAt: null, lastError: null, settings: data.settings ?? {} };
+    store().adAccounts.push(row);
+    return row;
+  },
+
+  async updateAdAccount(tenantId, adAccountId, patch) {
+    const a = store().adAccounts.find((x) => x.id === adAccountId && x.tenantId === tenantId);
+    if (a) Object.assign(a, patch);
+  },
+
+  async recordAdSpend(tenantId, rows) {
+    const s = store();
+    let n = 0;
+    for (const r of rows) {
+      const date = new Date(`${r.date.toISOString().slice(0, 10)}T00:00:00Z`);
+      const existing = s.adSpend.find((x) => x.adAccountId === r.adAccountId && x.date.getTime() === date.getTime() && (x.campaignId ?? null) === (r.campaignId ?? null));
+      const row: AdSpendSnapshotRecord = { id: existing?.id ?? id("as"), tenantId, adAccountId: r.adAccountId, platform: r.platform, date, campaignId: r.campaignId, campaignName: r.campaignName, spendCents: r.spendCents, impressions: r.impressions ?? null, clicks: r.clicks ?? null, platformLeads: r.platformLeads ?? null };
+      if (existing) Object.assign(existing, row);
+      else pushBounded(s.adSpend, row, false);
+      n++;
+    }
+    return n;
+  },
+
+  async listAdSpend(tenantId, opts) {
+    return store()
+      .adSpend.filter((x) => x.tenantId === tenantId && x.date >= opts.from && (!opts.to || x.date < opts.to) && (!opts.adAccountId || x.adAccountId === opts.adAccountId))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  },
+
+  async sumAdSpend(tenantId, from, to) {
+    return store().adSpend.filter((x) => x.tenantId === tenantId && x.date >= from && (!to || x.date < to)).reduce((sum, x) => sum + x.spendCents, 0);
+  },
+
+  async listLeadsBetween(tenantId, from, to, limit = 2000) {
+    return store()
+      .leads.filter((l) => l.tenantId === tenantId && l.createdAt >= from && (!to || l.createdAt < to))
+      .slice(0, limit);
+  },
+
+  async upsertTransactions(tenantId, rows: NewTransaction[]) {
+    const s = store();
+    let fresh = 0;
+    for (const r of rows) {
+      const email = r.customerEmail?.toLowerCase() ?? null;
+      const contactId = r.contactId ?? (email ? s.contacts.find((c) => c.tenantId === tenantId && c.email === email)?.id ?? null : null);
+      const existing = s.transactions.find((t) => t.tenantId === tenantId && t.provider === r.provider && t.providerId === r.providerId);
+      if (existing) {
+        Object.assign(existing, { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: existing.contactId ?? contactId });
+        continue;
+      }
+      pushBounded(s.transactions, { id: id("txn"), tenantId, contactId, leadId: r.leadId ?? null, provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt }, false);
+      fresh++;
+    }
+    return fresh;
+  },
+
+  async listTransactions(tenantId, opts) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    const kinds = opts.kinds ? new Set(opts.kinds) : null;
+    return store()
+      .transactions.filter((t) => t.tenantId === tenantId && t.occurredAt >= opts.from && (!opts.to || t.occurredAt < opts.to) && (!statuses || statuses.has(t.status)) && (!kinds || kinds.has(t.kind)))
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, opts.limit ?? 500);
+  },
+
+  async upsertInvoices(tenantId, rows) {
+    const s = store();
+    const paidNow: InvoiceRecord[] = [];
+    let written = 0;
+    for (const r of rows) {
+      const contactId = r.contactId ?? (r.customerEmail ? s.contacts.find((c) => c.tenantId === tenantId && c.email === r.customerEmail!.toLowerCase())?.id ?? null : null);
+      const existing = s.invoices.find((i) => i.tenantId === tenantId && i.provider === r.provider && i.externalId === r.externalId);
+      const wasPaid = existing?.status === "PAID";
+      const row: InvoiceRecord = { id: existing?.id ?? id("inv"), tenantId, contactId: existing?.contactId ?? contactId, provider: r.provider, externalId: r.externalId, number: r.number ?? existing?.number ?? null, amountCents: r.amountCents, amountDueCents: r.amountDueCents, currency: r.currency, status: r.status, issuedAt: r.issuedAt ?? existing?.issuedAt ?? null, dueAt: r.dueAt ?? existing?.dueAt ?? null, paidAt: r.paidAt ?? existing?.paidAt ?? null, url: r.url ?? existing?.url ?? null, customerName: r.customerName ?? existing?.customerName ?? null, customerEmail: r.customerEmail ?? existing?.customerEmail ?? null, remindersSent: existing?.remindersSent ?? 0, lastReminderAt: existing?.lastReminderAt ?? null };
+      if (existing) Object.assign(existing, row);
+      else pushBounded(s.invoices, row, false);
+      written++;
+      if (row.status === "PAID" && !wasPaid) paidNow.push(existing ?? row);
+    }
+    return { written, paidNow };
+  },
+
+  async listInvoices(tenantId, opts = {}) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    return store()
+      .invoices.filter((i) => i.tenantId === tenantId && (!statuses || statuses.has(i.status)) && (!opts.dueBefore || (i.dueAt && i.dueAt < opts.dueBefore)))
+      .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
+      .slice(0, opts.limit ?? 200);
+  },
+
+  async updateInvoice(tenantId, invoiceId, patch) {
+    const i = store().invoices.find((x) => x.id === invoiceId && x.tenantId === tenantId);
+    if (i) Object.assign(i, patch);
+  },
+
+  async createTrackedLink(tenantId, data) {
+    if (store().trackedLinks.some((l) => l.code === data.code)) throw new Error("That short code is already in use.");
+    const row: TrackedLinkRecord = { id: id("tl"), tenantId, code: data.code, destination: data.destination, label: data.label ?? null, source: data.source ?? null, medium: data.medium ?? null, campaign: data.campaign ?? null, content: data.content ?? null, clicks: 0, createdAt: new Date() };
+    store().trackedLinks.push(row);
+    return row;
+  },
+
+  async listTrackedLinks(tenantId, limit = 100) {
+    return store().trackedLinks.filter((l) => l.tenantId === tenantId).sort(byNewest).slice(0, limit);
+  },
+
+  async findTrackedLinkByCode(code) {
+    return store().trackedLinks.find((l) => l.code === code) ?? null;
+  },
+
+  async incrementTrackedLinkClicks(linkId) {
+    const l = store().trackedLinks.find((x) => x.id === linkId);
+    if (l) l.clicks += 1;
+  },
+
+  async recordWebEvents(tenantId, events) {
+    for (const e of events) pushBounded(store().webEvents, { id: id("we"), tenantId, kind: e.kind, path: e.path ?? null, referrer: e.referrer ?? null, source: e.source ?? null, sessionKey: e.sessionKey ?? null, occurredAt: e.occurredAt ?? new Date() }, false);
+  },
+
+  async listWebEvents(tenantId, from, to, limit = 20_000) {
+    return store().webEvents.filter((e) => e.tenantId === tenantId && e.occurredAt >= from && e.occurredAt < to).slice(0, limit);
+  },
+
+  async pruneWebEvents(tenantId, before) {
+    const s = store();
+    const keep = s.webEvents.filter((e) => !(e.tenantId === tenantId && e.occurredAt < before));
+    const removed = s.webEvents.length - keep.length;
+    s.webEvents = keep;
+    return removed;
+  },
+
+  async recordSiteMetrics(tenantId, data) {
+    const s = store();
+    const date = new Date(`${data.date.toISOString().slice(0, 10)}T00:00:00Z`);
+    const existing = s.siteMetrics.find((m) => m.tenantId === tenantId && m.date.getTime() === date.getTime());
+    const row: SiteMetricSnapshotRecord = { id: existing?.id ?? id("sm"), tenantId, date, sessions: data.sessions, pageviews: data.pageviews, formStarts: data.formStarts, formSubmits: data.formSubmits, linkClicks: data.linkClicks, topPages: data.topPages, topSources: data.topSources };
+    if (existing) Object.assign(existing, row);
+    else pushBounded(s.siteMetrics, row, false);
+  },
+
+  async listSiteMetrics(tenantId, since) {
+    return store().siteMetrics.filter((m) => m.tenantId === tenantId && m.date >= since).sort((a, b) => a.date.getTime() - b.date.getTime());
+  },
+
   async getPortalHome(tenantId, opts) {
     const s = store();
     const monthStart = startOfMonthInZone(opts.timezone).getTime();
@@ -1004,7 +1184,10 @@ export const memoryRepository: Repository = {
     const revenueMonthCents = s.transactions
       .filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.currency === opts.currency && t.occurredAt.getTime() >= monthStart)
       .reduce((sum, t) => sum + t.amountCents, 0);
-    const adSpendMonthCents = demoAdSpendMonthCents[tenantId]?.spentCents ?? 0;
+    const adSpendMonthCents = await this.sumAdSpend(tenantId, new Date(monthStart));
+    const expensesMonthCents = s.transactions.filter((t) => t.tenantId === tenantId && t.kind === "EXPENSE" && t.status === "COMPLETED" && t.occurredAt.getTime() >= monthStart).reduce((sum, t) => sum + t.amountCents, 0);
+    const openInvoices = s.invoices.filter((i) => i.tenantId === tenantId && (i.status === "SENT" || i.status === "OVERDUE"));
+    const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
 
     const runs = s.runs.filter((r) => r.tenantId === tenantId).sort(byNewest);
 
@@ -1018,6 +1201,11 @@ export const memoryRepository: Repository = {
             leadsMonth,
             costPerLeadCents: adSpendMonthCents > 0 && leadsMonth > 0 ? Math.round(adSpendMonthCents / leadsMonth) : null,
             currency: opts.currency,
+            outstandingCents: openInvoices.reduce((sum, i) => sum + i.amountDueCents, 0),
+            overdueCents: overdue.reduce((sum, i) => sum + i.amountDueCents, 0),
+            overdueCount: overdue.length,
+            expensesMonthCents,
+            profitMonthCents: revenueMonthCents - expensesMonthCents - adSpendMonthCents,
           }
         : null,
       contentAwaiting: s.assets.filter((a) => a.tenantId === tenantId && a.status === "IN_REVIEW").sort(byNewest),
@@ -1036,7 +1224,9 @@ export const memoryRepository: Repository = {
       const dayStart = startOfDayInZone(tenant.timezone, now).getTime();
       const { respond, book } = await this.listLeadsPastSla(tenant.id, now);
       const open = s.missed.filter((m) => m.tenantId === tenant.id && OPEN_MISSED.has(m.status));
-      const spend = demoAdSpendMonthCents[tenant.id];
+      const monthStart = startOfMonthInZone(tenant.timezone, now);
+      const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
+      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthStart), budgetCents } : null;
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const base = {
         tenant,

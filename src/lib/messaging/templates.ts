@@ -169,6 +169,16 @@ export function generalReply({ tenant, firstName, channel, custom, infoUrl }: Ba
   return pack(channel, `Thanks for contacting ${tenant.name}`, [hi(firstName), body], tenant);
 }
 
+export function invoiceReminder({ tenant, firstName, channel, number, amount, dueText, url, overdue }: Base & { number: string | null; amount: string; dueText: string; url: string | null; overdue: boolean }) {
+  const ref = number ? `invoice ${number}` : "your invoice";
+  const line = overdue ? `a quick note that ${ref} for ${amount} was due ${dueText} and is still open.` : `a reminder that ${ref} for ${amount} is due ${dueText}.`;
+  return pack(channel, overdue ? `Overdue: ${ref} from ${tenant.name}` : `Reminder: ${ref} from ${tenant.name}`, [hi(firstName), line, url ? `You can view and pay it here: ${url}` : "", "If it's already been paid, thank you, and please ignore this. Reply if anything about it looks wrong."], tenant);
+}
+
+export function invoicePaidThanks({ tenant, firstName, channel, number }: Base & { number: string | null }) {
+  return pack(channel, `Thanks from ${tenant.name}`, [hi(firstName), `thank you, your payment for ${number ? `invoice ${number}` : "your invoice"} has come through.`], tenant);
+}
+
 export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {
   return {
     subject: `${tenant.name}: needs a person — ${summary.slice(0, 60)}`,

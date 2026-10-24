@@ -44,6 +44,13 @@ export async function POST(req: NextRequest) {
     if (typeof v === "string" && v.trim() && k.length <= 40 && v !== "[redacted]") partial[k] = v.trim().slice(0, 200);
   }
   if (JSON.stringify(partial).length > 4096) return NextResponse.json({ error: "Too much data." }, { status: 413, headers: CORS });
-  await repository.upsertFormSession(auth.tenant.id, { sessionKey: parsed.data.session, formName: parsed.data.form ?? null, pageUrl: parsed.data.page ?? null, partial });
+  const session = await repository.upsertFormSession(auth.tenant.id, { sessionKey: parsed.data.session, formName: parsed.data.form ?? null, pageUrl: parsed.data.page ?? null, partial });
+  if (session.startedAt.getTime() > Date.now() - 5_000) {
+    let path: string | null = null;
+    try {
+      path = parsed.data.page ? new URL(parsed.data.page).pathname : null;
+    } catch {}
+    await repository.recordWebEvents(auth.tenant.id, [{ kind: "FORM_START", path, referrer: null, source: null, sessionKey: parsed.data.session }]).catch(() => {});
+  }
   return NextResponse.json({ ok: true }, { headers: CORS });
 }

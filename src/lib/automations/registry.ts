@@ -24,6 +24,9 @@ export const AUTOMATIONS: AutomationDefinition[] = [
   { key: "content_engine", name: "Content engine", description: "Drafts one post per channel from new material and good reviews, checks brand and compliance rules, and flags gaps in the calendar.", triggers: ["content.source.created", "review.received", "schedule"], defaultEnabled: true },
   { key: "social_publish", name: "Social publishing", description: "Publishes approved posts at their scheduled time and reports what went out.", triggers: ["schedule"], defaultEnabled: true },
   { key: "social_sync", name: "Social inbox and analytics sync", description: "Pulls comments, messages, reviews and channel numbers from connected platforms.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "ads_sync", name: "Ad spend and pacing", description: "Pulls daily spend from connected ad accounts and flags when the month is running over or under budget.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "finance_sync", name: "Finance sync", description: "Pulls payments, expenses and invoices from connected finance providers.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "website_analytics", name: "Website numbers", description: "Rolls up visits, form starts and submissions from the site beacon every day.", triggers: ["schedule"], defaultEnabled: true },
   { key: "messaging", name: "Held messages", description: "Sends messages held during quiet hours when the morning comes.", triggers: ["schedule"], defaultEnabled: true },
 ];
 

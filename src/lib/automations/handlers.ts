@@ -6,6 +6,9 @@ import { channelFor, clampOutOfQuietHours, sendMessage, templates, type Outbound
 import { whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
+import { runAdsSync } from "@/lib/ads/sync";
+import { runFinanceSync } from "@/lib/finance/sync";
+import { rollupSite } from "@/lib/website/rollup";
 import { runSocialSync } from "@/lib/social/sync";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -243,6 +246,18 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
   switch (`${action.typeKey}:${action.action}`) {
     case "content_engine:batch": {
       await runContentBatch(tenant, new Date());
+      return;
+    }
+    case "ads_sync:run": {
+      await runAdsSync(tenant, new Date());
+      return;
+    }
+    case "finance_sync:run": {
+      await runFinanceSync(tenant, new Date());
+      return;
+    }
+    case "website_analytics:rollup": {
+      await rollupSite(tenant);
       return;
     }
     case "social_sync:run": {

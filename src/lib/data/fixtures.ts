@@ -4,6 +4,8 @@ import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/
 import { healthFitnessTemplate } from "@/lib/templates/health-fitness";
 import { realEstateTemplate } from "@/lib/templates/real-estate";
 import type {
+  AdAccountRecord,
+  AdSpendSnapshotRecord,
   AutomationRunRecord,
   BookingRecord,
   ChannelMetricSnapshotRecord,
@@ -12,11 +14,14 @@ import type {
   ContentAssetRecord,
   ExceptionRecord,
   IntegrationRecord,
+  InvoiceRecord,
   LeadRecord,
   MissedOpportunityRecord,
   ReviewRecord,
+  SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantSummary,
+  TrackedLinkRecord,
   TransactionRecord,
   UserRecord,
 } from "@/lib/types";
@@ -187,9 +192,41 @@ export const demoChannelMetrics: ChannelMetricSnapshotRecord[] = [0, 1, 2, 3, 4,
 ]);
 
 /** Ad spend this month in minor units; stands in for the ads module until Phase 4. */
-export const demoAdSpendMonthCents: Record<string, { spentCents: number; budgetCents: number }> = {
-  tenant_harbor: { spentCents: 61_000, budgetCents: 100_000 },
-};
+export const demoAdAccounts: AdAccountRecord[] = [
+  { id: "ad_1", tenantId: "tenant_harbor", platform: "META", externalAccountId: "act_demo_harbor", name: "Harbor Realty — Meta", currency: "AUD", monthlyBudgetCents: 60_000, isActive: true, lastSyncAt: ago(60 * 5), lastError: null, settings: {} },
+  { id: "ad_2", tenantId: "tenant_harbor", platform: "GOOGLE_ADS", externalAccountId: "1234567890", name: "Harbor Realty — Google", currency: "AUD", monthlyBudgetCents: 40_000, isActive: true, lastSyncAt: ago(60 * 5), lastError: null, settings: {} },
+];
+
+/** Thirty days of daily spend on two Meta campaigns and one Google campaign, roughly on budget. */
+export const demoAdSpend: AdSpendSnapshotRecord[] = Array.from({ length: 30 }, (_, n) => {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - n);
+  return [
+    { id: `as_m1_${n}`, tenantId: "tenant_harbor", adAccountId: "ad_1", platform: "META" as const, date: d, campaignId: "c_landlords", campaignName: "Landlord leads — Adelaide", spendCents: 1400 + (n % 5) * 60, impressions: 1900 + n * 7, clicks: 38 + (n % 4), platformLeads: n % 3 === 0 ? 1 : 0 },
+    { id: `as_m2_${n}`, tenantId: "tenant_harbor", adAccountId: "ad_1", platform: "META" as const, date: d, campaignId: "c_brand", campaignName: "Brand awareness", spendCents: 550, impressions: 2800, clicks: 19, platformLeads: 0 },
+    { id: `as_g1_${n}`, tenantId: "tenant_harbor", adAccountId: "ad_2", platform: "GOOGLE_ADS" as const, date: d, campaignId: "g_pm_search", campaignName: "Property management — search", spendCents: 1250 + (n % 3) * 40, impressions: 420, clicks: 21, platformLeads: n % 4 === 0 ? 1 : 0 },
+  ];
+}).flat();
+
+export const demoInvoices: InvoiceRecord[] = [
+  { id: "inv_1", tenantId: "tenant_harbor", contactId: "ct_4", provider: "XERO", externalId: "xero_inv_1001", number: "INV-1001", amountCents: 1_250_000, amountDueCents: 0, currency: "AUD", status: "PAID", issuedAt: ago(60 * 24 * 9), dueAt: ago(60 * 24 * 2), paidAt: ago(60 * 24 * 6), url: null, customerName: "Graham Steele", customerEmail: "graham@example.com", remindersSent: 0, lastReminderAt: null },
+  { id: "inv_2", tenantId: "tenant_harbor", contactId: null, provider: "XERO", externalId: "xero_inv_1002", number: "INV-1002", amountCents: 184_000, amountDueCents: 184_000, currency: "AUD", status: "OVERDUE", issuedAt: ago(60 * 24 * 20), dueAt: ago(60 * 24 * 6), paidAt: null, url: null, customerName: "Marine Parade Holdings", customerEmail: "accounts@marineparade.example", remindersSent: 1, lastReminderAt: ago(60 * 24 * 3) },
+  { id: "inv_3", tenantId: "tenant_harbor", contactId: null, provider: "XERO", externalId: "xero_inv_1003", number: "INV-1003", amountCents: 92_000, amountDueCents: 92_000, currency: "AUD", status: "SENT", issuedAt: ago(60 * 24 * 2), dueAt: ahead(60 * 24 * 12), paidAt: null, url: null, customerName: "J. & P. Nguyen", customerEmail: "nguyen@example.com", remindersSent: 0, lastReminderAt: null },
+  { id: "inv_4", tenantId: "tenant_summit", contactId: "ct_6", provider: "SQUARE", externalId: "sq_inv_77", number: "0077", amountCents: 29_000, amountDueCents: 0, currency: "AUD", status: "PAID", issuedAt: ago(60 * 24 * 4), dueAt: ago(60 * 24 * 1), paidAt: ago(60), url: null, customerName: "Jordan Lee", customerEmail: "jordan@example.com", remindersSent: 0, lastReminderAt: null },
+];
+
+export const demoTrackedLinks: TrackedLinkRecord[] = [
+  { id: "tl_1", tenantId: "tenant_harbor", code: "harbor-fb-oct", destination: "https://harborrealty.example/appraisal", label: "Facebook post — appraisal", source: "facebook", medium: "social", campaign: "appraisal-oct", content: null, clicks: 23, createdAt: ago(60 * 24 * 12) },
+  { id: "tl_2", tenantId: "tenant_harbor", code: "harbor-signboard", destination: "https://harborrealty.example/sell", label: "Signboard QR", source: "signboard", medium: "offline", campaign: "glenelg-boards", content: null, clicks: 7, createdAt: ago(60 * 24 * 30) },
+];
+
+export const demoSiteMetrics: SiteMetricSnapshotRecord[] = Array.from({ length: 14 }, (_, n) => {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - n);
+  return { id: `sm_${n}`, tenantId: "tenant_harbor", date: d, sessions: 90 + (n % 6) * 7, pageviews: 210 + (n % 6) * 15, formStarts: 6 + (n % 3), formSubmits: 2 + (n % 2), linkClicks: n % 4, topPages: { "/": 70, "/appraisal": 38, "/property-management": 31, "/rentals": 25 }, topSources: { google: 44, facebook: 21, direct: 18, "(referral)": 7 } };
+});
 
 // ---------------------------------------------------------------------------
 // Contacts and leads

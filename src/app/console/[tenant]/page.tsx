@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContentStudio } from "@/components/console/content-studio";
+import { MoneyStudio } from "@/components/console/money-studio";
+import { pacingStatus } from "@/lib/ads/sync";
 import { OperationsPanels } from "@/components/console/operations-panels";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
@@ -36,6 +38,9 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
     repository.listChannelMetrics(tenant.id, { since: new Date(Date.now() - 14 * 86_400_000) }),
     repository.listInboxConversations(tenant.id, { limit: 40 }),
   ]);
+  const [adAccounts, pacing, invoices, links] = await Promise.all([repository.listAdAccounts(tenant.id), pacingStatus(tenant), repository.listInvoices(tenant.id, { limit: 50 }), repository.listTrackedLinks(tenant.id, 30)]);
+  const financeIntegrations = config.integrations.filter((i) => ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].includes(i.provider));
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   const inboxThreads = await Promise.all(inbox.map(async (conversation) => ({ conversation, messages: await repository.listMessages(tenant.id, conversation.id, 10) })));
   const draftCounts: Record<string, number> = {};
   for (const a of workbench.assets) if (a.parentId) draftCounts[a.parentId] = (draftCounts[a.parentId] ?? 0) + 1;
@@ -134,6 +139,14 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
           <p className="text-sm text-muted-foreground">Material in, drafts out, approvals, the publishing queue, the inbox and channel numbers.</p>
         </div>
         <ContentStudio tenantId={tenant.id} fmt={fmt} sources={workbench.sources} drafts={workbench.assets} posts={workbench.posts} channels={summarizeChannels(workbench.channels, snapshots)} inbox={inboxThreads} draftCounts={draftCounts} />
+      </section>
+
+      <section aria-labelledby="money-studio-title" className="flex flex-col gap-3">
+        <div>
+          <h2 id="money-studio-title" className="text-lg font-semibold tracking-tight">Money and marketing</h2>
+          <p className="text-sm text-muted-foreground">Ad accounts and pacing, finance connections and invoices, tracked links and website numbers.</p>
+        </div>
+        <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={adAccounts} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />
       </section>
 
       <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />

@@ -1,4 +1,7 @@
 import type {
+  AdAccountRecord,
+  AdPlatform,
+  AdSpendSnapshotRecord,
   AssetGeneration,
   AutomationOutcome,
   AutomationRunRecord,
@@ -14,10 +17,13 @@ import type {
   DomainEventRecord,
   ExceptionRecord,
   ExceptionStatus,
+  FinanceProvider,
   FormSessionRecord,
   InformationRequestRecord,
   InformationRequestStatus,
   IntegrationRecord,
+  InvoiceRecord,
+  InvoiceStatus,
   LeadRecord,
   LeadSource,
   MessageRecord,
@@ -31,6 +37,7 @@ import type {
   ReviewRecord,
   ScheduledActionRecord,
   ScheduledActionStatus,
+  SiteMetricSnapshotRecord,
   SocialPlatform,
   SocialPostRecord,
   TenantAccess,
@@ -39,8 +46,13 @@ import type {
   TenantRoleRecord,
   TenantSummary,
   TicketType,
+  TrackedLinkRecord,
+  TransactionKind,
   TransactionRecord,
+  TransactionStatus,
   UserRecord,
+  WebEventKind,
+  WebEventRecord,
 } from "@/lib/types";
 
 export type IntakeChannel = "WEB_FORM" | "META_LEAD_FORM" | "GOOGLE_LEAD_FORM" | "SOCIAL_DM" | "SOCIAL_COMMENT" | "EMAIL_FORWARD" | "CALL" | "VOICEMAIL" | "PORTAL_EMAIL" | "API";
@@ -199,6 +211,104 @@ export interface NewReview {
 }
 
 export type ApiKeyScope = "intake" | "content";
+
+// --- Phase 4 inputs ---------------------------------------------------------------
+
+export interface NewAdAccount {
+  platform: AdPlatform;
+  externalAccountId: string;
+  name?: string | null;
+  currency?: string;
+  monthlyBudgetCents?: number | null;
+  isActive?: boolean;
+  settings?: Record<string, unknown>;
+}
+
+export interface AdAccountPatch {
+  name?: string | null;
+  currency?: string;
+  monthlyBudgetCents?: number | null;
+  isActive?: boolean;
+  lastSyncAt?: Date | null;
+  lastError?: string | null;
+}
+
+export interface NewAdSpend {
+  adAccountId: string;
+  platform: AdPlatform;
+  date: Date;
+  campaignId: string | null;
+  campaignName: string | null;
+  spendCents: number;
+  impressions?: number | null;
+  clicks?: number | null;
+  platformLeads?: number | null;
+  raw?: Record<string, unknown>;
+}
+
+export interface NewTransaction {
+  provider: FinanceProvider;
+  providerId: string;
+  kind: TransactionKind;
+  status: TransactionStatus;
+  amountCents: number;
+  currency: string;
+  occurredAt: Date;
+  note?: string | null;
+  contactId?: string | null;
+  leadId?: string | null;
+  /** Used to link the row to a contact by email when the provider gives one. */
+  customerEmail?: string | null;
+  rawPayload?: Record<string, unknown>;
+}
+
+export interface NewInvoice {
+  provider: FinanceProvider;
+  externalId: string;
+  number?: string | null;
+  amountCents: number;
+  amountDueCents: number;
+  currency: string;
+  status: InvoiceStatus;
+  issuedAt?: Date | null;
+  dueAt?: Date | null;
+  paidAt?: Date | null;
+  url?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  contactId?: string | null;
+  rawPayload?: Record<string, unknown>;
+}
+
+export interface NewTrackedLink {
+  code: string;
+  destination: string;
+  label?: string | null;
+  source?: string | null;
+  medium?: string | null;
+  campaign?: string | null;
+  content?: string | null;
+}
+
+export interface NewWebEvent {
+  kind: WebEventKind;
+  path?: string | null;
+  referrer?: string | null;
+  source?: string | null;
+  sessionKey?: string | null;
+  occurredAt?: Date;
+}
+
+export interface NewSiteMetrics {
+  date: Date;
+  sessions: number;
+  pageviews: number;
+  formStarts: number;
+  formSubmits: number;
+  linkClicks: number;
+  topPages: Record<string, number>;
+  topSources: Record<string, number>;
+}
 
 export interface IntegrationUpsert {
   provider: import("@/lib/types").IntegrationProvider;
@@ -479,6 +589,35 @@ export interface Repository {
   hasMessageWithProviderId(tenantId: string, conversationId: string, providerMessageId: string): Promise<boolean>;
   updateConversation(tenantId: string, conversationId: string, patch: { awaitingReply?: boolean; suggestedReply?: string | null; meta?: Record<string, unknown> }): Promise<void>;
   listRecentTransactions(tenantId: string, limit?: number): Promise<TransactionRecord[]>;
+
+  // --- ads, attribution, finance, website (Phase 4) ------------------------------------
+  listAdAccounts(tenantId: string, opts?: { activeOnly?: boolean }): Promise<AdAccountRecord[]>;
+  upsertAdAccount(tenantId: string, data: NewAdAccount): Promise<AdAccountRecord>;
+  updateAdAccount(tenantId: string, adAccountId: string, patch: AdAccountPatch): Promise<void>;
+  /** Upserts daily rows keyed on (account, date, campaign). Returns how many rows were written. */
+  recordAdSpend(tenantId: string, rows: NewAdSpend[]): Promise<number>;
+  listAdSpend(tenantId: string, opts: { from: Date; to?: Date; adAccountId?: string }): Promise<AdSpendSnapshotRecord[]>;
+  /** Total spend in cents between the dates (inclusive of from, exclusive of to). */
+  sumAdSpend(tenantId: string, from: Date, to?: Date): Promise<number>;
+  /** Leads created in the window, with attribution, for the attribution report (capped). */
+  listLeadsBetween(tenantId: string, from: Date, to?: Date, limit?: number): Promise<LeadRecord[]>;
+  /** Upserts on (provider, providerId); links a contact by customerEmail when none is given. Returns how many were new. */
+  upsertTransactions(tenantId: string, rows: NewTransaction[]): Promise<number>;
+  listTransactions(tenantId: string, opts: { from: Date; to?: Date; status?: TransactionStatus[]; kinds?: TransactionKind[]; limit?: number }): Promise<TransactionRecord[]>;
+  /** Upserts on (provider, externalId). Returns the invoices that just became PAID so a thank-you can go out. */
+  upsertInvoices(tenantId: string, rows: NewInvoice[]): Promise<{ written: number; paidNow: InvoiceRecord[] }>;
+  listInvoices(tenantId: string, opts?: { status?: InvoiceStatus[]; dueBefore?: Date; limit?: number }): Promise<InvoiceRecord[]>;
+  updateInvoice(tenantId: string, invoiceId: string, patch: { status?: InvoiceStatus; remindersSent?: number; lastReminderAt?: Date | null; paidAt?: Date | null; contactId?: string | null }): Promise<void>;
+  createTrackedLink(tenantId: string, data: NewTrackedLink): Promise<TrackedLinkRecord>;
+  listTrackedLinks(tenantId: string, limit?: number): Promise<TrackedLinkRecord[]>;
+  /** Codes are globally unique, so the redirect resolves the tenant from the link. */
+  findTrackedLinkByCode(code: string): Promise<TrackedLinkRecord | null>;
+  incrementTrackedLinkClicks(linkId: string): Promise<void>;
+  recordWebEvents(tenantId: string, events: NewWebEvent[]): Promise<void>;
+  listWebEvents(tenantId: string, from: Date, to: Date, limit?: number): Promise<WebEventRecord[]>;
+  pruneWebEvents(tenantId: string, before: Date): Promise<number>;
+  recordSiteMetrics(tenantId: string, data: NewSiteMetrics): Promise<void>;
+  listSiteMetrics(tenantId: string, since: Date): Promise<SiteMetricSnapshotRecord[]>;
 
   // --- read models for the two surfaces --------------------------------------------------
   getPortalHome(tenantId: string, opts: PortalHomeOptions): Promise<PortalHome>;
