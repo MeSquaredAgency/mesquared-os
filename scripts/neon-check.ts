@@ -115,12 +115,15 @@ if (!services.objectStorage) {
     ({ key } = await putTenantObject(tenantId, `checks/${stamp}.txt`, content, "text/plain"));
     return key;
   });
+  const uploaded = () => assert.ok(key, "skipped: the upload step failed");
   await step("object-storage", "read it back", async () => {
+    uploaded();
     const { bytes, contentType } = await readTenantObject(tenantId, key);
     assert.equal(Buffer.from(bytes).toString("utf8"), content);
     return contentType ?? "";
   });
   await step("object-storage", "presigned URL serves it over plain HTTPS", async () => {
+    uploaded();
     const url = await getTenantObjectUrl(tenantId, key, 120);
     const res = await fetch(url);
     assert.equal(res.status, 200, `HTTP ${res.status}`);
@@ -128,9 +131,11 @@ if (!services.objectStorage) {
     return new URL(url).host;
   });
   await step("object-storage", "another tenant cannot presign it", async () => {
+    uploaded();
     await assert.rejects(getTenantObjectUrl("someone_else", key));
   });
   await step("object-storage", "delete", async () => {
+    uploaded();
     await deleteTenantObject(tenantId, key);
     await assert.rejects(readTenantObject(tenantId, key));
   });
