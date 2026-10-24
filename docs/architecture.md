@@ -199,7 +199,7 @@ parsing. Qualification per tenant. Playbook: acknowledgement with booking link
 (SMS/email), assignee alert, Cal.com over Google Calendar, SLA → missed
 opportunity → exception queue. Automation runs and "Handled for you".
 
-**Phase 2 — Recover and automate (weeks 4–5).** All missed-opportunity
+**Phase 2 — Recover and automate (weeks 4–5). Code shipped 24 Oct.** All missed-opportunity
 detectors with per-tenant values; automation types: enquiry auto-reply,
 booking confirmation/reminder/follow-up, document chasing, review requests,
 reactivation; APN's availability replies, inspection reminders and

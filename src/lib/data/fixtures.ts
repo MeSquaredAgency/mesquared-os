@@ -5,7 +5,9 @@ import { healthFitnessTemplate } from "@/lib/templates/health-fitness";
 import { realEstateTemplate } from "@/lib/templates/real-estate";
 import type {
   AutomationRunRecord,
+  BookingRecord,
   ContactRecord,
+  ReviewRecord,
   ContentAssetRecord,
   ExceptionRecord,
   IntegrationRecord,
@@ -177,19 +179,21 @@ export const demoAdSpendMonthCents: Record<string, { spentCents: number; budgetC
 // ---------------------------------------------------------------------------
 
 export const demoContacts: ContactRecord[] = [
-  { id: "ct_1", tenantId: "tenant_harbor", firstName: "Margaret", lastName: "Ellis", email: "margaret.ellis@example.com", phone: "+61400111222", company: null, tags: ["owner"], lastActivityAt: ago(14), lapsedAt: null, createdAt: ago(14) },
-  { id: "ct_2", tenantId: "tenant_harbor", firstName: "Peter", lastName: "Nguyen", email: "peter.n@example.com", phone: "+61400333444", company: null, tags: ["owner"], lastActivityAt: ago(95), lapsedAt: null, createdAt: ago(95) },
-  { id: "ct_3", tenantId: "tenant_harbor", firstName: "Lucy", lastName: "Tran", email: "lucy.t@example.com", phone: null, company: null, tags: ["renter"], lastActivityAt: ago(40), lapsedAt: null, createdAt: ago(40) },
-  { id: "ct_4", tenantId: "tenant_harbor", firstName: "Graham", lastName: "Steele", email: "g.steele@example.com", phone: "+61400555666", company: null, tags: ["owner"], lastActivityAt: ago(60 * 30), lapsedAt: null, createdAt: ago(60 * 30) },
-  { id: "ct_5", tenantId: "tenant_harbor", firstName: "Ana", lastName: "Petrova", email: "ana.p@example.com", phone: "+61400777888", company: null, tags: ["owner"], lastActivityAt: ago(60 * 9), lapsedAt: null, createdAt: ago(60 * 9) },
-  { id: "ct_6", tenantId: "tenant_summit", firstName: "Jordan", lastName: "Lee", email: "jordan.lee@example.com", phone: "+61411000111", company: null, tags: [], lastActivityAt: ago(22), lapsedAt: null, createdAt: ago(22) },
-  { id: "ct_7", tenantId: "tenant_summit", firstName: "Chloe", lastName: "Baptiste", email: "chloe.b@example.com", phone: null, company: null, tags: [], lastActivityAt: ago(60 * 50), lapsedAt: ago(60 * 24), createdAt: ago(60 * 24 * 90) },
+  { id: "ct_1", tenantId: "tenant_harbor", firstName: "Margaret", lastName: "Ellis", email: "margaret.ellis@example.com", phone: "+61400111222", company: null, consent: {}, tags: ["owner"], lastActivityAt: ago(14), lapsedAt: null, createdAt: ago(14) },
+  { id: "ct_2", tenantId: "tenant_harbor", firstName: "Peter", lastName: "Nguyen", email: "peter.n@example.com", phone: "+61400333444", company: null, consent: {}, tags: ["owner"], lastActivityAt: ago(95), lapsedAt: null, createdAt: ago(95) },
+  { id: "ct_3", tenantId: "tenant_harbor", firstName: "Lucy", lastName: "Tran", email: "lucy.t@example.com", phone: null, company: null, consent: {}, tags: ["renter"], lastActivityAt: ago(40), lapsedAt: null, createdAt: ago(40) },
+  { id: "ct_4", tenantId: "tenant_harbor", firstName: "Graham", lastName: "Steele", email: "g.steele@example.com", phone: "+61400555666", company: null, consent: { sms: { granted: true, at: "2026-06-01T00:00:00Z", source: "onboarding form" } }, tags: ["owner", "customer"], lastActivityAt: ago(60 * 24 * 200), lapsedAt: null, createdAt: ago(60 * 24 * 400) },
+  { id: "ct_5", tenantId: "tenant_harbor", firstName: "Ana", lastName: "Petrova", email: "ana.p@example.com", phone: "+61400777888", company: null, consent: {}, tags: ["owner"], lastActivityAt: ago(60 * 9), lapsedAt: null, createdAt: ago(60 * 9) },
+  { id: "ct_6", tenantId: "tenant_summit", firstName: "Jordan", lastName: "Lee", email: "jordan.lee@example.com", phone: "+61411000111", company: null, consent: {}, tags: [], lastActivityAt: ago(22), lapsedAt: null, createdAt: ago(22) },
+  { id: "ct_7", tenantId: "tenant_summit", firstName: "Chloe", lastName: "Baptiste", email: "chloe.b@example.com", phone: null, company: null, consent: {}, tags: [], lastActivityAt: ago(60 * 50), lapsedAt: ago(60 * 24), createdAt: ago(60 * 24 * 90) },
 ];
 
 const baseLead = {
   attribution: {},
   firstResponseAt: null,
   bookedAt: null,
+  stageEnteredAt: null,
+  lastActivityAt: null,
 };
 
 export const demoLeads: LeadRecord[] = [
@@ -228,7 +232,7 @@ export const demoLeads: LeadRecord[] = [
     tenantId: "tenant_harbor",
     contactId: "ct_2",
     pipelineId: harborPipeline.id,
-    stageId: harborStage("appraisal_booked"),
+    stageId: harborStage("agreement_sent"),
     assigneeId: "user_pm",
     source: "WEB_FORM",
     externalId: "web_2201",
@@ -237,7 +241,7 @@ export const demoLeads: LeadRecord[] = [
     email: "peter.n@example.com",
     phone: "+61400333444",
     company: null,
-    message: "Thinking of selling our place in Norwood next year. What's it worth?",
+    message: "Thinking of selling our place in Norwood. Appraisal done, management agreement sent.",
     attributes: { suburb: "Norwood", service: "appraisal" },
     attribution: { source: "google", campaign: "appraisal-search" },
     status: "BOOKED",
@@ -246,11 +250,13 @@ export const demoLeads: LeadRecord[] = [
     qualificationReason: "Owner asking for an appraisal in a service area; timeline next year.",
     qualifiedBy: "stub",
     valueCents: 350_000,
-    respondBy: ago(90),
-    bookBy: ago(23),
-    firstResponseAt: ago(93),
-    bookedAt: ago(70),
-    createdAt: ago(95),
+    respondBy: ago(60 * 24 * 9),
+    bookBy: ago(60 * 24 * 8),
+    firstResponseAt: ago(60 * 24 * 9),
+    bookedAt: ago(60 * 24 * 8),
+    stageEnteredAt: ago(60 * 24 * 6),
+    lastActivityAt: ago(60 * 24 * 6),
+    createdAt: ago(60 * 24 * 9),
   },
   {
     ...baseLead,
@@ -387,4 +393,14 @@ export const demoTransactions: TransactionRecord[] = [
   { id: "txn_2", tenantId: "tenant_harbor", contactId: null, leadId: null, provider: "MANUAL", providerId: "mgmt_oct", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_840_000, currency: "AUD", note: "Management fees — October", occurredAt: ago(60 * 24 * 2) },
   { id: "txn_3", tenantId: "tenant_summit", contactId: "ct_6", leadId: "lead_5", provider: "SQUARE", providerId: "sq_pay_04", kind: "PAYMENT", status: "COMPLETED", amountCents: 29_000, currency: "AUD", note: "Trial week", occurredAt: ago(60) },
   { id: "txn_4", tenantId: "tenant_summit", contactId: null, leadId: null, provider: "SQUARE", providerId: "sq_pay_05", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_160_000, currency: "AUD", note: "Memberships — this month", occurredAt: ago(60 * 24 * 5) },
+];
+
+export const demoBookings: BookingRecord[] = [
+  { id: "bk_fixture_1", tenantId: "tenant_harbor", leadId: "lead_2", provider: "CALCOM", externalId: "cal_fx_1", bookingUrl: "https://cal.com/harbor-realty/appraisal", startsAt: ahead(60 * 26), endsAt: ahead(60 * 27), status: "SCHEDULED", confirmedAt: ago(60 * 24 * 7), remindedAt: null, followedUpAt: null, createdAt: ago(60 * 24 * 7) },
+  { id: "bk_fixture_2", tenantId: "tenant_summit", leadId: "lead_5", provider: "CALCOM", externalId: "cal_fx_2", bookingUrl: "https://cal.com/summit/trial", startsAt: ahead(60 * 50), endsAt: ahead(60 * 51), status: "SCHEDULED", confirmedAt: ago(20), remindedAt: null, followedUpAt: null, createdAt: ago(20) },
+];
+
+export const demoReviews: ReviewRecord[] = [
+  { id: "rv_1", tenantId: "tenant_harbor", provider: "Google", externalId: "g_001", authorName: "Helen M.", rating: 4, body: "Great communication during the lease. Took a while to get the bond sorted though.", url: null, receivedAt: ago(60 * 24 * 3), repliedAt: null },
+  { id: "rv_2", tenantId: "tenant_harbor", provider: "Google", externalId: "g_002", authorName: "Rob T.", rating: 5, body: "Sold in two weeks, above reserve.", url: null, receivedAt: ago(60 * 24 * 10), repliedAt: ago(60 * 24 * 9) },
 ];

@@ -163,6 +163,30 @@ print instead of send. The SLA watch (`POST /api/jobs/detect`, run it every
 few minutes) turns leads that miss the response or booking window into missed
 opportunities for an operator.
 
+## Missed opportunities and automations
+
+The scheduler tick (`POST /api/jobs/tick`, bearer `JOB_SECRET`, run it every
+minute) does two things for every active tenant: runs the detectors, then
+executes any scheduled work whose time has come.
+
+Detectors (values and thresholds per tenant, one open item per subject):
+unanswered enquiries and leads that never booked (SLA), no-shows, quotes or
+proposals gone quiet (stages with `quietAfterDays`), unreplied DMs and
+comments, unanswered reviews, lapsed customers, abandoned forms (via the
+`/api/v1/track/form` beacon), and missed calls (via `/api/v1/inbound/call`).
+Each raises an exception for an operator, or for the client person a tenant's
+escalation rule names, logs a run, and emits an event.
+
+Automation types with handlers: enquiry auto-reply (green playbook, the
+renter/availability reply for red enquiries, a text back after a missed call),
+booking lifecycle (confirmation, reminder, auto-complete, follow-up; cancelled
+or rescheduled bookings drop their queued work), review requests after a
+completed appointment (needs `reviewUrl` in the tenant's settings), chasing
+documents or information with a cap then escalation, and reactivation of
+lapsed customers (respecting recorded consent). Operators drive outcomes from
+the workspace page in the console: attended / no-show, open or close a
+request, mark a review replied.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

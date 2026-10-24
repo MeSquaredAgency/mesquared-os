@@ -42,6 +42,7 @@ export function materializeTemplate(template: IndustryTemplate, tenantId: string
         advanceOn: s.advanceOn ?? "MANUAL",
         isWon: Boolean(s.isWon),
         isLost: Boolean(s.isLost),
+        quietAfterDays: s.quietAfterDays ?? null,
       })),
     };
   });

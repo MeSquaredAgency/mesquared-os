@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { repository } from "@/lib/data";
 import { processIntake } from "@/lib/intake/process";
 import { takeIntakeToken } from "@/lib/intake/rate-limit";
 import { intakeSchema } from "@/lib/intake/schema";
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   // Honeypot: bots fill every field. Pretend success and store nothing.
   if (get("_hp")) return finish(true, { outcome: "ignored" });
 
-  const reserved = new Set(["_key", "_redirect", "_hp", "name", "first_name", "last_name", "firstName", "lastName", "email", "phone", "company", "message", "source", "external_id"]);
+  const reserved = new Set(["_key", "_redirect", "_hp", "_session", "name", "first_name", "last_name", "firstName", "lastName", "email", "phone", "company", "message", "source", "external_id"]);
   const fields: Record<string, string> = {};
   for (const [k, v] of form.entries()) if (!reserved.has(k) && typeof v === "string" && v) fields[k] = v;
 
@@ -66,6 +67,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await processIntake(auth.tenant, parsed.data, Object.fromEntries([...form.entries()].filter(([k]) => k !== "_key").map(([k, v]) => [k, typeof v === "string" ? v : "(file)"])), { channel: "WEB_FORM", provider: fields.utm_source || "website" });
+    const session = get("_session");
+    if (session) await repository.updateFormSession(auth.tenant.id, session, { submittedAt: new Date(), ...(result.outcome !== "dry_run" ? { convertedLeadId: result.lead.id } : {}) });
     return finish(true, { outcome: result.outcome }, result.outcome === "created" ? 201 : 200);
   } catch (error) {
     console.error(`[intake/form] failed for ${auth.tenant.slug}: ${error instanceof Error ? error.message : error}`);

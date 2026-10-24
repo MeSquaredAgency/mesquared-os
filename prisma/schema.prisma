@@ -161,6 +161,10 @@ model Tenant {
   socialProofAssets   SocialProofAsset[]
   transactions        Transaction[]
   inventoryItems      InventoryItem[]
+  scheduledActions    ScheduledAction[]
+  informationRequests InformationRequest[]
+  reviews             Review[]
+  formSessions        FormSession[]
 }
 
 /// Inbound API keys used by web forms / landing pages / relays to post into /api/v1/intake. Only a hash is stored.
@@ -298,6 +302,7 @@ model Contact {
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
   transactions        Transaction[]
+  informationRequests InformationRequest[]
 
   @@index([tenantId, email])
   @@index([tenantId, phone])
@@ -339,6 +344,8 @@ model PipelineStage {
   advanceOn  StageAdvanceTrigger @default(MANUAL)
   isWon      Boolean             @default(false)
   isLost     Boolean             @default(false)
+  /// Days of silence in this stage before a lead counts as a quote/proposal gone quiet. Null = not watched.
+  quietAfterDays Int?
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
@@ -422,6 +429,10 @@ model Lead {
   wonAt           DateTime?
   lostAt          DateTime?
   lifetimeValueCents Int    @default(0)
+  /// When the lead entered its current stage; drives "quote gone quiet".
+  stageEnteredAt  DateTime?
+  /// Last inbound or outbound activity on this lead.
+  lastActivityAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -437,6 +448,7 @@ model Lead {
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
   transactions        Transaction[]
+  informationRequests InformationRequest[]
 
   @@unique([tenantId, externalId])
   @@index([tenantId, status])
@@ -591,6 +603,10 @@ model Booking {
   startsAt   DateTime?
   endsAt     DateTime?
   status     BookingStatus   @default(LINK_PENDING)
+  /// Lifecycle stamps set by the booking_lifecycle automation.
+  confirmedAt  DateTime?
+  remindedAt   DateTime?
+  followedUpAt DateTime?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
@@ -599,6 +615,108 @@ model Booking {
 
   @@index([tenantId, startsAt])
   @@index([tenantId, status])
+}
+
+/// Work an automation decided to do later: a reminder, a follow-up, a review request, a chase. Processed by the jobs tick.
+model ScheduledAction {
+  id        String   @id @default(cuid())
+  tenantId  String
+  typeKey   String
+  /// Discriminator inside the type, e.g. "reminder" | "follow_up" | "auto_complete".
+  action    String
+  runAt     DateTime
+  payload   Json     @default("{}")
+  /// Idempotency: one pending action per (subject, action).
+  dedupeKey String
+  status    ScheduledActionStatus @default(PENDING)
+  attempts  Int      @default(0)
+  lastError String?
+  createdAt DateTime @default(now())
+  ranAt     DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dedupeKey])
+  @@index([status, runAt])
+}
+
+enum ScheduledActionStatus {
+  PENDING
+  DONE
+  CANCELLED
+  FAILED
+}
+
+enum InformationRequestStatus {
+  OPEN
+  RECEIVED
+  CANCELLED
+  ESCALATED
+}
+
+/// Something the business is waiting on from a contact: a document, a signature, a completed application.
+model InformationRequest {
+  id           String                   @id @default(cuid())
+  tenantId     String
+  contactId    String?
+  leadId       String?
+  kind         String
+  description  String
+  dueAt        DateTime?
+  status       InformationRequestStatus @default(OPEN)
+  chaseCount   Int                      @default(0)
+  lastChasedAt DateTime?
+  receivedAt   DateTime?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, lastChasedAt])
+}
+
+/// A public review (Google, Facebook, portal). Unanswered ones are a missed opportunity.
+model Review {
+  id         String    @id @default(cuid())
+  tenantId   String
+  provider   String
+  externalId String
+  authorName String?
+  rating     Int?
+  body       String?
+  url        String?
+  receivedAt DateTime  @default(now())
+  repliedAt  DateTime?
+  replyBody  String?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, externalId])
+  @@index([tenantId, repliedAt])
+}
+
+/// A website form someone started. Partial contact details are captured so an abandoned form can be recovered.
+model FormSession {
+  id              String    @id @default(cuid())
+  tenantId        String
+  sessionKey      String
+  formName        String?
+  pageUrl         String?
+  partial         Json      @default("{}")
+  startedAt       DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+  submittedAt     DateTime?
+  convertedLeadId String?
+  /// Set once an abandoned-form opportunity has been raised, so it is raised once.
+  flaggedAt       DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sessionKey])
+  @@index([tenantId, submittedAt, lastSeenAt])
 }
 
 // ---------------------------------------------------------------------------

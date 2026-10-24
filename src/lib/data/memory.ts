@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import type {
   AutomationRunRecord,
+  BookingRecord,
   ContactRecord,
+  ConversationRecord,
+  FormSessionRecord,
+  InformationRequestRecord,
+  ReviewRecord,
+  ScheduledActionRecord,
   ContentAssetRecord,
   DomainEventRecord,
   ExceptionRecord,
@@ -32,6 +38,7 @@ import {
   demoIntegrationSettings,
   demoApiKeyHashes,
   demoAssets,
+  demoBookings,
   demoConfig,
   demoConnectedPlatforms,
   demoContacts,
@@ -42,6 +49,7 @@ import {
   demoMissed,
   demoOperatorAssignments,
   demoPosts,
+  demoReviews,
   demoRuns,
   demoTenants,
   demoTransactions,
@@ -53,11 +61,15 @@ interface MemoryStore {
   users: (UserRecord & { passwordHash: string })[];
   contacts: ContactRecord[];
   leads: LeadRecord[];
-  bookings: { id: string; tenantId: string; leadId: string; bookingUrl: string; sent: boolean }[];
+  bookings: BookingRecord[];
+  actions: ScheduledActionRecord[];
+  requests: InformationRequestRecord[];
+  reviews: ReviewRecord[];
+  formSessions: FormSessionRecord[];
   intakeEvents: (IntakeEventInput & { id: string; tenantId: string; createdAt: Date })[];
-  conversations: { id: string; tenantId: string; contactId: string | null; channel: NewMessage["channel"]; externalId: string | null; lastMessageAt: Date; awaitingReply: boolean }[];
+  conversations: ConversationRecord[];
   messages: (NewMessage & { id: string; tenantId: string; conversationId: string; createdAt: Date })[];
-  missed: MissedOpportunityRecord[];
+  missed: (MissedOpportunityRecord & { dedupeKey?: string })[];
   runs: AutomationRunRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
@@ -79,7 +91,11 @@ function store(): MemoryStore {
       users: [...getDemoUsers()],
       contacts: [...demoContacts],
       leads: [...demoLeads],
-      bookings: [],
+      bookings: [...demoBookings],
+      actions: [],
+      requests: [],
+      reviews: [...demoReviews],
+      formSessions: [],
       intakeEvents: [],
       conversations: [],
       messages: [],
@@ -167,6 +183,14 @@ export const memoryRepository: Repository = {
     return store().tenants.find((t) => t.slug === slug) ?? null;
   },
 
+  async findTenantById(tenantId) {
+    return store().tenants.find((t) => t.id === tenantId) ?? null;
+  },
+
+  async listAllTenants() {
+    return store().tenants;
+  },
+
   async findTenantByApiKeyHash(hash) {
     const tenantId = demoApiKeyHashes[hash];
     const tenant = tenantId ? store().tenants.find((t) => t.id === tenantId) : undefined;
@@ -199,7 +223,7 @@ export const memoryRepository: Repository = {
       existing.company ??= data.company;
       return existing;
     }
-    const contact: ContactRecord = { id: id("ct"), tenantId, ...data, tags: [], lastActivityAt: new Date(), lapsedAt: null, createdAt: new Date() };
+    const contact: ContactRecord = { id: id("ct"), tenantId, ...data, consent: {}, tags: [], lastActivityAt: new Date(), lapsedAt: null, createdAt: new Date() };
     pushBounded(s.contacts, contact);
     return contact;
   },
@@ -251,6 +275,8 @@ export const memoryRepository: Repository = {
       bookBy: data.bookBy,
       firstResponseAt: null,
       bookedAt: null,
+      stageEnteredAt: data.stageId ? new Date() : null,
+      lastActivityAt: new Date(),
       createdAt: new Date(),
     };
     pushBounded(store().leads, lead);
@@ -293,7 +319,11 @@ export const memoryRepository: Repository = {
     if (lead.status === "QUALIFIED" || lead.status === "BOOKING_SENT" || lead.status === "NEW") lead.status = "BOOKED";
     const pipeline = demoConfig[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
     const next = pipeline?.stages.find((s) => s.advanceOn === "BOOKING_CREATED");
-    if (next) lead.stageId = next.id;
+    if (next && lead.stageId !== next.id) {
+      lead.stageId = next.id;
+      lead.stageEnteredAt = at;
+    }
+    lead.lastActivityAt = at;
     return lead;
   },
 
@@ -309,13 +339,13 @@ export const memoryRepository: Repository = {
 
   async createBooking(tenantId, data: NewBooking) {
     assertLeadInTenant(tenantId, data.leadId);
-    const booking = { id: id("bk"), tenantId, ...data };
+    const booking: BookingRecord = { id: id("bk"), tenantId, leadId: data.leadId, provider: "CALCOM", externalId: null, bookingUrl: data.bookingUrl, startsAt: null, endsAt: null, status: data.sent ? "LINK_SENT" : "LINK_PENDING", confirmedAt: null, remindedAt: null, followedUpAt: null, createdAt: new Date() };
     pushBounded(store().bookings, booking, false);
     if (data.sent) {
       const lead = store().leads.find((l) => l.id === data.leadId && l.tenantId === tenantId);
       if (lead) lead.status = "BOOKING_SENT";
     }
-    return { id: booking.id, bookingUrl: booking.bookingUrl };
+    return { id: booking.id, bookingUrl: data.bookingUrl };
   },
 
   async recordIntakeEvent(tenantId, data) {
@@ -331,6 +361,10 @@ export const memoryRepository: Repository = {
     if (!convo) {
       convo = { id: id("cv"), tenantId, contactId: data.contactId, channel: data.channel, externalId: data.externalConversationId ?? null, lastMessageAt: new Date(), awaitingReply: false };
       pushBounded(s.conversations, convo, false);
+    }
+    if (data.contactId) {
+      const c = s.contacts.find((x) => x.id === data.contactId);
+      if (c) c.lastActivityAt = new Date();
     }
     convo.lastMessageAt = new Date();
     convo.awaitingReply = data.direction === "INBOUND";
@@ -358,12 +392,195 @@ export const memoryRepository: Repository = {
     return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
   },
 
+  async findBookingById(tenantId, bookingId) {
+    return store().bookings.find((b) => b.id === bookingId && b.tenantId === tenantId) ?? null;
+  },
+
+  async findLatestBookingForLead(tenantId, leadId) {
+    return [...store().bookings].reverse().find((b) => b.tenantId === tenantId && b.leadId === leadId) ?? null;
+  },
+
+  async listBookings(tenantId, opts) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    return store()
+      .bookings.filter(
+        (b) =>
+          b.tenantId === tenantId &&
+          (!statuses || statuses.has(b.status)) &&
+          (!opts.startsBefore || (b.startsAt && b.startsAt < opts.startsBefore)) &&
+          (!opts.startsAfter || (b.startsAt && b.startsAt > opts.startsAfter)) &&
+          (!opts.endsBefore || (b.endsAt && b.endsAt < opts.endsBefore)),
+      )
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async updateBooking(tenantId, bookingId, patch) {
+    const b = store().bookings.find((x) => x.id === bookingId && x.tenantId === tenantId);
+    if (!b) return null;
+    Object.assign(b, patch);
+    return b;
+  },
+
+  async scheduleAction(tenantId, data) {
+    const existing = store().actions.find((a) => a.tenantId === tenantId && a.dedupeKey === data.dedupeKey && a.status === "PENDING");
+    if (existing) return { record: existing, created: false };
+    const record: ScheduledActionRecord = { id: id("act"), tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: data.payload ?? {}, dedupeKey: data.dedupeKey, status: "PENDING", attempts: 0 };
+    pushBounded(store().actions, record, false);
+    return { record, created: true };
+  },
+
+  async listDueActions(now, limit = 100) {
+    return store()
+      .actions.filter((a) => a.status === "PENDING" && a.runAt <= now)
+      .sort((a, b) => a.runAt.getTime() - b.runAt.getTime())
+      .slice(0, limit);
+  },
+
+  async completeAction(actionId, status, error = null) {
+    const a = store().actions.find((x) => x.id === actionId);
+    if (!a) return;
+    a.status = status;
+    a.attempts += 1;
+    void error;
+  },
+
+  async cancelActions(tenantId, dedupePrefix) {
+    let n = 0;
+    for (const a of store().actions) {
+      if (a.tenantId === tenantId && a.status === "PENDING" && a.dedupeKey.startsWith(dedupePrefix)) {
+        a.status = "CANCELLED";
+        n++;
+      }
+    }
+    return n;
+  },
+
+  async createInformationRequest(tenantId, data) {
+    assertLeadInTenant(tenantId, data.leadId);
+    assertContactInTenant(tenantId, data.contactId);
+    const req: InformationRequestRecord = { id: id("req"), tenantId, ...data, status: "OPEN", chaseCount: 0, lastChasedAt: null, receivedAt: null, createdAt: new Date() };
+    pushBounded(store().requests, req);
+    return req;
+  },
+
+  async listInformationRequests(tenantId, opts = {}) {
+    const statuses = new Set(opts.status ?? ["OPEN", "ESCALATED"]);
+    return store()
+      .requests.filter((r) => r.tenantId === tenantId && statuses.has(r.status))
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async updateInformationRequest(tenantId, requestId, patch) {
+    const r = store().requests.find((x) => x.id === requestId && x.tenantId === tenantId);
+    if (!r) return null;
+    Object.assign(r, patch);
+    return r;
+  },
+
+  async upsertReview(tenantId, data) {
+    const existing = store().reviews.find((r) => r.tenantId === tenantId && r.provider === data.provider && r.externalId === data.externalId);
+    if (existing) return { record: existing, created: false };
+    const record: ReviewRecord = { id: id("rv"), tenantId, ...data, repliedAt: null };
+    pushBounded(store().reviews, record);
+    return { record, created: true };
+  },
+
+  async listReviews(tenantId, opts = {}) {
+    return store()
+      .reviews.filter((r) => r.tenantId === tenantId && (!opts.unansweredOnly || !r.repliedAt) && (!opts.receivedBefore || r.receivedAt < opts.receivedBefore))
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async markReviewReplied(tenantId, reviewId) {
+    const r = store().reviews.find((x) => x.id === reviewId && x.tenantId === tenantId);
+    if (!r) return null;
+    r.repliedAt = new Date();
+    return r;
+  },
+
+  async upsertFormSession(tenantId, data) {
+    const s = store();
+    let fsn = s.formSessions.find((f) => f.tenantId === tenantId && f.sessionKey === data.sessionKey);
+    if (!fsn) {
+      fsn = { id: id("fs"), tenantId, sessionKey: data.sessionKey, formName: data.formName, pageUrl: data.pageUrl, partial: {}, startedAt: new Date(), lastSeenAt: new Date(), submittedAt: null, convertedLeadId: null, flaggedAt: null };
+      pushBounded(s.formSessions, fsn, false);
+    }
+    fsn.partial = { ...fsn.partial, ...data.partial };
+    fsn.lastSeenAt = new Date();
+    if (data.formName) fsn.formName = data.formName;
+    if (data.pageUrl) fsn.pageUrl = data.pageUrl;
+    return fsn;
+  },
+
+  async listAbandonedFormSessions(tenantId, idleBefore, limit = 100) {
+    return store()
+      .formSessions.filter((f) => f.tenantId === tenantId && !f.submittedAt && !f.flaggedAt && f.lastSeenAt < idleBefore && (typeof f.partial.email === "string" || typeof f.partial.phone === "string"))
+      .slice(0, limit);
+  },
+
+  async updateFormSession(tenantId, sessionKey, patch) {
+    const f = store().formSessions.find((x) => x.tenantId === tenantId && x.sessionKey === sessionKey);
+    if (f) Object.assign(f, patch);
+  },
+
+  async listConversationsAwaitingReply(tenantId, opts) {
+    const channels = new Set(opts.channels);
+    return store()
+      .conversations.filter((c) => c.tenantId === tenantId && c.awaitingReply && channels.has(c.channel) && c.lastMessageAt !== null && c.lastMessageAt < opts.olderThan)
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async findContactById(tenantId, contactId) {
+    return store().contacts.find((c) => c.id === contactId && c.tenantId === tenantId) ?? null;
+  },
+
+  async listLapsedCandidates(tenantId, inactiveBefore, limit = 100) {
+    const s = store();
+    const customerIds = new Set([
+      ...s.leads.filter((l) => l.tenantId === tenantId && l.status === "WON" && l.contactId).map((l) => l.contactId!),
+      ...s.transactions.filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.contactId).map((t) => t.contactId!),
+      ...s.contacts.filter((c) => c.tenantId === tenantId && c.tags.includes("customer")).map((c) => c.id),
+    ]);
+    return s.contacts.filter((c) => c.tenantId === tenantId && customerIds.has(c.id) && !c.lapsedAt && c.lastActivityAt !== null && c.lastActivityAt < inactiveBefore).slice(0, limit);
+  },
+
+  async markContactLapsed(tenantId, contactId, at) {
+    const c = store().contacts.find((x) => x.id === contactId && x.tenantId === tenantId);
+    if (c) c.lapsedAt = at;
+  },
+
+  async setContactConsent(tenantId, contactId, channel, granted, source) {
+    const c = store().contacts.find((x) => x.id === contactId && x.tenantId === tenantId);
+    if (c) c.consent = { ...c.consent, [channel]: { granted, at: new Date().toISOString(), source } };
+  },
+
+  async listLeadsQuietInStage(tenantId, now) {
+    const stages = new Map((demoConfig[tenantId]?.pipelines ?? []).flatMap((p) => p.stages.map((s) => [s.id, s])));
+    const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
+    for (const lead of store().leads) {
+      if (lead.tenantId !== tenantId || !lead.stageId) continue;
+      const stage = stages.get(lead.stageId);
+      if (!stage?.quietAfterDays) continue;
+      const since = Math.max(lead.stageEnteredAt?.getTime() ?? 0, lead.lastActivityAt?.getTime() ?? 0, lead.createdAt.getTime());
+      const quietDays = (now.getTime() - since) / 86_400_000;
+      if (quietDays >= stage.quietAfterDays) out.push({ lead, stageName: stage.name, quietDays: Math.floor(quietDays) });
+    }
+    return out;
+  },
+
+  async touchLead(tenantId, leadId, at) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (lead) lead.lastActivityAt = at;
+  },
+
   async upsertMissedOpportunity(tenantId, data: NewMissedOpportunity) {
     assertLeadInTenant(tenantId, data.leadId);
     assertContactInTenant(tenantId, data.contactId);
-    const existing = store().missed.find((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && `${m.type}:${m.leadId ?? m.contactId ?? ""}` === data.dedupeKey);
+    const existing = store().missed.find((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && (m.dedupeKey ?? `${m.type}:${m.leadId ?? m.contactId ?? ""}`) === data.dedupeKey);
     if (existing) return { record: existing, created: false };
-    const record: MissedOpportunityRecord = {
+    const record: MissedOpportunityRecord & { dedupeKey: string } = {
+      dedupeKey: data.dedupeKey,
       id: id("mo"),
       tenantId,
       type: data.type,

@@ -95,8 +95,10 @@ describe("portal home and portfolio", () => {
 describe("SLA detector", () => {
   it("raises one missed opportunity, exception and run per lead past its window, and is idempotent", async () => {
     const tenant = demoTenants[0];
-    const first = await detectForTenant(tenant);
-    assert.ok(first.detected.some((d) => d.type === "NOT_BOOKED" && d.leadId === "lead_4") || first.detected.length === 0);
+    await detectForTenant(tenant);
+    // Fixture lead_4 already has an open NOT_BOOKED item; the detector must not add a second one.
+    const notBooked = (await repository.listMissedOpportunities(tenant.id, { status: ["ESCALATED", "DETECTED", "RECOVERING"], limit: 500 })).filter((m) => m.type === "NOT_BOOKED" && m.leadId === "lead_4");
+    assert.equal(notBooked.length, 1);
     const openBefore = (await repository.listMissedOpportunities(tenant.id, { status: ["ESCALATED", "DETECTED", "RECOVERING"] })).length;
     const second = await detectForTenant(tenant);
     assert.equal(second.detected.length, 0, "second pass finds nothing new");

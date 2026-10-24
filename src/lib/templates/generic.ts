@@ -18,7 +18,7 @@ export const genericTemplate: IndustryTemplate = {
         { key: "enquiry", name: "Enquiry" },
         { key: "booked", name: "Consultation booked", advanceOn: "BOOKING_CREATED" },
         { key: "consulted", name: "Consultation done", advanceOn: "BOOKING_COMPLETED" },
-        { key: "quoted", name: "Quote sent" },
+        { key: "quoted", name: "Quote sent", quietAfterDays: 5 },
         { key: "won", name: "Paid", advanceOn: "PAYMENT_RECEIVED", isWon: true },
         { key: "lost", name: "Lost", isLost: true },
       ],
@@ -43,7 +43,13 @@ export const genericTemplate: IndustryTemplate = {
     LAPSED_CUSTOMER: 50000,
   },
   modules: [{ key: "leads" }, { key: "opportunities" }, { key: "automation" }, { key: "content" }, { key: "social" }],
-  automations: [{ key: "enquiry_auto_reply" }, { key: "booking_lifecycle" }, { key: "review_request" }, { key: "sla_watch" }],
+  automations: [
+    { key: "enquiry_auto_reply" },
+    { key: "booking_lifecycle", settings: { reminderHoursBefore: 24, followUpHoursAfter: 24 } },
+    { key: "review_request", settings: { delayHours: 3 } },
+    { key: "reactivation", settings: { inactiveDays: 90 } },
+    { key: "sla_watch", settings: { unrepliedInboxMinutes: 120, unansweredReviewHours: 48 } },
+  ],
   brand: {
     voice: "Warm, plain and confident. Short sentences. Speak to one person. No jargon.",
     bannedPhrases: ["game-changing", "unlock", "revolutionary", "limited time only"],

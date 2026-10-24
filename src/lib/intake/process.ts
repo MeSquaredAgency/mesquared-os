@@ -1,6 +1,7 @@
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { opportunityValue } from "@/lib/opportunities/detect";
+import { registerAutomations } from "@/lib/automations/handlers";
 import { registerPlaybook } from "@/lib/playbook";
 import { getQualifier, type QualificationResult } from "@/lib/qualify";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
@@ -41,6 +42,7 @@ const CHANNEL_FOR_SOURCE: Partial<Record<IntakeBody["source"], IntakeChannel>> =
  */
 export async function processIntake(tenant: TenantSummary, input: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
   registerPlaybook();
+  registerAutomations();
   // Phones are stored and messaged in E.164, using the tenant's region when the country code was omitted.
   const body: IntakeBody = { ...input, phone: toE164(input.phone, tenant.region) };
   const { firstName, lastName } = splitName(body);

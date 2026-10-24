@@ -210,6 +210,12 @@ export interface ComplianceBlock {
 // Contacts, pipelines, leads
 // ---------------------------------------------------------------------------
 
+export interface ConsentEntry {
+  granted: boolean;
+  at?: string;
+  source?: string;
+}
+
 export interface ContactRecord {
   id: string;
   tenantId: string;
@@ -218,6 +224,8 @@ export interface ContactRecord {
   email: string | null;
   phone: string | null;
   company: string | null;
+  /** Per-channel marketing consent: { sms, email, whatsapp }. Transactional replies never need it. */
+  consent: Partial<Record<"sms" | "email" | "whatsapp", ConsentEntry>>;
   tags: string[];
   lastActivityAt: Date | null;
   lapsedAt: Date | null;
@@ -235,6 +243,8 @@ export interface PipelineStageRecord {
   advanceOn: StageAdvanceTrigger;
   isWon: boolean;
   isLost: boolean;
+  /** Days of silence in this stage before a lead counts as a quote gone quiet. */
+  quietAfterDays: number | null;
 }
 
 export interface PipelineRecord {
@@ -294,7 +304,97 @@ export interface LeadRecord {
   bookBy: Date | null;
   firstResponseAt: Date | null;
   bookedAt: Date | null;
+  stageEnteredAt: Date | null;
+  lastActivityAt: Date | null;
   createdAt: Date;
+}
+
+export type BookingStatus = "LINK_PENDING" | "LINK_SENT" | "SCHEDULED" | "COMPLETED" | "NO_SHOW" | "CANCELLED";
+
+export interface BookingRecord {
+  id: string;
+  tenantId: string;
+  leadId: string;
+  provider: "CALCOM" | "GOOGLE_CALENDAR" | "MANUAL";
+  externalId: string | null;
+  bookingUrl: string | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  status: BookingStatus;
+  confirmedAt: Date | null;
+  remindedAt: Date | null;
+  followedUpAt: Date | null;
+  createdAt: Date;
+}
+
+export type MessageChannel = "SMS" | "EMAIL" | "WHATSAPP" | "SOCIAL_DM" | "SOCIAL_COMMENT" | "PHONE";
+
+export interface ConversationRecord {
+  id: string;
+  tenantId: string;
+  contactId: string | null;
+  channel: MessageChannel;
+  externalId: string | null;
+  lastMessageAt: Date | null;
+  awaitingReply: boolean;
+}
+
+export type ScheduledActionStatus = "PENDING" | "DONE" | "CANCELLED" | "FAILED";
+
+export interface ScheduledActionRecord {
+  id: string;
+  tenantId: string;
+  typeKey: string;
+  action: string;
+  runAt: Date;
+  payload: Record<string, unknown>;
+  dedupeKey: string;
+  status: ScheduledActionStatus;
+  attempts: number;
+}
+
+export type InformationRequestStatus = "OPEN" | "RECEIVED" | "CANCELLED" | "ESCALATED";
+
+export interface InformationRequestRecord {
+  id: string;
+  tenantId: string;
+  contactId: string | null;
+  leadId: string | null;
+  kind: string;
+  description: string;
+  dueAt: Date | null;
+  status: InformationRequestStatus;
+  chaseCount: number;
+  lastChasedAt: Date | null;
+  receivedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface ReviewRecord {
+  id: string;
+  tenantId: string;
+  provider: string;
+  externalId: string;
+  authorName: string | null;
+  rating: number | null;
+  body: string | null;
+  url: string | null;
+  receivedAt: Date;
+  repliedAt: Date | null;
+}
+
+export interface FormSessionRecord {
+  id: string;
+  tenantId: string;
+  sessionKey: string;
+  formName: string | null;
+  pageUrl: string | null;
+  partial: Record<string, unknown>;
+  startedAt: Date;
+  lastSeenAt: Date;
+  submittedAt: Date | null;
+  convertedLeadId: string | null;
+  flaggedAt: Date | null;
 }
 
 // ---------------------------------------------------------------------------

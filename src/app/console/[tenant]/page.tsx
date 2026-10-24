@@ -4,6 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OperationsPanels } from "@/components/console/operations-panels";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { NeedsYou } from "@/components/portal/needs-you";
@@ -11,6 +12,7 @@ import { getConsoleContext } from "@/lib/auth/access";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { repository } from "@/lib/data";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
+import { leadDisplayName } from "@/lib/leads";
 import { humanize } from "@/lib/utils";
 
 export const metadata = { title: "Workspace" };
@@ -21,10 +23,23 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const access = tenants.find((t) => t.tenant.slug === slug);
   if (!access) notFound();
   const tenant = access.tenant;
-  const [home, config] = await Promise.all([
+  const [home, config, bookings, requests, reviews, leads] = await Promise.all([
     repository.getPortalHome(tenant.id, { timezone: tenant.timezone, currency: tenant.currency, onlyAssigneeId: null, canViewFinances: true }),
     repository.getTenantConfig(tenant.id),
+    repository.listBookings(tenant.id, { status: ["SCHEDULED", "NO_SHOW"], limit: 20 }),
+    repository.listInformationRequests(tenant.id),
+    repository.listReviews(tenant.id, { limit: 10 }),
+    repository.listRecentLeads(tenant.id, 50),
   ]);
+  const leadById = new Map(leads.map((l) => [l.id, l]));
+  const contactName = async (contactId: string | null, leadId: string | null) => {
+    const lead = leadId ? leadById.get(leadId) : null;
+    if (lead) return leadDisplayName(lead);
+    const contact = contactId ? await repository.findContactById(tenant.id, contactId) : null;
+    return contact ? leadDisplayName(contact) : "a contact";
+  };
+  const bookingRows = bookings.map((b) => ({ ...b, leadName: leadById.get(b.leadId) ? leadDisplayName(leadById.get(b.leadId)!) : "Lead" }));
+  const requestRows = await Promise.all(requests.map(async (r) => ({ ...r, who: await contactName(r.contactId, r.leadId) })));
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
 
   return (
@@ -102,6 +117,8 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
           </CardContent>
         </Card>
       </div>
+
+      <OperationsPanels tenantId={tenant.id} fmt={fmt} bookings={bookingRows} requests={requestRows} reviews={reviews} leads={leads} />
 
       <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
     </div>

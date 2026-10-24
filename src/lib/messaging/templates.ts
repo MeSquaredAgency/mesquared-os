@@ -63,3 +63,57 @@ export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string;
       .join("\n"),
   };
 }
+
+type Channel = "SMS" | "WHATSAPP" | "EMAIL";
+interface Base {
+  tenant: TenantSummary;
+  firstName: string | null;
+  channel: Channel;
+}
+const hi = (firstName: string | null) => (firstName ? `Hi ${firstName},` : "Hi,");
+const signoff = (tenant: TenantSummary) => tenant.branding.fromName ?? tenant.name;
+const auto = (tenant: TenantSummary) => `(Automated message from ${tenant.name}.)`;
+
+function pack(channel: Channel, subject: string, lines: string[], tenant: TenantSummary): { subject?: string; body: string } {
+  if (channel === "EMAIL") return { subject, body: [...lines, "", "Kind regards,", signoff(tenant), "", `This is an automated message from ${tenant.name}.`].join("\n") };
+  return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant)}` };
+}
+
+export function bookingConfirmation({ tenant, firstName, when, channel }: Base & { when: string | null }) {
+  return pack(channel, `Your appointment with ${tenant.name} is confirmed`, [hi(firstName), when ? `your appointment with ${tenant.name} is confirmed for ${when}.` : `your appointment with ${tenant.name} is confirmed.`, "If you need to change it, just reply to this message."], tenant);
+}
+
+export function bookingReminder({ tenant, firstName, when, channel }: Base & { when: string | null }) {
+  return pack(channel, `A reminder from ${tenant.name}`, [hi(firstName), when ? `a quick reminder about your appointment ${when} with ${tenant.name}.` : `a quick reminder about your upcoming appointment with ${tenant.name}.`, "Reply if you need to change the time."], tenant);
+}
+
+export function bookingFollowUp({ tenant, firstName, channel }: Base) {
+  return pack(channel, `Thanks for meeting with ${tenant.name}`, [hi(firstName), `thank you for your time with ${tenant.name}. If you have any questions about what we discussed, just reply and a person will get back to you.`], tenant);
+}
+
+export function reviewRequest({ tenant, firstName, reviewUrl, channel }: Base & { reviewUrl: string }) {
+  return pack(channel, `How did we do?`, [hi(firstName), `thanks again for choosing ${tenant.name}. If you have a moment, a short review helps other people find us: ${reviewUrl}`], tenant);
+}
+
+export function reactivation({ tenant, firstName, bookingUrl, channel }: Base & { bookingUrl: string }) {
+  return pack(channel, `We'd love to see you again`, [hi(firstName), `it's been a while since we've seen you at ${tenant.name}, and we'd love to help again whenever you're ready. You can pick a time here: ${bookingUrl}`, "Reply STOP if you'd rather not hear from us."], tenant);
+}
+
+export function missedCallSms({ tenant, firstName, bookingUrl }: { tenant: TenantSummary; firstName: string | null; bookingUrl: string }) {
+  return `${hi(firstName)} sorry we missed your call to ${tenant.name}. We'll call you back shortly, or you can pick a time that suits you here: ${bookingUrl} ${auto(tenant)}`;
+}
+
+export function chase({ tenant, firstName, what, channel }: Base & { what: string }) {
+  return pack(channel, `A quick reminder from ${tenant.name}`, [hi(firstName), `when you have a moment, we're still waiting on ${what}. Reply here if you have any questions or need a hand with it.`], tenant);
+}
+
+export function generalReply({ tenant, firstName, channel, custom }: Base & { custom: string | null }) {
+  return pack(channel, `Thanks for contacting ${tenant.name}`, [hi(firstName), custom ?? `thanks for getting in touch with ${tenant.name}. We've received your message and will get back to you with the details shortly.`], tenant);
+}
+
+export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {
+  return {
+    subject: `Needs you: ${summary.slice(0, 70)}`,
+    body: [`Something at ${tenant.name} needs a person:`, "", summary, "", `Suggested: ${suggestedAction}`, "", `See it here: ${portalUrl}`, "", "— MeSquared OS, on behalf of your workspace"].join("\n"),
+  };
+}

@@ -1,7 +1,13 @@
 import {
   Prisma,
   type AutomationRun,
+  type Booking,
   type Contact,
+  type Conversation,
+  type FormSession,
+  type InformationRequest,
+  type Review,
+  type ScheduledAction,
   type ContentAsset,
   type DomainEvent,
   type ExceptionItem,
@@ -19,7 +25,13 @@ import { healthScore } from "@/lib/health";
 import { getPrisma } from "@/lib/prisma";
 import type {
   AutomationRunRecord,
+  BookingRecord,
   ContactRecord,
+  ConversationRecord,
+  FormSessionRecord,
+  InformationRequestRecord,
+  ReviewRecord,
+  ScheduledActionRecord,
   ContentAssetRecord,
   DomainEventRecord,
   EscalationRule,
@@ -44,6 +56,13 @@ import type {
 } from "@/lib/types";
 import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
+
+const toBooking = (b: Booking): BookingRecord => ({ id: b.id, tenantId: b.tenantId, leadId: b.leadId, provider: b.provider, externalId: b.externalId, bookingUrl: b.bookingUrl, startsAt: b.startsAt, endsAt: b.endsAt, status: b.status, confirmedAt: b.confirmedAt, remindedAt: b.remindedAt, followedUpAt: b.followedUpAt, createdAt: b.createdAt });
+const toConversation = (c: Conversation): ConversationRecord => ({ id: c.id, tenantId: c.tenantId, contactId: c.contactId, channel: c.channel, externalId: c.externalId, lastMessageAt: c.lastMessageAt, awaitingReply: c.awaitingReply });
+const toAction = (a: ScheduledAction): ScheduledActionRecord => ({ id: a.id, tenantId: a.tenantId, typeKey: a.typeKey, action: a.action, runAt: a.runAt, payload: obj(a.payload), dedupeKey: a.dedupeKey, status: a.status, attempts: a.attempts });
+const toRequest = (r: InformationRequest): InformationRequestRecord => ({ id: r.id, tenantId: r.tenantId, contactId: r.contactId, leadId: r.leadId, kind: r.kind, description: r.description, dueAt: r.dueAt, status: r.status, chaseCount: r.chaseCount, lastChasedAt: r.lastChasedAt, receivedAt: r.receivedAt, createdAt: r.createdAt });
+const toReview = (r: Review): ReviewRecord => ({ id: r.id, tenantId: r.tenantId, provider: r.provider, externalId: r.externalId, authorName: r.authorName, rating: r.rating, body: r.body, url: r.url, receivedAt: r.receivedAt, repliedAt: r.repliedAt });
+const toFormSession = (f: FormSession): FormSessionRecord => ({ id: f.id, tenantId: f.tenantId, sessionKey: f.sessionKey, formName: f.formName, pageUrl: f.pageUrl, partial: obj(f.partial), startedAt: f.startedAt, lastSeenAt: f.lastSeenAt, submittedAt: f.submittedAt, convertedLeadId: f.convertedLeadId, flaggedAt: f.flaggedAt });
 
 const json = (v: unknown) => v as Prisma.InputJsonValue;
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -77,7 +96,7 @@ function toTenant(t: TenantRow): TenantSummary {
 
 const toUser = (u: User): UserRecord => ({ id: u.id, email: u.email, name: u.name, isOperator: u.isOperator || u.isPlatformAdmin, isPlatformAdmin: u.isPlatformAdmin, sessionVersion: u.sessionVersion });
 const toRole = (r: TenantRole): TenantRoleRecord => ({ id: r.id, tenantId: r.tenantId, name: r.name, templateKey: r.templateKey, permissions: r.permissions });
-const toContact = (c: Contact): ContactRecord => ({ id: c.id, tenantId: c.tenantId, firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, company: c.company, tags: c.tags, lastActivityAt: c.lastActivityAt, lapsedAt: c.lapsedAt, createdAt: c.createdAt });
+const toContact = (c: Contact): ContactRecord => ({ id: c.id, tenantId: c.tenantId, firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, company: c.company, consent: obj(c.consent) as ContactRecord["consent"], tags: c.tags, lastActivityAt: c.lastActivityAt, lapsedAt: c.lapsedAt, createdAt: c.createdAt });
 const toIntegration = (i: Integration): IntegrationRecord => ({ id: i.id, tenantId: i.tenantId, provider: i.provider, label: i.label, status: i.status, externalAccountId: i.externalAccountId, lastSyncAt: i.lastSyncAt, lastError: i.lastError });
 const toPipeline = (p: Pipeline & { stages: PipelineStage[] }): PipelineRecord => ({
   id: p.id,
@@ -85,7 +104,7 @@ const toPipeline = (p: Pipeline & { stages: PipelineStage[] }): PipelineRecord =
   key: p.key,
   name: p.name,
   isDefault: p.isDefault,
-  stages: [...p.stages].sort((a, b) => a.order - b.order).map((s) => ({ id: s.id, pipelineId: s.pipelineId, key: s.key, name: s.name, order: s.order, advanceOn: s.advanceOn, isWon: s.isWon, isLost: s.isLost })),
+  stages: [...p.stages].sort((a, b) => a.order - b.order).map((s) => ({ id: s.id, pipelineId: s.pipelineId, key: s.key, name: s.name, order: s.order, advanceOn: s.advanceOn, isWon: s.isWon, isLost: s.isLost, quietAfterDays: s.quietAfterDays })),
 });
 
 const toLead = (l: Lead): LeadRecord => ({
@@ -115,6 +134,8 @@ const toLead = (l: Lead): LeadRecord => ({
   bookBy: l.bookBy,
   firstResponseAt: l.firstResponseAt,
   bookedAt: l.bookedAt,
+  stageEnteredAt: l.stageEnteredAt,
+  lastActivityAt: l.lastActivityAt,
   createdAt: l.createdAt,
 });
 
@@ -175,6 +196,16 @@ export const prismaRepository: Repository = {
   async findTenantBySlug(slug) {
     const t = await getPrisma().tenant.findUnique({ where: { slug } });
     return t && t.isActive ? toTenant(t) : null;
+  },
+
+  async findTenantById(tenantId) {
+    const t = await getPrisma().tenant.findUnique({ where: { id: tenantId } });
+    return t && t.isActive ? toTenant(t) : null;
+  },
+
+  async listAllTenants() {
+    const rows = await getPrisma().tenant.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
+    return rows.map(toTenant);
   },
 
   async findTenantByApiKeyHash(hash) {
@@ -274,6 +305,8 @@ export const prismaRepository: Repository = {
           valueCents: data.valueCents,
           respondBy: data.respondBy,
           bookBy: data.bookBy,
+          stageEnteredAt: data.stageId ? new Date() : null,
+          lastActivityAt: new Date(),
         },
       });
       return { lead: toLead(row), created: true };
@@ -328,8 +361,9 @@ export const prismaRepository: Repository = {
       where: { id: lead.id },
       data: {
         bookedAt: lead.bookedAt ?? at,
+        lastActivityAt: at,
         status: ["NEW", "QUALIFIED", "BOOKING_SENT"].includes(lead.status) ? "BOOKED" : lead.status,
-        ...(next ? { stageId: next.id } : {}),
+        ...(next && next.id !== lead.stageId ? { stageId: next.id, stageEnteredAt: at } : {}),
       },
     });
     return toLead(updated);
@@ -385,6 +419,7 @@ export const prismaRepository: Repository = {
         },
       }),
       db.conversation.update({ where: { id: convo.id }, data: { lastMessageAt: new Date(), awaitingReply: data.direction === "INBOUND" } }),
+      ...(data.contactId ? [db.contact.updateMany({ where: { id: data.contactId, tenantId }, data: { lastActivityAt: new Date() } })] : []),
     ]);
     return { conversationId: convo.id, messageId: message.id };
   },
@@ -402,6 +437,175 @@ export const prismaRepository: Repository = {
   async findTenantByIntegrationAccount(provider, externalAccountId) {
     const i = await getPrisma().integration.findFirst({ where: { provider, externalAccountId, status: { not: "DISCONNECTED" }, tenant: { isActive: true } }, include: { tenant: true } });
     return i ? toTenant(i.tenant) : null;
+  },
+
+  async findBookingById(tenantId, bookingId) {
+    const b = await getPrisma().booking.findFirst({ where: { id: bookingId, tenantId } });
+    return b ? toBooking(b) : null;
+  },
+
+  async findLatestBookingForLead(tenantId, leadId) {
+    const b = await getPrisma().booking.findFirst({ where: { tenantId, leadId }, orderBy: { createdAt: "desc" } });
+    return b ? toBooking(b) : null;
+  },
+
+  async listBookings(tenantId, opts) {
+    const rows = await getPrisma().booking.findMany({
+      where: {
+        tenantId,
+        ...(opts.status ? { status: { in: opts.status } } : {}),
+        ...(opts.startsBefore || opts.startsAfter ? { startsAt: { ...(opts.startsBefore ? { lt: opts.startsBefore } : {}), ...(opts.startsAfter ? { gt: opts.startsAfter } : {}) } } : {}),
+        ...(opts.endsBefore ? { endsAt: { lt: opts.endsBefore } } : {}),
+      },
+      orderBy: { startsAt: "asc" },
+      take: opts.limit ?? 100,
+    });
+    return rows.map(toBooking);
+  },
+
+  async updateBooking(tenantId, bookingId, patch) {
+    const { count } = await getPrisma().booking.updateMany({ where: { id: bookingId, tenantId }, data: patch });
+    if (count === 0) return null;
+    const b = await getPrisma().booking.findUnique({ where: { id: bookingId } });
+    return b ? toBooking(b) : null;
+  },
+
+  async scheduleAction(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.scheduledAction.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+    if (existing?.status === "PENDING") return { record: toAction(existing), created: false };
+    if (existing) {
+      const reset = await db.scheduledAction.update({ where: { id: existing.id }, data: { typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), status: "PENDING", attempts: 0, lastError: null, ranAt: null } });
+      return { record: toAction(reset), created: true };
+    }
+    const row = await db.scheduledAction.create({ data: { tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), dedupeKey: data.dedupeKey } });
+    return { record: toAction(row), created: true };
+  },
+
+  async listDueActions(now, limit = 100) {
+    const rows = await getPrisma().scheduledAction.findMany({ where: { status: "PENDING", runAt: { lte: now } }, orderBy: { runAt: "asc" }, take: limit });
+    return rows.map(toAction);
+  },
+
+  async completeAction(actionId, status, error = null) {
+    await getPrisma().scheduledAction.update({ where: { id: actionId }, data: { status, lastError: error, ranAt: new Date(), attempts: { increment: 1 } } });
+  },
+
+  async cancelActions(tenantId, dedupePrefix) {
+    const { count } = await getPrisma().scheduledAction.updateMany({ where: { tenantId, status: "PENDING", dedupeKey: { startsWith: dedupePrefix } }, data: { status: "CANCELLED" } });
+    return count;
+  },
+
+  async createInformationRequest(tenantId, data) {
+    await assertLeadInTenant(tenantId, data.leadId);
+    await assertContactInTenant(tenantId, data.contactId);
+    const row = await getPrisma().informationRequest.create({ data: { tenantId, ...data } });
+    return toRequest(row);
+  },
+
+  async listInformationRequests(tenantId, opts = {}) {
+    const rows = await getPrisma().informationRequest.findMany({ where: { tenantId, status: { in: opts.status ?? ["OPEN", "ESCALATED"] } }, orderBy: { createdAt: "desc" }, take: opts.limit ?? 100 });
+    return rows.map(toRequest);
+  },
+
+  async updateInformationRequest(tenantId, requestId, patch) {
+    const { count } = await getPrisma().informationRequest.updateMany({ where: { id: requestId, tenantId }, data: patch });
+    if (count === 0) return null;
+    const row = await getPrisma().informationRequest.findUnique({ where: { id: requestId } });
+    return row ? toRequest(row) : null;
+  },
+
+  async upsertReview(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.review.findUnique({ where: { tenantId_provider_externalId: { tenantId, provider: data.provider, externalId: data.externalId } } });
+    if (existing) return { record: toReview(existing), created: false };
+    const row = await db.review.create({ data: { tenantId, ...data } });
+    return { record: toReview(row), created: true };
+  },
+
+  async listReviews(tenantId, opts = {}) {
+    const rows = await getPrisma().review.findMany({
+      where: { tenantId, ...(opts.unansweredOnly ? { repliedAt: null } : {}), ...(opts.receivedBefore ? { receivedAt: { lt: opts.receivedBefore } } : {}) },
+      orderBy: { receivedAt: "desc" },
+      take: opts.limit ?? 100,
+    });
+    return rows.map(toReview);
+  },
+
+  async markReviewReplied(tenantId, reviewId, replyBody) {
+    const { count } = await getPrisma().review.updateMany({ where: { id: reviewId, tenantId }, data: { repliedAt: new Date(), replyBody } });
+    if (count === 0) return null;
+    const row = await getPrisma().review.findUnique({ where: { id: reviewId } });
+    return row ? toReview(row) : null;
+  },
+
+  async upsertFormSession(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.formSession.findUnique({ where: { tenantId_sessionKey: { tenantId, sessionKey: data.sessionKey } } });
+    const row = existing
+      ? await db.formSession.update({ where: { id: existing.id }, data: { partial: json({ ...obj(existing.partial), ...data.partial }), lastSeenAt: new Date(), ...(data.formName ? { formName: data.formName } : {}), ...(data.pageUrl ? { pageUrl: data.pageUrl } : {}) } })
+      : await db.formSession.create({ data: { tenantId, sessionKey: data.sessionKey, formName: data.formName, pageUrl: data.pageUrl, partial: json(data.partial) } });
+    return toFormSession(row);
+  },
+
+  async listAbandonedFormSessions(tenantId, idleBefore, limit = 100) {
+    const rows = await getPrisma().formSession.findMany({ where: { tenantId, submittedAt: null, flaggedAt: null, lastSeenAt: { lt: idleBefore } }, orderBy: { lastSeenAt: "asc" }, take: limit * 2 });
+    return rows.map(toFormSession).filter((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string").slice(0, limit);
+  },
+
+  async updateFormSession(tenantId, sessionKey, patch) {
+    await getPrisma().formSession.updateMany({ where: { tenantId, sessionKey }, data: patch });
+  },
+
+  async listConversationsAwaitingReply(tenantId, opts) {
+    const rows = await getPrisma().conversation.findMany({ where: { tenantId, awaitingReply: true, channel: { in: opts.channels }, lastMessageAt: { lt: opts.olderThan } }, orderBy: { lastMessageAt: "asc" }, take: opts.limit ?? 100 });
+    return rows.map(toConversation);
+  },
+
+  async findContactById(tenantId, contactId) {
+    const c = await getPrisma().contact.findFirst({ where: { id: contactId, tenantId } });
+    return c ? toContact(c) : null;
+  },
+
+  async listLapsedCandidates(tenantId, inactiveBefore, limit = 100) {
+    const rows = await getPrisma().contact.findMany({
+      where: {
+        tenantId,
+        lapsedAt: null,
+        lastActivityAt: { lt: inactiveBefore },
+        OR: [{ leads: { some: { status: "WON" } } }, { transactions: { some: { status: "COMPLETED" } } }, { tags: { has: "customer" } }],
+      },
+      orderBy: { lastActivityAt: "asc" },
+      take: limit,
+    });
+    return rows.map(toContact);
+  },
+
+  async markContactLapsed(tenantId, contactId, at) {
+    await getPrisma().contact.updateMany({ where: { id: contactId, tenantId }, data: { lapsedAt: at } });
+  },
+
+  async setContactConsent(tenantId, contactId, channel, granted, source) {
+    const c = await getPrisma().contact.findFirst({ where: { id: contactId, tenantId } });
+    if (!c) return;
+    await getPrisma().contact.update({ where: { id: c.id }, data: { consent: json({ ...obj(c.consent), [channel]: { granted, at: new Date().toISOString(), source } }) } });
+  },
+
+  async listLeadsQuietInStage(tenantId, now) {
+    const rows = await getPrisma().lead.findMany({ where: { tenantId, stage: { quietAfterDays: { not: null } }, status: { notIn: ["WON", "LOST", "ARCHIVED"] } }, include: { stage: true } });
+    const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
+    for (const row of rows) {
+      const days = row.stage?.quietAfterDays ?? null;
+      if (!days) continue;
+      const since = Math.max(row.stageEnteredAt?.getTime() ?? 0, row.lastActivityAt?.getTime() ?? 0, row.createdAt.getTime());
+      const quietDays = (now.getTime() - since) / 86_400_000;
+      if (quietDays >= days) out.push({ lead: toLead(row), stageName: row.stage!.name, quietDays: Math.floor(quietDays) });
+    }
+    return out;
+  },
+
+  async touchLead(tenantId, leadId, at) {
+    await getPrisma().lead.updateMany({ where: { id: leadId, tenantId }, data: { lastActivityAt: at } });
   },
 
   async upsertMissedOpportunity(tenantId, data) {

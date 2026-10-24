@@ -1,8 +1,17 @@
 import type {
   AutomationOutcome,
   AutomationRunRecord,
+  BookingRecord,
+  BookingStatus,
   BrandProfileRecord,
   ContactRecord,
+  ConversationRecord,
+  FormSessionRecord,
+  InformationRequestRecord,
+  InformationRequestStatus,
+  ReviewRecord,
+  ScheduledActionRecord,
+  ScheduledActionStatus,
   ContentAssetRecord,
   ContentStatus,
   DomainEventRecord,
@@ -151,6 +160,42 @@ export interface IntegrationSettings {
   credentialsEnc: string | null;
 }
 
+export interface NewScheduledAction {
+  typeKey: string;
+  action: string;
+  runAt: Date;
+  payload?: Record<string, unknown>;
+  dedupeKey: string;
+}
+
+export interface NewInformationRequest {
+  contactId: string | null;
+  leadId: string | null;
+  kind: string;
+  description: string;
+  dueAt: Date | null;
+}
+
+export interface NewReview {
+  provider: string;
+  externalId: string;
+  authorName: string | null;
+  rating: number | null;
+  body: string | null;
+  url: string | null;
+  receivedAt: Date;
+}
+
+export interface BookingPatch {
+  status?: BookingStatus;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  externalId?: string | null;
+  confirmedAt?: Date;
+  remindedAt?: Date;
+  followedUpAt?: Date;
+}
+
 export interface TenantConfig {
   modules: TenantModuleRecord[];
   automations: TenantAutomationRecord[];
@@ -195,6 +240,9 @@ export interface Repository {
   /** Every tenant the user can open: memberships (with role), operator assignments, or all for platform admins. */
   listTenantAccess(userId: string): Promise<TenantAccess[]>;
   findTenantBySlug(slug: string): Promise<TenantSummary | null>;
+  findTenantById(tenantId: string): Promise<TenantSummary | null>;
+  /** Every active tenant; used by scheduled jobs, never by request handlers. */
+  listAllTenants(): Promise<TenantSummary[]>;
   findTenantByApiKeyHash(hash: string): Promise<{ tenant: TenantSummary; apiKeyId: string | null } | null>;
 
   // --- configuration -----------------------------------------------------------
@@ -226,6 +274,45 @@ export interface Repository {
   findIntegration(tenantId: string, provider: import("@/lib/types").IntegrationProvider): Promise<IntegrationSettings | null>;
   /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
   findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
+
+  // --- bookings ---------------------------------------------------------------------
+  findBookingById(tenantId: string, bookingId: string): Promise<BookingRecord | null>;
+  /** Latest booking for a lead, if any. */
+  findLatestBookingForLead(tenantId: string, leadId: string): Promise<BookingRecord | null>;
+  listBookings(tenantId: string, opts: { status?: BookingStatus[]; startsBefore?: Date; startsAfter?: Date; endsBefore?: Date; limit?: number }): Promise<BookingRecord[]>;
+  updateBooking(tenantId: string, bookingId: string, patch: BookingPatch): Promise<BookingRecord | null>;
+
+  // --- scheduled actions, requests, reviews, form sessions, conversations, contacts --------
+  scheduleAction(tenantId: string, data: NewScheduledAction): Promise<{ record: ScheduledActionRecord; created: boolean }>;
+  /** Pending actions across all tenants whose time has come. */
+  listDueActions(now: Date, limit?: number): Promise<ScheduledActionRecord[]>;
+  completeAction(actionId: string, status: Exclude<ScheduledActionStatus, "PENDING">, error?: string | null): Promise<void>;
+  cancelActions(tenantId: string, dedupePrefix: string): Promise<number>;
+
+  createInformationRequest(tenantId: string, data: NewInformationRequest): Promise<InformationRequestRecord>;
+  listInformationRequests(tenantId: string, opts?: { status?: InformationRequestStatus[]; limit?: number }): Promise<InformationRequestRecord[]>;
+  updateInformationRequest(tenantId: string, requestId: string, patch: { status?: InformationRequestStatus; chaseCount?: number; lastChasedAt?: Date; receivedAt?: Date }): Promise<InformationRequestRecord | null>;
+
+  upsertReview(tenantId: string, data: NewReview): Promise<{ record: ReviewRecord; created: boolean }>;
+  listReviews(tenantId: string, opts?: { unansweredOnly?: boolean; receivedBefore?: Date; limit?: number }): Promise<ReviewRecord[]>;
+  markReviewReplied(tenantId: string, reviewId: string, replyBody: string | null): Promise<ReviewRecord | null>;
+
+  upsertFormSession(tenantId: string, data: { sessionKey: string; formName: string | null; pageUrl: string | null; partial: Record<string, unknown> }): Promise<FormSessionRecord>;
+  /** Sessions last touched before idleBefore, never submitted, never flagged, with some contact detail captured. */
+  listAbandonedFormSessions(tenantId: string, idleBefore: Date, limit?: number): Promise<FormSessionRecord[]>;
+  updateFormSession(tenantId: string, sessionKey: string, patch: { submittedAt?: Date; convertedLeadId?: string; flaggedAt?: Date }): Promise<void>;
+
+  listConversationsAwaitingReply(tenantId: string, opts: { channels: ConversationRecord["channel"][]; olderThan: Date; limit?: number }): Promise<ConversationRecord[]>;
+
+  findContactById(tenantId: string, contactId: string): Promise<ContactRecord | null>;
+  /** Contacts who have bought or won before, inactive since inactiveBefore, not yet marked lapsed. */
+  listLapsedCandidates(tenantId: string, inactiveBefore: Date, limit?: number): Promise<ContactRecord[]>;
+  markContactLapsed(tenantId: string, contactId: string, at: Date | null): Promise<void>;
+  setContactConsent(tenantId: string, contactId: string, channel: "sms" | "email" | "whatsapp", granted: boolean, source: string): Promise<void>;
+
+  /** Leads sitting in a stage with quietAfterDays set, with no activity for that long. */
+  listLeadsQuietInStage(tenantId: string, now: Date): Promise<{ lead: LeadRecord; stageName: string; quietDays: number }[]>;
+  touchLead(tenantId: string, leadId: string, at: Date): Promise<void>;
 
   // --- missed opportunities, automation, exceptions, events ----------------------------
   /** Creates the item unless an open one with the same dedupeKey exists. */

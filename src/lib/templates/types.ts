@@ -4,7 +4,7 @@ export interface TemplatePipeline {
   key: string;
   name: string;
   isDefault?: boolean;
-  stages: { key: string; name: string; advanceOn?: StageAdvanceTrigger; isWon?: boolean; isLost?: boolean }[];
+  stages: { key: string; name: string; advanceOn?: StageAdvanceTrigger; isWon?: boolean; isLost?: boolean; quietAfterDays?: number }[];
 }
 
 export interface TemplateRole {
