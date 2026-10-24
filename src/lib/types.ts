@@ -741,6 +741,60 @@ export interface SiteMetricSnapshotRecord {
   topSources: Record<string, number>;
 }
 
+// ---------------------------------------------------------------------------
+// Provisioning, people, keys, inventory (Phase 5)
+// ---------------------------------------------------------------------------
+
+export interface TenantPersonRecord {
+  userId: string;
+  email: string;
+  name: string | null;
+  via: "member" | "operator";
+  roleId: string | null;
+  roleName: string | null;
+  permissions: Permission[];
+}
+
+export interface ApiKeyRecord {
+  id: string;
+  tenantId: string;
+  label: string;
+  keyPrefix: string;
+  scopes: ("intake" | "content")[];
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
+export type InventoryType = "LISTING" | "CAPACITY" | "STOCK";
+export type InventoryStatus = "ACTIVE" | "LOW" | "UNAVAILABLE" | "ARCHIVED";
+
+export interface InventoryItemRecord {
+  id: string;
+  tenantId: string;
+  type: InventoryType;
+  externalId: string | null;
+  name: string;
+  status: InventoryStatus;
+  quantity: number | null;
+  valueCents: number | null;
+  /** Listing: { address, suburb, rentPerWeekCents, priceCents, bedrooms, bathrooms, url, availableFrom }. */
+  attributes: Record<string, unknown>;
+  source: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** One line of the launch checklist for a workspace. */
+export interface ReadinessCheck {
+  key: string;
+  label: string;
+  /** required: must pass before launch; recommended: should pass; optional: nice to have. */
+  level: "required" | "recommended" | "optional";
+  ok: boolean;
+  detail: string;
+}
+
 /** One row of the attribution report: a channel (source/campaign) with what it cost and what it brought. */
 export interface AttributionRow {
   key: string;

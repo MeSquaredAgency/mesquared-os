@@ -3,6 +3,7 @@ import { repository } from "@/lib/data";
 import { detectForTenant } from "@/lib/opportunities/detect";
 import { registerPlaybook } from "@/lib/playbook";
 import { registerContentEngine } from "@/lib/content/engine";
+import { registerInventory } from "@/lib/inventory";
 import { quietHoursEnd } from "@/lib/messaging";
 import { publishDuePosts } from "@/lib/social/publish";
 import { localKey } from "@/lib/content/calendar";
@@ -24,6 +25,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
   registerPlaybook();
   registerAutomations();
   registerContentEngine();
+  registerInventory();
   const tenants = await repository.listAllTenants();
   let detected = 0;
   for (const tenant of tenants) {

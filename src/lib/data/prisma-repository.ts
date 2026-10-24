@@ -10,6 +10,10 @@ import {
   type ScheduledAction,
   type AdAccount,
   type AdSpendSnapshot,
+  type InventoryItem,
+  type TenantApiKey,
+  type Permission,
+  type StageAdvanceTrigger,
   type Channel,
   type ChannelMetricSnapshot,
   type Invoice,
@@ -35,6 +39,7 @@ import { getPrisma } from "@/lib/prisma";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
+  ApiKeyRecord,
   AutomationRunRecord,
   BookingRecord,
   ChannelMetricSnapshotRecord,
@@ -48,6 +53,7 @@ import type {
   FormSessionRecord,
   InformationRequestRecord,
   IntegrationRecord,
+  InventoryItemRecord,
   InvoiceRecord,
   LeadRecord,
   MessageRecord,
@@ -64,6 +70,7 @@ import type {
   SocialPostRecord,
   TenantAccess,
   TenantBranding,
+  TenantPersonRecord,
   TenantRoleRecord,
   TenantSummary,
   TrackedLinkRecord,
@@ -171,6 +178,8 @@ const toLink = (l: TrackedLink): TrackedLinkRecord => ({ id: l.id, tenantId: l.t
 const toWebEvent = (e: WebEvent): WebEventRecord => ({ id: e.id, tenantId: e.tenantId, kind: e.kind, path: e.path, referrer: e.referrer, source: e.source, sessionKey: e.sessionKey, occurredAt: e.occurredAt });
 const toSiteMetrics = (m: SiteMetricSnapshot): SiteMetricSnapshotRecord => ({ id: m.id, tenantId: m.tenantId, date: m.date, sessions: m.sessions, pageviews: m.pageviews, formStarts: m.formStarts, formSubmits: m.formSubmits, linkClicks: m.linkClicks, topPages: obj(m.topPages) as Record<string, number>, topSources: obj(m.topSources) as Record<string, number> });
 const utcDay = (d: Date) => new Date(`${d.toISOString().slice(0, 10)}T00:00:00Z`);
+const toApiKey = (k: TenantApiKey): ApiKeyRecord => ({ id: k.id, tenantId: k.tenantId, label: k.label, keyPrefix: k.keyPrefix, scopes: k.scopes.filter((x): x is "intake" | "content" => x === "intake" || x === "content"), lastUsedAt: k.lastUsedAt, revokedAt: k.revokedAt, createdAt: k.createdAt });
+const toInventory = (i: InventoryItem): InventoryItemRecord => ({ id: i.id, tenantId: i.tenantId, type: i.type, externalId: i.externalId, name: i.name, status: i.status, quantity: i.quantity, valueCents: i.valueCents, attributes: obj(i.attributes), source: i.source, createdAt: i.createdAt, updatedAt: i.updatedAt });
 const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.tenantId, contactId: t.contactId, leadId: t.leadId, provider: t.provider, providerId: t.providerId, kind: t.kind, status: t.status, amountCents: t.amountCents, currency: t.currency, note: t.note, occurredAt: t.occurredAt });
 const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, parentId: a.parentId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, tags: a.tags, scheduledFor: a.scheduledFor, generation: obj(a.generation) as ContentAssetRecord["generation"], rejectionNote: a.rejectionNote, approvedAt: a.approvedAt, createdAt: a.createdAt });
 const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, channelId: p.channelId, contentAssetId: p.contentAssetId, platform: p.platform, caption: p.caption, mediaUrls: p.mediaUrls, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, publishedAt: p.publishedAt, externalPostId: p.externalPostId, permalink: p.permalink, errorMessage: p.errorMessage, attempts: p.attempts, metrics: obj(p.metrics) as Record<string, number>, batchId: p.batchId, createdAt: p.createdAt });
@@ -941,6 +950,169 @@ export const prismaRepository: Repository = {
   async listRecentTransactions(tenantId, limit = 25) {
     const rows = await getPrisma().transaction.findMany({ where: { tenantId }, orderBy: { occurredAt: "desc" }, take: limit });
     return rows.map(toTxn);
+  },
+
+  // --- provisioning, people, keys, inventory (Phase 5) ------------------------------
+
+  async createTenant(data) {
+    const db = getPrisma();
+    if (await db.tenant.findUnique({ where: { slug: data.slug } })) throw new Error("That workspace address is already taken.");
+    const row = await db.tenant.create({ data: { slug: data.slug, name: data.name, industry: data.industry, templateKey: data.templateKey, region: data.region, timezone: data.timezone, locale: data.locale, currency: data.currency, branding: json(data.branding ?? {}), qualificationRules: json(data.qualificationRules ?? {}), sla: json(data.sla ?? { firstResponseMinutes: 5, bookingWindowHours: 48 }), opportunityValues: json(data.opportunityValues ?? {}), settings: json(data.settings ?? {}) } });
+    return toTenant(row);
+  },
+
+  async updateTenant(tenantId, patch) {
+    const db = getPrisma();
+    const existing = await db.tenant.findUnique({ where: { id: tenantId } });
+    if (!existing) return null;
+    const row = await db.tenant.update({
+      where: { id: tenantId },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.region !== undefined ? { region: patch.region } : {}),
+        ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
+        ...(patch.locale !== undefined ? { locale: patch.locale } : {}),
+        ...(patch.currency !== undefined ? { currency: patch.currency } : {}),
+        ...(patch.branding !== undefined ? { branding: json(patch.branding) } : {}),
+        ...(patch.qualificationRules !== undefined ? { qualificationRules: json(patch.qualificationRules) } : {}),
+        ...(patch.sla !== undefined ? { sla: json(patch.sla) } : {}),
+        ...(patch.escalationRules !== undefined ? { escalationRules: json({ rules: patch.escalationRules }) } : {}),
+        ...(patch.opportunityValues !== undefined ? { opportunityValues: json(patch.opportunityValues) } : {}),
+        ...(patch.settings !== undefined ? { settings: json({ ...obj(existing.settings), ...patch.settings }) } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+      },
+    });
+    return toTenant(row);
+  },
+
+  async applyTemplate(tenantId, template) {
+    const db = getPrisma();
+    for (const role of template.roles) {
+      await db.tenantRole.upsert({ where: { tenantId_name: { tenantId, name: role.name } }, update: { permissions: role.permissions as Permission[], templateKey: role.key }, create: { tenantId, name: role.name, templateKey: role.key, permissions: role.permissions as Permission[] } });
+    }
+    for (const p of template.pipelines) {
+      const pipeline = await db.pipeline.upsert({ where: { tenantId_key: { tenantId, key: p.key } }, update: { name: p.name, isDefault: Boolean(p.isDefault) }, create: { tenantId, key: p.key, name: p.name, isDefault: Boolean(p.isDefault) } });
+      for (const [order, st] of p.stages.entries()) {
+        const data = { name: st.name, order, advanceOn: (st.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(st.isWon), isLost: Boolean(st.isLost), quietAfterDays: st.quietAfterDays ?? null };
+        await db.pipelineStage.upsert({ where: { pipelineId_key: { pipelineId: pipeline.id, key: st.key } }, update: data, create: { tenantId, pipelineId: pipeline.id, key: st.key, ...data } });
+      }
+    }
+    const { MODULES } = await import("@/lib/modules/registry");
+    const { AUTOMATIONS } = await import("@/lib/automations/registry");
+    const enabledModules = new Map(template.modules.map((m) => [m.key, m.settings ?? {}]));
+    for (const m of MODULES) {
+      const settings = json(enabledModules.get(m.key) ?? {});
+      await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId, moduleKey: m.key } }, update: { enabled: enabledModules.has(m.key), settings }, create: { tenantId, moduleKey: m.key, enabled: enabledModules.has(m.key), settings } });
+    }
+    const enabledAutomations = new Map(template.automations.map((a) => [a.key, a.settings ?? {}]));
+    for (const a of AUTOMATIONS) {
+      const settings = json(enabledAutomations.get(a.key) ?? {});
+      await db.tenantAutomation.upsert({ where: { tenantId_typeKey: { tenantId, typeKey: a.key } }, update: { enabled: enabledAutomations.has(a.key), settings }, create: { tenantId, typeKey: a.key, enabled: enabledAutomations.has(a.key), settings } });
+    }
+    const existingBrand = await db.brandProfile.findUnique({ where: { tenantId } });
+    const footer = (obj(existingBrand?.complianceBlock ?? {}) as { requiredFooter?: string }).requiredFooter;
+    const complianceBlock = { ...template.brand.complianceBlock, ...(footer ? { requiredFooter: footer } : {}) };
+    await db.brandProfile.upsert({ where: { tenantId }, update: { voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) }, create: { tenantId, voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) } });
+    await db.tenant.update({ where: { id: tenantId }, data: { templateKey: template.key, industry: template.industry } });
+  },
+
+  async setModule(tenantId, moduleKey, patch) {
+    const db = getPrisma();
+    const existing = await db.tenantModule.findUnique({ where: { tenantId_moduleKey: { tenantId, moduleKey } } });
+    const settings = json({ ...(existing ? obj(existing.settings) : {}), ...(patch.settings ?? {}) });
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId, moduleKey } }, update: { ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}), settings }, create: { tenantId, moduleKey, enabled: patch.enabled ?? false, settings } });
+  },
+
+  async setAutomation(tenantId, typeKey, patch) {
+    const db = getPrisma();
+    const existing = await db.tenantAutomation.findUnique({ where: { tenantId_typeKey: { tenantId, typeKey } } });
+    const settings = json({ ...(existing ? obj(existing.settings) : {}), ...(patch.settings ?? {}) });
+    await db.tenantAutomation.upsert({ where: { tenantId_typeKey: { tenantId, typeKey } }, update: { ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}), settings }, create: { tenantId, typeKey, enabled: patch.enabled ?? false, settings } });
+  },
+
+  async updateBrandProfile(tenantId, patch) {
+    const db = getPrisma();
+    const existing = await db.brandProfile.findUnique({ where: { tenantId } });
+    const complianceBlock = json({ ...(existing ? obj(existing.complianceBlock) : {}), ...(patch.complianceBlock ?? {}) });
+    await db.brandProfile.upsert({
+      where: { tenantId },
+      update: { ...(patch.voice !== undefined ? { voice: patch.voice } : {}), ...(patch.examples !== undefined ? { examples: patch.examples } : {}), ...(patch.bannedPhrases !== undefined ? { bannedPhrases: patch.bannedPhrases } : {}), complianceBlock },
+      create: { tenantId, voice: patch.voice ?? null, examples: patch.examples ?? [], bannedPhrases: patch.bannedPhrases ?? [], complianceBlock },
+    });
+  },
+
+  async listTenantPeople(tenantId) {
+    const db = getPrisma();
+    const [members, operators] = await Promise.all([db.membership.findMany({ where: { tenantId }, include: { user: true, role: true } }), db.operatorAssignment.findMany({ where: { tenantId }, include: { user: true } })]);
+    return [
+      ...members.map((m): TenantPersonRecord => ({ userId: m.userId, email: m.user.email, name: m.user.name, via: "member", roleId: m.roleId, roleName: m.role.name, permissions: m.role.permissions })),
+      ...operators.map((o): TenantPersonRecord => ({ userId: o.userId, email: o.user.email, name: o.user.name, via: "operator", roleId: null, roleName: null, permissions: [] })),
+    ];
+  },
+
+  async createUser(data) {
+    const db = getPrisma();
+    const email = data.email.toLowerCase();
+    if (await db.user.findUnique({ where: { email } })) throw new Error("A user with that email already exists.");
+    const row = await db.user.create({ data: { email, name: data.name, passwordHash: data.passwordHash, isOperator: data.isOperator ?? false, isPlatformAdmin: data.isPlatformAdmin ?? false } });
+    return toUser(row);
+  },
+
+  async setUserPassword(userId, passwordHash) {
+    await getPrisma().user.update({ where: { id: userId }, data: { passwordHash, sessionVersion: { increment: 1 } } });
+  },
+
+  async upsertMembership(tenantId, userId, roleId) {
+    await getPrisma().membership.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: { roleId }, create: { tenantId, userId, roleId } });
+  },
+
+  async removeMembership(tenantId, userId) {
+    await getPrisma().membership.deleteMany({ where: { tenantId, userId } });
+  },
+
+  async assignOperator(tenantId, userId) {
+    await getPrisma().operatorAssignment.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: {}, create: { tenantId, userId } });
+  },
+
+  async listOperators() {
+    const rows = await getPrisma().user.findMany({ where: { OR: [{ isOperator: true }, { isPlatformAdmin: true }] }, orderBy: { email: "asc" } });
+    return rows.map(toUser);
+  },
+
+  async createApiKey(tenantId, data) {
+    const row = await getPrisma().tenantApiKey.create({ data: { tenantId, label: data.label, keyHash: data.keyHash, keyPrefix: data.keyPrefix, scopes: data.scopes } });
+    return toApiKey(row);
+  },
+
+  async listApiKeys(tenantId) {
+    const rows = await getPrisma().tenantApiKey.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+    return rows.map(toApiKey);
+  },
+
+  async revokeApiKey(tenantId, keyId) {
+    await getPrisma().tenantApiKey.updateMany({ where: { id: keyId, tenantId }, data: { revokedAt: new Date() } });
+  },
+
+  async listInventory(tenantId, opts = {}) {
+    const rows = await getPrisma().inventoryItem.findMany({ where: { tenantId, ...(opts.type ? { type: opts.type } : {}), ...(opts.status ? { status: { in: opts.status } } : {}) }, orderBy: { updatedAt: "desc" }, take: opts.limit ?? 500 });
+    return rows.map(toInventory);
+  },
+
+  async upsertInventoryItems(tenantId, items) {
+    const db = getPrisma();
+    const created: InventoryItemRecord[] = [];
+    let updated = 0;
+    for (const it of items) {
+      const existing = it.externalId ? await db.inventoryItem.findFirst({ where: { tenantId, externalId: it.externalId } }) : await db.inventoryItem.findFirst({ where: { tenantId, type: it.type, name: { equals: it.name, mode: "insensitive" } } });
+      if (existing) {
+        await db.inventoryItem.update({ where: { id: existing.id }, data: { name: it.name, status: it.status ?? existing.status, quantity: it.quantity ?? existing.quantity, valueCents: it.valueCents ?? existing.valueCents, attributes: json({ ...obj(existing.attributes), ...(it.attributes ?? {}) }), source: it.source ?? existing.source } });
+        updated++;
+        continue;
+      }
+      const row = await db.inventoryItem.create({ data: { tenantId, type: it.type, externalId: it.externalId ?? null, name: it.name, status: it.status ?? "ACTIVE", quantity: it.quantity ?? null, valueCents: it.valueCents ?? null, attributes: json(it.attributes ?? {}), source: it.source ?? null } });
+      created.push(toInventory(row));
+    }
+    return { created, updated };
   },
 
   // --- ads, attribution, finance, website (Phase 4) --------------------------------

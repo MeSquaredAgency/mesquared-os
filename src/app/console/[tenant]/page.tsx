@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContentStudio } from "@/components/console/content-studio";
 import { MoneyStudio } from "@/components/console/money-studio";
 import { pacingStatus } from "@/lib/ads/sync";
+import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { OperationsPanels } from "@/components/console/operations-panels";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
@@ -54,6 +55,7 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const bookingRows = bookings.map((b) => ({ ...b, leadName: leadById.get(b.leadId) ? leadDisplayName(leadById.get(b.leadId)!) : "Lead" }));
   const requestRows = await Promise.all(requests.map(async (r) => ({ ...r, who: await contactName(r.contactId, r.leadId) })));
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
+  const readiness = readinessSummary(await tenantReadiness(tenant));
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,12 +65,24 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
           <p className="text-sm text-muted-foreground">
             {humanize(tenant.industry)} · {tenant.templateKey ? `${tenant.templateKey.replace(/_/g, " ")} template` : "no template"} · {tenant.timezone}
           </p>
+          <p className="text-xs text-muted-foreground">
+            <Link className="underline" href={`/console/${tenant.slug}/settings`}>
+              {readiness.ready ? "Ready to launch" : `Launch readiness: ${readiness.requiredPassed} of ${readiness.requiredTotal} required checks`}
+            </Link>
+          </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href={`/app/${tenant.slug}`}>
-            Open client portal <ArrowUpRight />
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/console/${tenant.slug}/settings`}>
+              <Settings /> Settings
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={`/app/${tenant.slug}`}>
+              Open client portal <ArrowUpRight />
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

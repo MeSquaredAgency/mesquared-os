@@ -21,6 +21,10 @@ import { pacingStatus, runAdsSync } from "@/lib/ads/sync";
 import { buildAttributionReport } from "@/lib/attribution/report";
 import { markOverdue, runInvoiceReminders } from "@/lib/finance/sync";
 import { rollupSite } from "@/lib/website/rollup";
+import { hashApiKey } from "@/lib/crypto";
+import { csvToInventory, findListingMentioned, importInventory, registerInventory } from "@/lib/inventory";
+import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
+import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
 
 process.env.MESSAGING_MODE ??= "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
@@ -240,6 +244,33 @@ await step("money: ad spend, pacing, attribution, invoices, reminders, website r
   assert.ok(rolled.pageviews >= 1);
   const home = await repository.getPortalHome(harbor!.id, { timezone: harbor!.timezone, currency: harbor!.currency, onlyAssigneeId: null, canViewFinances: true });
   assert.ok(home.money && home.money.adSpendMonthCents > 0 && typeof home.money.profitMonthCents === "number");
+});
+
+await step("launch: provision a workspace, invite, API key, inventory import, readiness", async () => {
+  registerInventory();
+  const fresh = await provisionTenant({ templateKey: "real_estate", name: `Parity Property ${stamp}`, slug: `parity-${stamp}`, region: "AU", timezone: "Australia/Adelaide", locale: "en-AU", currency: "AUD", replyTo: `parity-${stamp}@example.com`, requiredFooter: "Parity Property | RLA 000000" });
+  const config = await repository.getTenantConfig(fresh.id);
+  assert.ok(config.roles.length >= 3 && config.pipelines.length >= 1 && config.brand?.complianceBlock.requiredFooter === "Parity Property | RLA 000000", "template applied with footer");
+  const role = config.roles.find((r) => r.permissions.includes("RECEIVE_LEAD_ALERTS"))!;
+  const invite = await inviteMember(fresh.id, { email: `parity-owner-${stamp}@example.com`, name: "Parity Owner", roleId: role.id });
+  assert.ok(invite.created && invite.temporaryPassword, "one-time password issued");
+  const people = await repository.listTenantPeople(fresh.id);
+  assert.ok(people.some((p) => p.via === "member" && p.permissions.includes("RECEIVE_LEAD_ALERTS")), "member listed with permissions");
+  const operators = await repository.listOperators();
+  if (operators[0]) await repository.assignOperator(fresh.id, operators[0].id);
+  const issued = await issueApiKey(fresh.id, "Parity forms", ["intake"]);
+  const resolved = await repository.findTenantByApiKeyHash(hashApiKey(issued.raw));
+  assert.equal(resolved?.tenant.id, fresh.id, "issued key resolves");
+  assert.deepEqual(resolved?.scopes, ["intake"]);
+  const imported = await importInventory(fresh, csvToInventory(`address,suburb,status,rent,bedrooms,url\n"${stamp} Parity Street",Glenelg,available,620,2,https://example.com/${stamp}`).items);
+  assert.equal(imported.created, 1);
+  assert.equal(await importInventory(fresh, csvToInventory(`address,status\n"${stamp} Parity Street",leased`).items).then((r) => r.updated), 1, "same address updates");
+  assert.equal(await findListingMentioned(fresh.id, `about ${stamp} parity street`), null, "leased listing not offered");
+  const readiness = readinessSummary(await tenantReadiness(fresh));
+  assert.ok(readiness.requiredTotal > 0 && readiness.requiredPassed > 0);
+  await repository.revokeApiKey(fresh.id, issued.key.id);
+  assert.equal(await repository.findTenantByApiKeyHash(hashApiKey(issued.raw)), null, "revoked key stops resolving");
+  await repository.updateTenant(fresh.id, { isActive: false });
 });
 
 console.log(failures === 0 ? "\nAll parity steps passed." : `\n${failures} parity step(s) FAILED.`);

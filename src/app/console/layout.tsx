@@ -16,6 +16,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
       nav={[
         { href: "/console", label: "Portfolio", hint: `${tenants.length} workspace${tenants.length === 1 ? "" : "s"}`, icon: "layoutGrid", exact: true },
         { href: "/console/queue", label: "Queue", hint: "Needs an operator", icon: "inbox", badge: queue.length },
+        ...(user.isPlatformAdmin ? [{ href: "/console/new", label: "New workspace", hint: "Set up a client", icon: "plus" as const }] : []),
       ]}
       context={
         <div className="rounded-md border bg-background px-3 py-2">

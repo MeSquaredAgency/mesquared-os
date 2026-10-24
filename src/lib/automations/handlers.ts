@@ -9,6 +9,7 @@ import { runContentBatch } from "@/lib/content/engine";
 import { runAdsSync } from "@/lib/ads/sync";
 import { runFinanceSync } from "@/lib/finance/sync";
 import { rollupSite } from "@/lib/website/rollup";
+import { describeListing, findListingMentioned } from "@/lib/inventory";
 import { runSocialSync } from "@/lib/social/sync";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -229,7 +230,11 @@ export async function onRedEnquiry(tenant: TenantSummary, lead: LeadRecord) {
     await skipped(tenant.id, "enquiry_auto_reply", `Filed ${name}'s ${kind}; they left no phone or email to reply to.`, { leadId: lead.id, contactId: lead.contactId });
     return;
   }
-  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom: typeof settings.redReplyText === "string" ? settings.redReplyText : null, infoUrl: typeof settings.renterReplyUrl === "string" ? settings.renterReplyUrl : null }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically. Nothing needed from you.`, who: name, verb: "reply to" });
+  // A known listing answers its own enquiry: its link (and a one-line description) beats a generic page.
+  const listing = await findListingMentioned(tenant.id, `${lead.message ?? ""} ${typeof lead.attributes.property === "string" ? lead.attributes.property : ""}`);
+  const infoUrl = (listing && typeof listing.attributes.url === "string" ? listing.attributes.url : null) ?? (typeof settings.renterReplyUrl === "string" ? settings.renterReplyUrl : null);
+  const custom = typeof settings.redReplyText === "string" ? settings.redReplyText : listing ? `thanks for your message to ${tenant.name} about ${describeListing(listing, tenant.locale, tenant.currency)}.${infoUrl ? ` Details and inspection times are here: ${infoUrl}.` : ""} If your question is about something else, reply here and a person will pick it up.` : null;
+  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom, infoUrl }), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically${listing ? ` with the details for ${listing.name}` : ""}. Nothing needed from you.`, who: name, verb: "reply to" });
   if (result.ok) await repository.markLeadResponded(tenant.id, lead.id, new Date());
 }
 

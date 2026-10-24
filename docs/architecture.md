@@ -216,10 +216,16 @@ tracking links and attribution; CPL, CPA, ROAS and pacing alerts; finance
 connectors (Square, Stripe, Xero) read-only; invoices and overdue reminders;
 portal "Money" panel; website forms and analytics for apnre.com.au.
 
-**Phase 5 — Launch (week 9).** APN configured entirely through the real
-estate template; Courage Health & Fitness as the second demo tenant;
-inventory module on for APN listings and rent roll; hardening, runbooks,
-launch checklist against the success test in the spec.
+**Phase 5 — Launch (week 9). Code shipped 24 Oct.** Provisioning through the
+console (a workspace is a template plus settings, never code): new-workspace
+flow, settings studio (business, qualification, brand and compliance, service
+levels, escalation rules, opportunity values, modules, automations), people
+with one-time passwords, scoped API keys issued and revoked in the UI,
+inventory module with CSV import feeding the content engine and the
+listing-aware enquiry reply, launch readiness for the workspace and the
+deployment, runbooks and the launch checklist against the success test. Real
+tenants are provisioned as data on the production database once their
+details are confirmed.
 
 Ads campaign launching from the platform, website hosting, and Me² billing
 its own clients are built after launch.

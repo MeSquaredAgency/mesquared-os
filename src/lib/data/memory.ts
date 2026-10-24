@@ -3,6 +3,7 @@ import { healthScore } from "@/lib/health";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
+  ApiKeyRecord,
   AutomationRunRecord,
   BookingRecord,
   ChannelMetricSnapshotRecord,
@@ -15,6 +16,7 @@ import type {
   FormSessionRecord,
   InformationRequestRecord,
   IntegrationRecord,
+  InventoryItemRecord,
   InvoiceRecord,
   LeadRecord,
   MessageRecord,
@@ -26,6 +28,7 @@ import type {
   SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantAccess,
+  TenantPersonRecord,
   TenantSummary,
   TrackedLinkRecord,
   TransactionRecord,
@@ -33,6 +36,7 @@ import type {
   WebEventRecord,
 } from "@/lib/types";
 import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/apply";
 import {
   TenantMismatchError,
   type IntakeEventInput,
@@ -101,6 +105,12 @@ interface MemoryStore {
   trackedLinks: TrackedLinkRecord[];
   webEvents: WebEventRecord[];
   siteMetrics: SiteMetricSnapshotRecord[];
+  apiKeys: (ApiKeyRecord & { keyHash: string })[];
+  inventory: InventoryItemRecord[];
+  /** Per-tenant materialised template. Lives on the global store so every module instance (page and action bundles in dev) sees the same config. */
+  config: Record<string, MaterializedTemplate>;
+  memberships: { userId: string; tenantId: string; roleId: string }[];
+  operatorAssignments: { userId: string; tenantId: string }[];
 }
 
 /** Keeps demo memory bounded if a long-running dev server receives a lot of traffic. */
@@ -112,6 +122,9 @@ function store(): MemoryStore {
   if (!g.__msqMemoryStore) {
     g.__msqMemoryStore = {
       tenants: [...demoTenants],
+      config: { ...demoConfig },
+      memberships: [...demoMemberships],
+      operatorAssignments: [...demoOperatorAssignments],
       users: [...getDemoUsers()],
       contacts: [...demoContacts],
       leads: [...demoLeads],
@@ -139,8 +152,14 @@ function store(): MemoryStore {
       trackedLinks: [...demoTrackedLinks],
       webEvents: [],
       siteMetrics: [...demoSiteMetrics],
+      apiKeys: [],
+      inventory: [],
     };
   }
+  // A dev server hot-reloads modules but keeps globalThis: fields added since the store was created start empty.
+  g.__msqMemoryStore.config ??= { ...demoConfig };
+  g.__msqMemoryStore.memberships ??= [...demoMemberships];
+  g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
 
@@ -202,13 +221,13 @@ export const memoryRepository: Repository = {
       for (const tenant of s.tenants) access.push({ tenant, via: "admin", roleName: null, permissions: [] });
       return access;
     }
-    for (const a of demoOperatorAssignments.filter((x) => x.userId === userId)) {
+    for (const a of store().operatorAssignments.filter((x) => x.userId === userId)) {
       const tenant = s.tenants.find((t) => t.id === a.tenantId);
       if (tenant) access.push({ tenant, via: "operator", roleName: null, permissions: [] });
     }
-    for (const m of demoMemberships.filter((x) => x.userId === userId)) {
+    for (const m of store().memberships.filter((x) => x.userId === userId)) {
       const tenant = s.tenants.find((t) => t.id === m.tenantId);
-      const role = demoConfig[m.tenantId]?.roles.find((r) => r.id === m.roleId);
+      const role = store().config[m.tenantId]?.roles.find((r) => r.id === m.roleId);
       if (tenant && role && !access.some((x) => x.tenant.id === tenant.id)) {
         access.push({ tenant, via: "member", roleName: role.name, permissions: role.permissions });
       }
@@ -229,6 +248,12 @@ export const memoryRepository: Repository = {
   },
 
   async findTenantByApiKeyHash(hash) {
+    const issued = store().apiKeys.find((k) => k.keyHash === hash && !k.revokedAt);
+    if (issued) {
+      const tenant = store().tenants.find((t) => t.id === issued.tenantId);
+      issued.lastUsedAt = new Date();
+      return tenant ? { tenant, apiKeyId: issued.id, scopes: issued.scopes } : null;
+    }
     const tenantId = demoApiKeyHashes[hash];
     const tenant = tenantId ? store().tenants.find((t) => t.id === tenantId) : undefined;
     // Demo keys carry both scopes so every example in the README works without a database.
@@ -236,7 +261,7 @@ export const memoryRepository: Repository = {
   },
 
   async getTenantConfig(tenantId) {
-    const cfg = demoConfig[tenantId];
+    const cfg = store().config[tenantId];
     return {
       modules: cfg?.modules ?? [],
       automations: cfg?.automations ?? [],
@@ -356,7 +381,7 @@ export const memoryRepository: Repository = {
     if (!lead) return null;
     lead.bookedAt ??= at;
     if (lead.status === "QUALIFIED" || lead.status === "BOOKING_SENT" || lead.status === "NEW") lead.status = "BOOKED";
-    const pipeline = demoConfig[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
+    const pipeline = store().config[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
     const next = pipeline?.stages.find((s) => s.advanceOn === "BOOKING_CREATED");
     if (next && lead.stageId !== next.id) {
       lead.stageId = next.id;
@@ -426,9 +451,9 @@ export const memoryRepository: Repository = {
 
   async listAlertRecipients(tenantId) {
     const s = store();
-    return demoMemberships
+    return store().memberships
       .filter((mb) => mb.tenantId === tenantId)
-      .map((mb) => ({ mb, role: demoConfig[tenantId]?.roles.find((r) => r.id === mb.roleId), user: s.users.find((u) => u.id === mb.userId) }))
+      .map((mb) => ({ mb, role: store().config[tenantId]?.roles.find((r) => r.id === mb.roleId), user: s.users.find((u) => u.id === mb.userId) }))
       .filter((x) => x.user && x.role?.permissions.includes("RECEIVE_LEAD_ALERTS"))
       .map((x) => ({ userId: x.user!.id, email: x.user!.email, name: x.user!.name }));
   },
@@ -647,7 +672,7 @@ export const memoryRepository: Repository = {
   },
 
   async listLeadsQuietInStage(tenantId, now) {
-    const stages = new Map((demoConfig[tenantId]?.pipelines ?? []).flatMap((p) => p.stages.map((s) => [s.id, s])));
+    const stages = new Map((store().config[tenantId]?.pipelines ?? []).flatMap((p) => p.stages.map((s) => [s.id, s])));
     const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
     for (const lead of store().leads) {
       if (lead.tenantId !== tenantId || !lead.stageId || lead.status === "WON" || lead.status === "LOST" || lead.status === "ARCHIVED") continue;
@@ -1009,6 +1034,162 @@ export const memoryRepository: Repository = {
       .transactions.filter((t) => t.tenantId === tenantId)
       .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
       .slice(0, limit);
+  },
+
+  // --- provisioning, people, keys, inventory (Phase 5) ------------------------------
+
+  async createTenant(data) {
+    const s = store();
+    if (s.tenants.some((t) => t.slug === data.slug)) throw new Error("That workspace address is already taken.");
+    const tenant: TenantSummary = { id: id("tenant"), slug: data.slug, name: data.name, industry: data.industry, templateKey: data.templateKey, region: data.region, timezone: data.timezone, locale: data.locale, currency: data.currency, branding: data.branding ?? {}, qualificationRules: data.qualificationRules ?? {}, sla: data.sla ?? { firstResponseMinutes: 5, bookingWindowHours: 48 }, escalationRules: [], opportunityValues: data.opportunityValues ?? {} };
+    s.tenants.push(tenant);
+    return tenant;
+  },
+
+  async updateTenant(tenantId, patch) {
+    const t = store().tenants.find((x) => x.id === tenantId);
+    if (!t) return null;
+    const { isActive, settings, ...rest } = patch;
+    void isActive;
+    void settings;
+    Object.assign(t, rest);
+    return t;
+  },
+
+  async applyTemplate(tenantId, template) {
+    const existing = store().config[tenantId];
+    const next = materializeTemplate(template, tenantId, (prefix) => id(prefix));
+    if (existing) {
+      // Keep ids for roles and stages that already exist so memberships and leads stay attached.
+      next.roles = next.roles.map((r) => ({ ...r, id: existing.roles.find((x) => x.templateKey === r.templateKey)?.id ?? r.id }));
+      next.pipelines = next.pipelines.map((p) => {
+        const old = existing.pipelines.find((x) => x.key === p.key);
+        return old ? { ...p, id: old.id, stages: p.stages.map((st) => ({ ...st, pipelineId: old.id, id: old.stages.find((x) => x.key === st.key)?.id ?? st.id })) } : p;
+      });
+      next.brand = { ...next.brand, examples: existing.brand.examples, complianceBlock: { ...next.brand.complianceBlock, ...(existing.brand.complianceBlock.requiredFooter ? { requiredFooter: existing.brand.complianceBlock.requiredFooter } : {}) } };
+    }
+    store().config[tenantId] = next;
+    const t = store().tenants.find((x) => x.id === tenantId);
+    if (t) {
+      t.templateKey = template.key;
+      t.industry = template.industry;
+      if (!Object.keys(t.qualificationRules).length) t.qualificationRules = template.qualificationRules;
+      if (!Object.keys(t.opportunityValues).length) t.opportunityValues = template.opportunityValues;
+    }
+  },
+
+  async setModule(tenantId, moduleKey, patch) {
+    const m = store().config[tenantId]?.modules.find((x) => x.moduleKey === moduleKey);
+    if (!m) return;
+    if (patch.enabled !== undefined) m.enabled = patch.enabled;
+    if (patch.settings) m.settings = { ...m.settings, ...patch.settings };
+  },
+
+  async setAutomation(tenantId, typeKey, patch) {
+    const a = store().config[tenantId]?.automations.find((x) => x.typeKey === typeKey);
+    if (!a) return;
+    if (patch.enabled !== undefined) a.enabled = patch.enabled;
+    if (patch.settings) a.settings = { ...a.settings, ...patch.settings };
+  },
+
+  async updateBrandProfile(tenantId, patch) {
+    const cfg = store().config[tenantId];
+    if (!cfg) return;
+    cfg.brand = { ...cfg.brand, ...patch, complianceBlock: { ...cfg.brand.complianceBlock, ...(patch.complianceBlock ?? {}) } };
+  },
+
+  async listTenantPeople(tenantId) {
+    const s = store();
+    const out: TenantPersonRecord[] = [];
+    for (const m of store().memberships.filter((x) => x.tenantId === tenantId)) {
+      const u = s.users.find((x) => x.id === m.userId);
+      const role = store().config[tenantId]?.roles.find((r) => r.id === m.roleId);
+      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "member", roleId: role?.id ?? null, roleName: role?.name ?? null, permissions: role?.permissions ?? [] });
+    }
+    for (const a of store().operatorAssignments.filter((x) => x.tenantId === tenantId)) {
+      const u = s.users.find((x) => x.id === a.userId);
+      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "operator", roleId: null, roleName: null, permissions: [] });
+    }
+    return out;
+  },
+
+  async createUser(data) {
+    const s = store();
+    const email = data.email.toLowerCase();
+    if (s.users.some((u) => u.email === email)) throw new Error("A user with that email already exists.");
+    const user = { id: id("user"), email, name: data.name, isOperator: data.isOperator ?? false, isPlatformAdmin: data.isPlatformAdmin ?? false, sessionVersion: 0, passwordHash: data.passwordHash ?? "" };
+    s.users.push(user);
+    return publicUser(user);
+  },
+
+  async setUserPassword(userId, passwordHash) {
+    const u = store().users.find((x) => x.id === userId);
+    if (u) {
+      u.passwordHash = passwordHash;
+      u.sessionVersion += 1;
+    }
+  },
+
+  async upsertMembership(tenantId, userId, roleId) {
+    const existing = store().memberships.find((m) => m.tenantId === tenantId && m.userId === userId);
+    if (existing) existing.roleId = roleId;
+    else store().memberships.push({ tenantId, userId, roleId });
+  },
+
+  async removeMembership(tenantId, userId) {
+    const i = store().memberships.findIndex((m) => m.tenantId === tenantId && m.userId === userId);
+    if (i >= 0) store().memberships.splice(i, 1);
+  },
+
+  async assignOperator(tenantId, userId) {
+    if (!store().operatorAssignments.some((a) => a.tenantId === tenantId && a.userId === userId)) store().operatorAssignments.push({ tenantId, userId });
+  },
+
+  async listOperators() {
+    return store().users.filter((u) => u.isOperator || u.isPlatformAdmin).map(publicUser);
+  },
+
+  async createApiKey(tenantId, data) {
+    const row = { id: id("key"), tenantId, label: data.label, keyPrefix: data.keyPrefix, keyHash: data.keyHash, scopes: data.scopes, lastUsedAt: null, revokedAt: null, createdAt: new Date() };
+    store().apiKeys.push(row);
+    const { keyHash, ...pub } = row;
+    void keyHash;
+    return pub;
+  },
+
+  async listApiKeys(tenantId) {
+    return store().apiKeys.filter((k) => k.tenantId === tenantId).map(({ keyHash, ...k }) => { void keyHash; return k; });
+  },
+
+  async revokeApiKey(tenantId, keyId) {
+    const k = store().apiKeys.find((x) => x.id === keyId && x.tenantId === tenantId);
+    if (k) k.revokedAt = new Date();
+  },
+
+  async listInventory(tenantId, opts = {}) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    return store()
+      .inventory.filter((i) => i.tenantId === tenantId && (!opts.type || i.type === opts.type) && (!statuses || statuses.has(i.status)))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, opts.limit ?? 500);
+  },
+
+  async upsertInventoryItems(tenantId, items) {
+    const s = store();
+    const created: InventoryItemRecord[] = [];
+    let updated = 0;
+    for (const it of items) {
+      const existing = s.inventory.find((x) => x.tenantId === tenantId && (it.externalId ? x.externalId === it.externalId : x.type === it.type && x.name.toLowerCase() === it.name.toLowerCase()));
+      if (existing) {
+        Object.assign(existing, { name: it.name, status: it.status ?? existing.status, quantity: it.quantity ?? existing.quantity, valueCents: it.valueCents ?? existing.valueCents, attributes: { ...existing.attributes, ...(it.attributes ?? {}) }, source: it.source ?? existing.source, updatedAt: new Date() });
+        updated++;
+        continue;
+      }
+      const row: InventoryItemRecord = { id: id("inv"), tenantId, type: it.type, externalId: it.externalId ?? null, name: it.name, status: it.status ?? "ACTIVE", quantity: it.quantity ?? null, valueCents: it.valueCents ?? null, attributes: it.attributes ?? {}, source: it.source ?? null, createdAt: new Date(), updatedAt: new Date() };
+      pushBounded(s.inventory, row, false);
+      created.push(row);
+    }
+    return { created, updated };
   },
 
   // --- ads, attribution, finance, website (Phase 4) --------------------------------

@@ -99,8 +99,14 @@ describe("destination and consent policy inside sendMessage", () => {
     assert.ok(releaseAt.getTime() > Date.now(), "release is in the future");
     const due = (await repository.listDueActions(new Date(releaseAt.getTime() + 60_000))).find((a) => a.typeKey === "messaging" && a.action === "release" && a.payload.to === contact.email);
     assert.ok(due, "a release action is queued for the end of quiet hours");
-    // Running the release outside quiet hours sends it and logs honestly.
-    await runScheduledAction({ ...due!, tenantId: summit.id });
+    // Running the release outside quiet hours sends it and logs honestly. The handler reads the stored tenant, so its
+    // quiet hours are moved away from the current time for the run (the fixture's real window would hold it again at night).
+    await repository.updateTenant(summit.id, { sla: withQuietHoursNow(summit, false).sla });
+    try {
+      await runScheduledAction({ ...due!, tenantId: summit.id });
+    } finally {
+      await repository.updateTenant(summit.id, { sla: summit.sla });
+    }
     const runs = await repository.listAutomationRuns(summit.id, 50);
     assert.ok(runs.some((r) => r.typeKey === "messaging" && r.outcome === "SENT" && r.contactId === contact.id), "released message logged as sent");
   });

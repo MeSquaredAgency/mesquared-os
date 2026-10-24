@@ -306,6 +306,30 @@ expenses and ads, what is owed and what is overdue.
 visits, top pages, where visitors came from, and form conversion; raw events are pruned after
 35 days.
 
+## Setting up a client (Phase 5)
+
+A client is configuration applied to a template. Platform admins create a
+workspace at `/console/new` (template, name, region preset, sender details,
+compliance line) and land in `/console/<slug>/settings`, which holds:
+
+- **Launch readiness**: required, recommended and optional checks for the
+  workspace and for the deployment, each with the reason in plain words.
+- **Business**: service levels, qualification rules, brand voice, banned
+  phrases, the compliance footer and claims policy.
+- **People**: invite with a role; new accounts get a one-time password shown
+  once; reset, remove, assign a Me² operator.
+- **API keys**: issue scoped keys (`intake` for forms, calls and reviews;
+  `content` for uploads), shown once, revocable. Last use is tracked.
+- **Modules & automations**, **Escalation & values**, and **Inventory** (CSV
+  import; new active listings become content material and enquiries that
+  name a listing get its details in the automatic reply).
+
+The portal gains `/app/<slug>/inventory` when the inventory module is on.
+Everything is a repository method, so it runs identically in demo mode and on
+Postgres; `npm run db:parity` provisions a throwaway workspace to prove it.
+Runbooks live in `docs/runbooks/` and the launch gate is
+`docs/launch-checklist.md`.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

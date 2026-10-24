@@ -2,6 +2,7 @@ import type {
   AdAccountRecord,
   AdPlatform,
   AdSpendSnapshotRecord,
+  ApiKeyRecord,
   AssetGeneration,
   AutomationOutcome,
   AutomationRunRecord,
@@ -15,13 +16,18 @@ import type {
   ContentStatus,
   ConversationRecord,
   DomainEventRecord,
+  EscalationRule,
   ExceptionRecord,
   ExceptionStatus,
   FinanceProvider,
   FormSessionRecord,
+  Industry,
   InformationRequestRecord,
   InformationRequestStatus,
   IntegrationRecord,
+  InventoryItemRecord,
+  InventoryStatus,
+  InventoryType,
   InvoiceRecord,
   InvoiceStatus,
   LeadRecord,
@@ -30,19 +36,24 @@ import type {
   MissedOpportunityRecord,
   MissedOpportunityStatus,
   MissedOpportunityType,
+  OpportunityValues,
   PipelineRecord,
   PortalHome,
   PortfolioRow,
   PostStatus,
+  QualificationRules,
   ReviewRecord,
   ScheduledActionRecord,
   ScheduledActionStatus,
+  ServiceLevels,
   SiteMetricSnapshotRecord,
   SocialPlatform,
   SocialPostRecord,
   TenantAccess,
   TenantAutomationRecord,
+  TenantBranding,
   TenantModuleRecord,
+  TenantPersonRecord,
   TenantRoleRecord,
   TenantSummary,
   TicketType,
@@ -54,6 +65,7 @@ import type {
   WebEventKind,
   WebEventRecord,
 } from "@/lib/types";
+import type { IndustryTemplate } from "@/lib/templates/types";
 
 export type IntakeChannel = "WEB_FORM" | "META_LEAD_FORM" | "GOOGLE_LEAD_FORM" | "SOCIAL_DM" | "SOCIAL_COMMENT" | "EMAIL_FORWARD" | "CALL" | "VOICEMAIL" | "PORTAL_EMAIL" | "API";
 export type IntakeOutcome = "CREATED" | "DUPLICATE" | "REJECTED";
@@ -308,6 +320,63 @@ export interface NewSiteMetrics {
   linkClicks: number;
   topPages: Record<string, number>;
   topSources: Record<string, number>;
+}
+
+export interface NewTenant {
+  slug: string;
+  name: string;
+  industry: Industry;
+  templateKey: string | null;
+  region: string;
+  timezone: string;
+  locale: string;
+  currency: string;
+  branding?: TenantBranding;
+  qualificationRules?: QualificationRules;
+  sla?: ServiceLevels;
+  opportunityValues?: OpportunityValues;
+  settings?: Record<string, unknown>;
+}
+
+export interface TenantPatch {
+  name?: string;
+  region?: string;
+  timezone?: string;
+  locale?: string;
+  currency?: string;
+  branding?: TenantBranding;
+  qualificationRules?: QualificationRules;
+  sla?: ServiceLevels;
+  escalationRules?: EscalationRule[];
+  opportunityValues?: OpportunityValues;
+  settings?: Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export interface NewUser {
+  email: string;
+  name: string | null;
+  passwordHash: string | null;
+  isOperator?: boolean;
+  isPlatformAdmin?: boolean;
+}
+
+export interface NewApiKey {
+  label: string;
+  keyHash: string;
+  keyPrefix: string;
+  scopes: ApiKeyScope[];
+}
+
+export interface NewInventoryItem {
+  type: InventoryType;
+  externalId?: string | null;
+  name: string;
+  status?: InventoryStatus;
+  quantity?: number | null;
+  valueCents?: number | null;
+  attributes?: Record<string, unknown>;
+  source?: string | null;
 }
 
 export interface IntegrationUpsert {
@@ -589,6 +658,29 @@ export interface Repository {
   hasMessageWithProviderId(tenantId: string, conversationId: string, providerMessageId: string): Promise<boolean>;
   updateConversation(tenantId: string, conversationId: string, patch: { awaitingReply?: boolean; suggestedReply?: string | null; meta?: Record<string, unknown> }): Promise<void>;
   listRecentTransactions(tenantId: string, limit?: number): Promise<TransactionRecord[]>;
+
+  // --- provisioning, people, keys, inventory (Phase 5) ------------------------------
+  createTenant(data: NewTenant): Promise<TenantSummary>;
+  updateTenant(tenantId: string, patch: TenantPatch): Promise<TenantSummary | null>;
+  /** Applies a template's roles, pipelines, modules, automations and brand profile. Idempotent; existing rows are updated to the template. */
+  applyTemplate(tenantId: string, template: IndustryTemplate): Promise<void>;
+  setModule(tenantId: string, moduleKey: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }): Promise<void>;
+  setAutomation(tenantId: string, typeKey: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }): Promise<void>;
+  updateBrandProfile(tenantId: string, patch: Partial<BrandProfileRecord>): Promise<void>;
+  listTenantPeople(tenantId: string): Promise<TenantPersonRecord[]>;
+  createUser(data: NewUser): Promise<UserRecord>;
+  /** Replaces the password and bumps sessionVersion so every existing session ends. */
+  setUserPassword(userId: string, passwordHash: string): Promise<void>;
+  upsertMembership(tenantId: string, userId: string, roleId: string): Promise<void>;
+  removeMembership(tenantId: string, userId: string): Promise<void>;
+  assignOperator(tenantId: string, userId: string): Promise<void>;
+  listOperators(): Promise<UserRecord[]>;
+  createApiKey(tenantId: string, data: NewApiKey): Promise<ApiKeyRecord>;
+  listApiKeys(tenantId: string): Promise<ApiKeyRecord[]>;
+  revokeApiKey(tenantId: string, keyId: string): Promise<void>;
+  listInventory(tenantId: string, opts?: { type?: InventoryType; status?: InventoryStatus[]; limit?: number }): Promise<InventoryItemRecord[]>;
+  /** Upserts on externalId when given, else on (type, name). Returns the ids of rows that were new. */
+  upsertInventoryItems(tenantId: string, items: NewInventoryItem[]): Promise<{ created: InventoryItemRecord[]; updated: number }>;
 
   // --- ads, attribution, finance, website (Phase 4) ------------------------------------
   listAdAccounts(tenantId: string, opts?: { activeOnly?: boolean }): Promise<AdAccountRecord[]>;

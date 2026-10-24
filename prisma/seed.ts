@@ -4,12 +4,11 @@
  * per tenant. Run with `npm run db:seed`. Secrets are printed once.
  */
 import { createHash, randomBytes, scryptSync } from "node:crypto";
-import { Prisma, PrismaClient, type Permission, type StageAdvanceTrigger } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const json = (v: unknown) => v as Prisma.InputJsonValue;
 import { TEMPLATE_BY_KEY } from "../src/lib/templates/index.ts";
-import { MODULES } from "../src/lib/modules/registry.ts";
-import { AUTOMATIONS } from "../src/lib/automations/registry.ts";
+import { repository } from "../src/lib/data/index.ts";
 
 const prisma = new PrismaClient();
 
@@ -49,58 +48,11 @@ const TENANTS: SeedTenant[] = [
   { slug: "summit-fitness", name: "Summit Health & Fitness", templateKey: "health_fitness", region: "AU", timezone: "Australia/Sydney", locale: "en-AU", currency: "AUD", branding: { primaryColor: "#c2410c", fromName: "Summit" }, channels: [{ platform: "FACEBOOK", externalAccountId: "demo_page_summit", displayName: "Summit Health & Fitness" }, { platform: "INSTAGRAM", externalAccountId: "demo_ig_summit", displayName: "@summitfit", settings: { igUserId: "demo_ig_summit" } }, { platform: "GOOGLE_BUSINESS", externalAccountId: "accounts/demo/locations/summit", displayName: "Summit Health & Fitness (Google)" }] },
 ];
 
-/** Applies an industry template to a tenant: roles, pipelines, modules, automations, brand. Idempotent. */
+/** Applies an industry template through the repository (the same code the console's "New workspace" flow uses). */
 async function applyTemplate(tenantId: string, templateKey: string) {
   const template = TEMPLATE_BY_KEY[templateKey];
   if (!template) throw new Error(`Unknown template ${templateKey}`);
-
-  for (const role of template.roles) {
-    await prisma.tenantRole.upsert({
-      where: { tenantId_name: { tenantId, name: role.name } },
-      update: { permissions: role.permissions as Permission[], templateKey: role.key },
-      create: { tenantId, name: role.name, templateKey: role.key, permissions: role.permissions as Permission[] },
-    });
-  }
-
-  for (const p of template.pipelines) {
-    const pipeline = await prisma.pipeline.upsert({
-      where: { tenantId_key: { tenantId, key: p.key } },
-      update: { name: p.name, isDefault: Boolean(p.isDefault) },
-      create: { tenantId, key: p.key, name: p.name, isDefault: Boolean(p.isDefault) },
-    });
-    for (const [order, s] of p.stages.entries()) {
-      await prisma.pipelineStage.upsert({
-        where: { pipelineId_key: { pipelineId: pipeline.id, key: s.key } },
-        update: { name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost), quietAfterDays: s.quietAfterDays ?? null },
-        create: { tenantId, pipelineId: pipeline.id, key: s.key, name: s.name, order, advanceOn: (s.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(s.isWon), isLost: Boolean(s.isLost), quietAfterDays: s.quietAfterDays ?? null },
-      });
-    }
-  }
-
-  const enabledModules = new Map(template.modules.map((m) => [m.key, m.settings ?? {}]));
-  for (const m of MODULES) {
-    await prisma.tenantModule.upsert({
-      where: { tenantId_moduleKey: { tenantId, moduleKey: m.key } },
-      // Demo tenants track their template: re-seeding applies new modules and settings the template gained.
-      update: { enabled: enabledModules.has(m.key), settings: json(enabledModules.get(m.key) ?? {}) },
-      create: { tenantId, moduleKey: m.key, enabled: enabledModules.has(m.key), settings: json(enabledModules.get(m.key) ?? {}) },
-    });
-  }
-
-  const enabledAutomations = new Map(template.automations.map((a) => [a.key, a.settings ?? {}]));
-  for (const a of AUTOMATIONS) {
-    await prisma.tenantAutomation.upsert({
-      where: { tenantId_typeKey: { tenantId, typeKey: a.key } },
-      update: { enabled: enabledAutomations.has(a.key), settings: json(enabledAutomations.get(a.key) ?? {}) },
-      create: { tenantId, typeKey: a.key, enabled: enabledAutomations.has(a.key), settings: json(enabledAutomations.get(a.key) ?? {}) },
-    });
-  }
-
-  await prisma.brandProfile.upsert({
-    where: { tenantId },
-    update: {},
-    create: { tenantId, voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(template.brand.complianceBlock) },
-  });
+  await repository.applyTemplate(tenantId, template);
 }
 
 async function main() {
