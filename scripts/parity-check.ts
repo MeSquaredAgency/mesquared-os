@@ -14,6 +14,9 @@ import { intakeSchema } from "@/lib/intake/schema";
 import { tick } from "@/lib/jobs/tick";
 import { detectForTenant } from "@/lib/opportunities/detect";
 import { registerPlaybook } from "@/lib/playbook";
+import { generateFromSource, ingestSource, scheduleApproved } from "@/lib/content/engine";
+import { ingestInboxItems, replyToConversation } from "@/lib/social/inbox";
+import { publishDuePosts } from "@/lib/social/publish";
 
 process.env.MESSAGING_MODE ??= "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
@@ -169,6 +172,43 @@ await step("information requests, form sessions, consent, lapsed candidates", as
   await repository.setContactConsent(harbor!.id, lead!.contactId!, "sms", true, "parity");
   assert.equal((await repository.findContactById(harbor!.id, lead!.contactId!))?.consent.sms?.granted, true);
   assert.ok(Array.isArray(await repository.listLapsedCandidates(harbor!.id, new Date())));
+});
+
+await step("content engine: material → drafts → approval → scheduled post → simulated publish", async () => {
+  process.env.SOCIAL_MODE = "log";
+  process.env.CONTENT_ENGINE = "stub";
+  const channels = await repository.listChannels(harbor!.id, { activeOnly: true });
+  assert.ok(channels.length >= 1, "seeded channels present");
+  const source = await ingestSource(harbor!, { kind: "RAW_TEXT", title: `Parity material ${stamp}`, body: "Three owners switched to us this month because nobody called them back. We call back the same day and send a written update after every inspection.", origin: "operator" });
+  const { drafts, skipped } = await generateFromSource(harbor!, source.id);
+  assert.equal(skipped, null);
+  assert.equal(drafts.length, new Set(channels.map((c) => c.platform)).size, "one draft per channel");
+  const again = await generateFromSource(harbor!, source.id);
+  assert.equal(again.drafts.length, 0, "idempotent per source");
+  const draft = drafts.find((d) => d.targetPlatform === "FACEBOOK") ?? drafts[0];
+  await repository.updateContentAssetStatus(harbor!.id, draft.id, "APPROVED");
+  const { post } = await scheduleApproved(harbor!, { ...draft, status: "APPROVED" }, { at: new Date(Date.now() - 1000) });
+  assert.ok(post && post.status === "SCHEDULED");
+  assert.equal(await repository.claimSocialPost(post!.id, new Date(), 600_000), true);
+  await repository.updateSocialPost(harbor!.id, post!.id, { status: "SCHEDULED" });
+  const published = await publishDuePosts(new Date());
+  assert.ok(published.simulated >= 1, "simulated publish");
+  assert.equal((await repository.findSocialPostById(harbor!.id, post!.id))?.status, "PUBLISHED");
+  assert.equal((await repository.findContentAssetById(harbor!.id, draft.id))?.status, "PUBLISHED");
+  await repository.recordChannelMetrics(harbor!.id, { channelId: channels[0].id, platform: channels[0].platform, date: new Date(), followers: 10, reach: 5 });
+  await repository.recordChannelMetrics(harbor!.id, { channelId: channels[0].id, platform: channels[0].platform, date: new Date(), followers: 11, reach: 6 });
+  const today = new Date().toISOString().slice(0, 10);
+  const todays = (await repository.listChannelMetrics(harbor!.id, { since: new Date(Date.now() - 86_400_000), channelId: channels[0].id })).filter((m) => m.date.toISOString().slice(0, 10) === today);
+  assert.equal(todays.length, 1, "one snapshot per channel per day");
+  assert.equal(todays[0].followers, 11, "the later record wins");
+  const fresh = await ingestInboxItems(harbor!, channels[0], [{ externalId: `c_${stamp}`, threadId: `post_${stamp}`, kind: "COMMENT", authorName: "Parity Commenter", authorId: "u_parity", text: "Thanks so much, you were brilliant", receivedAt: new Date() }]);
+  assert.equal(fresh, 1);
+  assert.equal(await ingestInboxItems(harbor!, channels[0], [{ externalId: `c_${stamp}`, threadId: `post_${stamp}`, kind: "COMMENT", authorName: "Parity Commenter", authorId: "u_parity", text: "Thanks so much, you were brilliant", receivedAt: new Date() }]), 0, "deduped by provider id");
+  const convo = (await repository.listInboxConversations(harbor!.id, { awaitingOnly: true })).find((c) => c.externalId === `post_${stamp}`);
+  assert.ok(convo?.suggestedReply, "triage drafted a reply");
+  const reply = await replyToConversation(harbor!, convo!.id, "Thank you!", "OPERATOR");
+  assert.equal(reply.ok, true);
+  assert.equal((await repository.findConversationById(harbor!.id, convo!.id))?.awaitingReply, false);
 });
 
 console.log(failures === 0 ? "\nAll parity steps passed." : `\n${failures} parity step(s) FAILED.`);

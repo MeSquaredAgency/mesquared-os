@@ -1,10 +1,15 @@
+import { ChannelSummaryCard } from "@/components/portal/channel-summary";
 import { ContentApprovals } from "@/components/portal/content-approvals";
+import { ContentCalendar } from "@/components/portal/content-calendar";
+import { PortalInbox } from "@/components/portal/portal-inbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { PLATFORM_LABEL } from "@/components/shell/platform";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
+import { buildCalendar } from "@/lib/content/calendar";
 import { repository } from "@/lib/data";
+import { summarizeChannels } from "@/lib/social/metrics";
 import { getTenantObjectUrl, isStorageConfigured, storageKeyFromFileUrl } from "@/lib/storage";
 import { formatDateTime, humanize } from "@/lib/utils";
 
@@ -14,11 +19,15 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
   const { tenant: slug } = await params;
   const { access } = await getPortalContext(slug);
   const tenant = access.tenant;
-  const wb = await repository.getWorkbench(tenant.id);
+  const canApprove = hasPermission(access, "APPROVE_CONTENT");
+  const [wb, snapshots, inbox] = await Promise.all([repository.getWorkbench(tenant.id), repository.listChannelMetrics(tenant.id, { since: new Date(Date.now() - 14 * 86_400_000) }), repository.listInboxConversations(tenant.id, { awaitingOnly: true, limit: 30 })]);
+  const threads = await Promise.all(inbox.map(async (conversation) => ({ conversation, messages: await repository.listMessages(tenant.id, conversation.id, 10) })));
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
-  const decided = wb.assets.filter((a) => a.status !== "IN_REVIEW");
+  const decided = wb.assets.filter((a) => a.status !== "IN_REVIEW" && a.status !== "DRAFT").slice(0, 12);
+  const calendar = buildCalendar(tenant, wb.posts, wb.assets, new Date(), 14);
+  const summaries = summarizeChannels(wb.channels, snapshots);
 
-  // Files on Neon Object Storage are read through short-lived presigned URLs minted here, per tenant.
+  // Files on object storage are read through short-lived presigned URLs minted here, per tenant.
   const fileLinks: Record<string, string> = {};
   if (isStorageConfigured()) {
     await Promise.all(
@@ -39,15 +48,17 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Content</h1>
         <p className="text-sm text-muted-foreground">
-          Drafts from the engine for {wb.connectedPlatforms.map((p) => PLATFORM_LABEL[p]).join(", ") || "your channels"}. Approve what goes live.
+          Drafts for {wb.connectedPlatforms.map((p) => PLATFORM_LABEL[p]).join(", ") || "your channels"}, the calendar, your channel numbers and the inbox. Approve what goes live; the rest is handled.
         </p>
       </div>
-      <ContentApprovals tenantSlug={slug} assets={wb.assets} fileLinks={fileLinks} canApprove={hasPermission(access, "APPROVE_CONTENT")} isMember={access.via === "member"} />
+      <ContentApprovals tenantSlug={slug} assets={wb.assets} fileLinks={fileLinks} canApprove={canApprove} isMember={access.via === "member"} />
+      <ContentCalendar days={calendar} fmt={fmt} />
       <div className="grid gap-4 lg:grid-cols-2">
+        <ChannelSummaryCard summaries={summaries} fmt={fmt} />
         <Card aria-labelledby="decided-title">
           <CardHeader>
             <CardTitle id="decided-title">Decided</CardTitle>
-            <CardDescription>Approved drafts move to scheduling; sent-back ones go to the engine.</CardDescription>
+            <CardDescription>Approved drafts are on the calendar; sent-back ones went to Me² to rework.</CardDescription>
           </CardHeader>
           <CardContent>
             {decided.length === 0 ? (
@@ -61,11 +72,12 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
                       <p className="text-xs text-muted-foreground">
                         {humanize(a.kind)}
                         {a.targetPlatform ? ` · ${PLATFORM_LABEL[a.targetPlatform]}` : ""}
+                        {a.scheduledFor ? ` · ${formatDateTime(a.scheduledFor, fmt)}` : ""}
                         {fileLinks[a.id] && (
                           <>
                             {" · "}
                             <a className="underline" href={fileLinks[a.id]} target="_blank" rel="noreferrer">
-                              View file
+                              Download file
                             </a>
                           </>
                         )}
@@ -78,29 +90,8 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
             )}
           </CardContent>
         </Card>
-        <Card aria-labelledby="queue-title">
-          <CardHeader>
-            <CardTitle id="queue-title">Scheduled</CardTitle>
-            <CardDescription>What’s going out, by channel.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {wb.posts.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">Nothing scheduled.</p>
-            ) : (
-              <ul className="divide-y">
-                {wb.posts.map((p) => (
-                  <li key={p.id} className="flex items-center gap-3 py-3">
-                    <span className="w-24 shrink-0 text-xs text-muted-foreground">{PLATFORM_LABEL[p.platform]}</span>
-                    <p className="min-w-0 flex-1 truncate text-sm">{p.caption}</p>
-                    <span className="shrink-0 text-xs text-muted-foreground">{p.scheduledFor ? formatDateTime(p.scheduledFor, fmt) : "unscheduled"}</span>
-                    <StatusBadge status={p.status} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
       </div>
+      <PortalInbox tenantSlug={slug} threads={threads} canReply={canApprove} />
     </div>
   );
 }

@@ -337,6 +337,27 @@ export interface ConversationRecord {
   externalId: string | null;
   lastMessageAt: Date | null;
   awaitingReply: boolean;
+  /** Social inbox threads: which platform/channel they came from and the provider ids needed to reply. */
+  platform?: SocialPlatform | null;
+  channelId?: string | null;
+  /** Provider-specific thread references (comment id, post id, sender id, page id). */
+  meta?: Record<string, unknown>;
+  /** Name the platform showed for the other party (comments and DMs have no contact record). */
+  displayName?: string | null;
+  /** A reply drafted by the triage automation for a person to send with one click. */
+  suggestedReply?: string | null;
+}
+
+export interface MessageRecord {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  direction: "INBOUND" | "OUTBOUND";
+  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF";
+  body: string;
+  status: string;
+  providerMessageId: string | null;
+  createdAt: Date;
 }
 
 export type ScheduledActionStatus = "PENDING" | "RUNNING" | "DONE" | "CANCELLED" | "FAILED";
@@ -475,10 +496,42 @@ export const SOCIAL_PLATFORMS: SocialPlatform[] = ["FACEBOOK", "INSTAGRAM", "TIK
 export type ContentStatus = "DRAFT" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SCHEDULED" | "PUBLISHED";
 export type PostStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "SCHEDULED" | "PUBLISHING" | "PUBLISHED" | "FAILED";
 
+export type ContentAssetKind = "RAW_TEXT" | "RAW_AUDIO" | "RAW_VIDEO" | "TRANSCRIPT" | "HOOK" | "QUOTE" | "POST_COPY" | "CAROUSEL" | "YOUTUBE_META" | "SHORT_FORM_SCRIPT" | "IMAGE" | "WEB_PAGE" | "BLOG_POST" | "AD_COPY" | "EMAIL";
+/** Source material the engine works from, as opposed to what it produces. */
+export const SOURCE_KINDS: ContentAssetKind[] = ["RAW_TEXT", "RAW_AUDIO", "RAW_VIDEO", "IMAGE", "TRANSCRIPT"];
+
+export interface ComplianceIssue {
+  code: "BANNED_PHRASE" | "HYPE" | "PRICE" | "NAMED_PERSON" | "CLAIM" | "STALE_NUMBER" | "COMBINED_SUBJECTS" | "TOO_LONG" | "MISSING_FOOTER";
+  message: string;
+  /** block: must be fixed before approval; signoff: the client decides; note: shown, not enforced. */
+  severity: "block" | "signoff" | "note";
+}
+
+export interface ComplianceReport {
+  ok: boolean;
+  needsClientSignoff: boolean;
+  issues: ComplianceIssue[];
+  checkedAt: string;
+}
+
+/** What the engine recorded about how an asset came to be. */
+export interface AssetGeneration {
+  engine?: string;
+  model?: string | null;
+  hashtags?: string[];
+  mediaBrief?: string | null;
+  claims?: string[];
+  compliance?: ComplianceReport;
+  /** The origin of a source asset: "upload", "review", "api", "operator". */
+  origin?: string;
+  sourceRef?: string | null;
+}
+
 export interface ContentAssetRecord {
   id: string;
   tenantId: string;
-  kind: string;
+  parentId: string | null;
+  kind: ContentAssetKind | string;
   title: string | null;
   body: string | null;
   targetPlatform: SocialPlatform | null;
@@ -486,18 +539,60 @@ export interface ContentAssetRecord {
   needsClientSignoff: boolean;
   /** `neon-storage://assets/<key>` for files held on Neon Object Storage, an external URL, or absent. */
   fileUrl?: string | null;
+  tags: string[];
+  scheduledFor: Date | null;
+  generation: AssetGeneration;
+  rejectionNote: string | null;
+  approvedAt: Date | null;
   createdAt: Date;
+}
+
+export interface ChannelRecord {
+  id: string;
+  tenantId: string;
+  integrationId: string | null;
+  platform: SocialPlatform;
+  /** Page id, IG business account id, GBP location name, LinkedIn organisation URN, YouTube channel id, TikTok open id. */
+  externalAccountId: string;
+  displayName: string | null;
+  isActive: boolean;
+  settings: Record<string, unknown>;
 }
 
 export interface SocialPostRecord {
   id: string;
   tenantId: string;
+  channelId: string | null;
+  contentAssetId: string | null;
   platform: SocialPlatform;
   caption: string;
+  mediaUrls: string[];
   tags: string[];
   status: PostStatus;
   scheduledFor: Date | null;
+  publishedAt: Date | null;
+  externalPostId: string | null;
+  permalink: string | null;
+  errorMessage: string | null;
+  attempts: number;
+  metrics: Record<string, number>;
   batchId: string | null;
+  createdAt: Date;
+}
+
+export interface ChannelMetricSnapshotRecord {
+  id: string;
+  tenantId: string;
+  channelId: string;
+  platform: SocialPlatform;
+  /** UTC midnight of the day the numbers describe. */
+  date: Date;
+  followers: number | null;
+  reach: number | null;
+  impressions: number | null;
+  engagements: number | null;
+  clicks: number | null;
+  posts: number | null;
 }
 
 export type FinanceProvider = "SQUARE" | "STRIPE" | "XERO" | "QUICKBOOKS" | "MANUAL";

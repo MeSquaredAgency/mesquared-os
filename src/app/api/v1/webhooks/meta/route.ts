@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { decryptSecret } from "@/lib/crypto";
 import { repository } from "@/lib/data";
-import { fetchMetaLead, mapMetaFieldData, parseMetaLeadgenEvents, verifyMetaSignature } from "@/lib/intake/channels/meta";
+import { fetchMetaLead, mapMetaFieldData, parseMetaInboxEvents, parseMetaLeadgenEvents, verifyMetaSignature } from "@/lib/intake/channels/meta";
+import { ingestInboxItems } from "@/lib/social/inbox";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
 
@@ -80,6 +81,23 @@ export async function POST(req: NextRequest) {
       results.push({ leadgenId: ev.leadgenId, outcome: "error" });
     }
   }
+  // Comments and Messenger messages go to the unified inbox, grouped by page.
+  const inbox = parseMetaInboxEvents(body);
+  let inboxNew = 0;
+  const byPage = new Map<string, typeof inbox>();
+  for (const item of inbox) byPage.set(item.pageId, [...(byPage.get(item.pageId) ?? []), item]);
+  for (const [pageId, items] of byPage) {
+    const tenant = await repository.findTenantByIntegrationAccount("META", pageId);
+    if (!tenant) continue;
+    const channels = await repository.listChannels(tenant.id, { activeOnly: true });
+    const channel = channels.find((c) => c.externalAccountId === pageId || c.settings.igUserId === pageId) ?? channels.find((c) => c.platform === "FACEBOOK") ?? null;
+    if (!channel) continue;
+    try {
+      inboxNew += await ingestInboxItems(tenant, channel, items.map((i) => ({ externalId: i.externalId, threadId: i.threadId, kind: i.kind, authorName: i.authorName, authorId: i.authorId, text: i.text, receivedAt: i.receivedAt, postExternalId: i.postExternalId, meta: { pageId } })));
+    } catch (error) {
+      console.error(`[webhooks/meta] inbox for page ${pageId} failed: ${error instanceof Error ? error.message : error}`);
+    }
+  }
   // Always 200 so Meta does not retry forever; failures are in our logs and the exception queue.
-  return NextResponse.json({ received: events.length, results });
+  return NextResponse.json({ received: events.length, inbox: inboxNew, results });
 }

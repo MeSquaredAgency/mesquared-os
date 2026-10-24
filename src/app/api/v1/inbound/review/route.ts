@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { registerContentEngine } from "@/lib/content/engine";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
@@ -24,6 +25,7 @@ const reviewSchema = z.object({
  * connector will post here itself in Phase 3.
  */
 export async function POST(req: NextRequest) {
+  registerContentEngine();
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const parsed = reviewSchema.safeParse(await req.json().catch(() => null));

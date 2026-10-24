@@ -5,6 +5,8 @@ import { leadDisplayName } from "@/lib/leads";
 import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel } from "@/lib/messaging";
 import { whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
+import { runContentBatch } from "@/lib/content/engine";
+import { runSocialSync } from "@/lib/social/sync";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
 export const ACTION_LEASE_MS = 10 * 60_000;
@@ -239,6 +241,14 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
   const lead = leadId ? await repository.findLeadById(tenant.id, leadId) : null;
 
   switch (`${action.typeKey}:${action.action}`) {
+    case "content_engine:batch": {
+      await runContentBatch(tenant, new Date());
+      return;
+    }
+    case "social_sync:run": {
+      await runSocialSync(tenant, new Date());
+      return;
+    }
     case "messaging:release": {
       // A marketing message held during quiet hours. sendMessage re-checks consent and caps.
       const p = action.payload;

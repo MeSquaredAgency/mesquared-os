@@ -158,6 +158,7 @@ model Tenant {
   exceptions          ExceptionItem[]
   events              DomainEvent[]
   channels            Channel[]
+  channelMetrics ChannelMetricSnapshot[]
   contentAssets       ContentAsset[]
   socialPosts         SocialPost[]
   socialProofAssets   SocialProofAsset[]
@@ -176,6 +177,8 @@ model TenantApiKey {
   label      String
   keyHash    String    @unique
   keyPrefix  String
+  /// What the key may do: "intake" (public web forms, call tracking, reviews) and/or "content" (uploads, source material). Intake keys sit in public pages by design, so content needs its own key.
+  scopes     String[]  @default(["intake"])
   lastUsedAt DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
@@ -528,12 +531,22 @@ model Conversation {
   lastMessageAt DateTime?
   /// True while the last message is inbound and nobody has replied.
   awaitingReply Boolean        @default(false)
+  /// Social inbox threads: the platform and channel they arrived on, provider ids needed to reply, the other party's display name.
+  platform       SocialPlatform?
+  channelId      String?
+  meta           Json           @default("{}")
+  displayName    String?
+  /// Drafted by the triage automation for a person to send with one click.
+  suggestedReply String?
   createdAt     DateTime       @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  socialChannel Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
   messages Message[]
 
+  /// One thread per provider thread id per channel (DM conversation, commented post).
+  @@unique([tenantId, channel, externalId])
   @@index([tenantId, awaitingReply, lastMessageAt])
 }
 
@@ -897,14 +910,42 @@ model Channel {
   externalAccountId String
   displayName       String?
   isActive          Boolean        @default(true)
+  /// Provider specifics: Instagram business account id, GBP account/location names, LinkedIn URN, posting defaults.
+  settings          Json           @default("{}")
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  integration Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  posts       SocialPost[]
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration   Integration?            @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  posts         SocialPost[]
+  conversations Conversation[]
+  metrics       ChannelMetricSnapshot[]
 
   @@unique([tenantId, platform, externalAccountId])
+}
+
+/// One row per channel per day from the platform's analytics API; the portal shows the trend.
+model ChannelMetricSnapshot {
+  id          String         @id @default(cuid())
+  tenantId    String
+  channelId   String
+  platform    SocialPlatform
+  /// UTC midnight of the day described.
+  date        DateTime
+  followers   Int?
+  reach       Int?
+  impressions Int?
+  engagements Int?
+  clicks      Int?
+  posts       Int?
+  raw         Json           @default("{}")
+  createdAt   DateTime       @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, date])
+  @@index([tenantId, date])
 }
 
 enum ContentAssetKind {
@@ -947,6 +988,10 @@ model ContentAsset {
   status         ContentStatus    @default(DRAFT)
   /// True when the asset mentions prices, named people or claims and therefore needs client sign-off.
   needsClientSignoff Boolean      @default(false)
+  tags           String[]         @default([])
+  /// When the asset should go out; set at approval from the tenant's calendar slots.
+  scheduledFor   DateTime?
+  /// How it came to be: engine, model, hashtags, media brief, compliance report, origin of a source.
   generation     Json             @default("{}")
   approvedById   String?
   approvedAt     DateTime?
@@ -962,6 +1007,7 @@ model ContentAsset {
 
   @@index([tenantId, status])
   @@index([tenantId, kind])
+  @@index([tenantId, parentId])
 }
 
 enum PostStatus {
@@ -991,6 +1037,10 @@ model SocialPost {
   externalPostId String?
   permalink      String?
   errorMessage   String?
+  /// Publish attempts so far; the publisher gives up after three and raises an exception.
+  attempts       Int            @default(0)
+  /// Set while a tick is publishing the row; stale locks are reclaimable.
+  lockedAt       DateTime?
   metrics        Json           @default("{}")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt

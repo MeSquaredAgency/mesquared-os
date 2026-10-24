@@ -8,8 +8,11 @@ import {
   type InformationRequest,
   type Review,
   type ScheduledAction,
+  type Channel,
+  type ChannelMetricSnapshot,
   type ContentAsset,
   type DomainEvent,
+  type Message,
   type ExceptionItem,
   type Integration,
   type Lead,
@@ -26,26 +29,28 @@ import { getPrisma } from "@/lib/prisma";
 import type {
   AutomationRunRecord,
   BookingRecord,
+  ChannelMetricSnapshotRecord,
+  ChannelRecord,
   ContactRecord,
-  ConversationRecord,
-  FormSessionRecord,
-  InformationRequestRecord,
-  ReviewRecord,
-  ScheduledActionRecord,
   ContentAssetRecord,
+  ConversationRecord,
   DomainEventRecord,
   EscalationRule,
   ExceptionRecord,
+  FormSessionRecord,
+  InformationRequestRecord,
   IntegrationRecord,
   LeadRecord,
+  MessageRecord,
   MissedOpportunityRecord,
   OpportunityValues,
   PipelineRecord,
   PortalHome,
   PortfolioRow,
   QualificationRules,
+  ReviewRecord,
+  ScheduledActionRecord,
   ServiceLevels,
-  SocialPlatform,
   SocialPostRecord,
   TenantAccess,
   TenantBranding,
@@ -58,7 +63,11 @@ import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
 
 const toBooking = (b: Booking): BookingRecord => ({ id: b.id, tenantId: b.tenantId, leadId: b.leadId, provider: b.provider, externalId: b.externalId, bookingUrl: b.bookingUrl, startsAt: b.startsAt, endsAt: b.endsAt, status: b.status, confirmedAt: b.confirmedAt, remindedAt: b.remindedAt, followedUpAt: b.followedUpAt, createdAt: b.createdAt });
-const toConversation = (c: Conversation): ConversationRecord => ({ id: c.id, tenantId: c.tenantId, contactId: c.contactId, channel: c.channel, externalId: c.externalId, lastMessageAt: c.lastMessageAt, awaitingReply: c.awaitingReply });
+const toConversation = (c: Conversation): ConversationRecord => ({ id: c.id, tenantId: c.tenantId, contactId: c.contactId, channel: c.channel, externalId: c.externalId, lastMessageAt: c.lastMessageAt, awaitingReply: c.awaitingReply, platform: c.platform, channelId: c.channelId, meta: obj(c.meta), displayName: c.displayName, suggestedReply: c.suggestedReply });
+const toMessage = (m: Message): MessageRecord => ({ id: m.id, tenantId: m.tenantId, conversationId: m.conversationId, direction: m.direction, sender: m.sender, body: m.body, status: m.status, providerMessageId: m.providerMessageId, createdAt: m.createdAt });
+const toChannel = (c: Channel): ChannelRecord => ({ id: c.id, tenantId: c.tenantId, integrationId: c.integrationId, platform: c.platform, externalAccountId: c.externalAccountId, displayName: c.displayName, isActive: c.isActive, settings: obj(c.settings) });
+const toMetric = (m: ChannelMetricSnapshot): ChannelMetricSnapshotRecord => ({ id: m.id, tenantId: m.tenantId, channelId: m.channelId, platform: m.platform, date: m.date, followers: m.followers, reach: m.reach, impressions: m.impressions, engagements: m.engagements, clicks: m.clicks, posts: m.posts });
+const SOURCE_KINDS_DB: ContentAsset["kind"][] = ["RAW_TEXT", "RAW_AUDIO", "RAW_VIDEO", "IMAGE", "TRANSCRIPT"];
 const toAction = (a: ScheduledAction): ScheduledActionRecord => ({ id: a.id, tenantId: a.tenantId, typeKey: a.typeKey, action: a.action, runAt: a.runAt, payload: obj(a.payload), dedupeKey: a.dedupeKey, status: a.status, attempts: a.attempts });
 const toRequest = (r: InformationRequest): InformationRequestRecord => ({ id: r.id, tenantId: r.tenantId, contactId: r.contactId, leadId: r.leadId, kind: r.kind, description: r.description, dueAt: r.dueAt, status: r.status, chaseCount: r.chaseCount, lastChasedAt: r.lastChasedAt, receivedAt: r.receivedAt, createdAt: r.createdAt });
 const toReview = (r: Review): ReviewRecord => ({ id: r.id, tenantId: r.tenantId, provider: r.provider, externalId: r.externalId, authorName: r.authorName, rating: r.rating, body: r.body, url: r.url, receivedAt: r.receivedAt, repliedAt: r.repliedAt });
@@ -144,8 +153,8 @@ const toRun = (r: AutomationRun): AutomationRunRecord => ({ id: r.id, tenantId: 
 const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, createdAt: e.createdAt });
 const toEvent = (e: DomainEvent): DomainEventRecord => ({ id: e.id, tenantId: e.tenantId, type: e.type, payload: obj(e.payload), causationId: e.causationId, occurredAt: e.occurredAt });
 const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.tenantId, contactId: t.contactId, leadId: t.leadId, provider: t.provider, providerId: t.providerId, kind: t.kind, status: t.status, amountCents: t.amountCents, currency: t.currency, note: t.note, occurredAt: t.occurredAt });
-const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, createdAt: a.createdAt });
-const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, platform: p.platform, caption: p.caption, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, batchId: p.batchId });
+const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, parentId: a.parentId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, tags: a.tags, scheduledFor: a.scheduledFor, generation: obj(a.generation) as ContentAssetRecord["generation"], rejectionNote: a.rejectionNote, approvedAt: a.approvedAt, createdAt: a.createdAt });
+const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, channelId: p.channelId, contentAssetId: p.contentAssetId, platform: p.platform, caption: p.caption, mediaUrls: p.mediaUrls, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, publishedAt: p.publishedAt, externalPostId: p.externalPostId, permalink: p.permalink, errorMessage: p.errorMessage, attempts: p.attempts, metrics: obj(p.metrics) as Record<string, number>, batchId: p.batchId, createdAt: p.createdAt });
 
 const OPEN_MISSED: MissedOpportunity["status"][] = ["DETECTED", "RECOVERING", "ESCALATED"];
 
@@ -216,7 +225,7 @@ export const prismaRepository: Repository = {
         .tenantApiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
         .catch(() => {});
     }
-    return { tenant: toTenant(key.tenant), apiKeyId: key.id };
+    return { tenant: toTenant(key.tenant), apiKeyId: key.id, scopes: key.scopes.filter((s): s is "intake" | "content" => s === "intake" || s === "content") };
   },
 
   async getTenantConfig(tenantId) {
@@ -431,6 +440,22 @@ export const prismaRepository: Repository = {
   async findIntegration(tenantId, provider) {
     const i = await getPrisma().integration.findFirst({ where: { tenantId, provider }, orderBy: { updatedAt: "desc" } });
     return i ? { id: i.id, provider: i.provider, status: i.status, externalAccountId: i.externalAccountId, settings: obj(i.settings), credentialsEnc: i.credentialsEnc } : null;
+  },
+
+  async upsertIntegration(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.integration.findFirst({ where: { tenantId, provider: data.provider }, orderBy: { updatedAt: "desc" } });
+    const patch = {
+      ...(data.label !== undefined ? { label: data.label } : {}),
+      ...(data.status ? { status: data.status } : {}),
+      ...(data.credentialsEnc !== undefined ? { credentialsEnc: data.credentialsEnc } : {}),
+      ...(data.lastError !== undefined ? { lastError: data.lastError } : {}),
+      ...(data.lastSyncAt !== undefined ? { lastSyncAt: data.lastSyncAt } : {}),
+    };
+    const row = existing
+      ? await db.integration.update({ where: { id: existing.id }, data: { ...patch, externalAccountId: data.externalAccountId || existing.externalAccountId, ...(data.settings ? { settings: json({ ...obj(existing.settings), ...data.settings }) } : {}) } })
+      : await db.integration.create({ data: { tenantId, provider: data.provider, externalAccountId: data.externalAccountId, label: data.label ?? null, status: data.status ?? "PENDING", credentialsEnc: data.credentialsEnc ?? null, lastError: data.lastError ?? null, settings: json(data.settings ?? {}) } });
+    return { id: row.id, provider: row.provider, status: row.status, externalAccountId: row.externalAccountId, settings: obj(row.settings), credentialsEnc: row.credentialsEnc };
   },
 
   async findTenantByIntegrationAccount(provider, externalAccountId) {
@@ -728,12 +753,14 @@ export const prismaRepository: Repository = {
 
   async getWorkbench(tenantId) {
     const db = getPrisma();
-    const [assets, posts, channels] = await Promise.all([
-      db.contentAsset.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 50 }),
-      db.socialPost.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 50 }),
-      db.channel.findMany({ where: { tenantId, isActive: true }, select: { platform: true } }),
+    const [assets, sources, posts, channels] = await Promise.all([
+      db.contentAsset.findMany({ where: { tenantId, kind: { notIn: SOURCE_KINDS_DB } }, orderBy: { createdAt: "desc" }, take: 100 }),
+      db.contentAsset.findMany({ where: { tenantId, kind: { in: SOURCE_KINDS_DB } }, orderBy: { createdAt: "desc" }, take: 50 }),
+      db.socialPost.findMany({ where: { tenantId }, orderBy: [{ scheduledFor: "desc" }, { createdAt: "desc" }], take: 100 }),
+      db.channel.findMany({ where: { tenantId, isActive: true } }),
     ]);
-    return { assets: assets.map(toAsset), posts: posts.map(toPost), connectedPlatforms: Array.from(new Set(channels.map((c) => c.platform as SocialPlatform))) };
+    const ch = channels.map(toChannel);
+    return { assets: assets.map(toAsset), sources: sources.map(toAsset), posts: posts.map(toPost), channels: ch, connectedPlatforms: Array.from(new Set(ch.map((c) => c.platform))) };
   },
 
   async createContentAssets(tenantId, items: NewContentAsset[]) {
@@ -749,7 +776,10 @@ export const prismaRepository: Repository = {
             status: item.status,
             needsClientSignoff: item.needsClientSignoff,
             fileUrl: item.fileUrl ?? null,
-            generation: json({ tags: item.tags, scheduledFor: item.scheduledFor?.toISOString() ?? null }),
+            parentId: item.parentId ?? null,
+            tags: item.tags ?? [],
+            scheduledFor: item.scheduledFor ?? null,
+            generation: json(item.generation ?? {}),
           },
         }),
       ),
@@ -760,6 +790,123 @@ export const prismaRepository: Repository = {
   async findContentAssetById(tenantId, assetId) {
     const row = await getPrisma().contentAsset.findFirst({ where: { id: assetId, tenantId } });
     return row ? toAsset(row) : null;
+  },
+
+  async listContentAssets(tenantId, opts = {}) {
+    const rows = await getPrisma().contentAsset.findMany({
+      where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.kinds ? { kind: { in: opts.kinds as ContentAsset["kind"][] } } : {}), ...(opts.parentId !== undefined ? { parentId: opts.parentId } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: opts.limit ?? 100,
+    });
+    return rows.map(toAsset);
+  },
+
+  async updateContentAsset(tenantId, assetId, patch) {
+    const { generation, ...rest } = patch;
+    const { count } = await getPrisma().contentAsset.updateMany({ where: { id: assetId, tenantId }, data: { ...rest, ...(generation ? { generation: json(generation) } : {}), ...(patch.status === "APPROVED" ? { approvedAt: new Date() } : {}) } });
+    if (count === 0) return null;
+    const row = await getPrisma().contentAsset.findUnique({ where: { id: assetId } });
+    return row ? toAsset(row) : null;
+  },
+
+  // --- social --------------------------------------------------------------------
+
+  async listChannels(tenantId, opts = {}) {
+    const rows = await getPrisma().channel.findMany({ where: { tenantId, ...(opts.activeOnly ? { isActive: true } : {}) }, orderBy: { createdAt: "asc" } });
+    return rows.map(toChannel);
+  },
+
+  async upsertChannel(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.channel.findUnique({ where: { tenantId_platform_externalAccountId: { tenantId, platform: data.platform, externalAccountId: data.externalAccountId } } });
+    const row = existing
+      ? await db.channel.update({ where: { id: existing.id }, data: { displayName: data.displayName ?? existing.displayName, integrationId: data.integrationId ?? existing.integrationId, isActive: data.isActive ?? existing.isActive, settings: json({ ...obj(existing.settings), ...(data.settings ?? {}) }) } })
+      : await db.channel.create({ data: { tenantId, platform: data.platform, externalAccountId: data.externalAccountId, displayName: data.displayName ?? null, integrationId: data.integrationId ?? null, isActive: data.isActive ?? true, settings: json(data.settings ?? {}) } });
+    return toChannel(row);
+  },
+
+  async createSocialPosts(tenantId, items) {
+    const db = getPrisma();
+    const rows = await db.$transaction(items.map((p) => db.socialPost.create({ data: { tenantId, channelId: p.channelId, contentAssetId: p.contentAssetId, platform: p.platform, caption: p.caption, mediaUrls: p.mediaUrls ?? [], tags: p.tags ?? [], status: p.status, scheduledFor: p.scheduledFor, batchId: p.batchId ?? null } })));
+    return rows.map(toPost);
+  },
+
+  async listSocialPosts(tenantId, opts = {}) {
+    const rows = await getPrisma().socialPost.findMany({
+      where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.from || opts.to ? { scheduledFor: { ...(opts.from ? { gte: opts.from } : {}), ...(opts.to ? { lt: opts.to } : {}) } } : {}) },
+      orderBy: { scheduledFor: "asc" },
+      take: opts.limit ?? 200,
+    });
+    return rows.map(toPost);
+  },
+
+  async findSocialPostById(tenantId, postId) {
+    const row = await getPrisma().socialPost.findFirst({ where: { id: postId, tenantId } });
+    return row ? toPost(row) : null;
+  },
+
+  async updateSocialPost(tenantId, postId, patch) {
+    const { metrics, ...rest } = patch;
+    const { count } = await getPrisma().socialPost.updateMany({ where: { id: postId, tenantId }, data: { ...rest, ...(metrics ? { metrics: json(metrics) } : {}), ...(patch.status && patch.status !== "PUBLISHING" ? { lockedAt: null } : {}) } });
+    if (count === 0) return null;
+    const row = await getPrisma().socialPost.findUnique({ where: { id: postId } });
+    return row ? toPost(row) : null;
+  },
+
+  async listDueSocialPosts(now, limit = 50) {
+    const stale = new Date(now.getTime() - 10 * 60_000);
+    const rows = await getPrisma().socialPost.findMany({ where: { scheduledFor: { lte: now }, OR: [{ status: "SCHEDULED" }, { status: "PUBLISHING", lockedAt: { lt: stale } }] }, orderBy: { scheduledFor: "asc" }, take: limit });
+    return rows.map(toPost);
+  },
+
+  async claimSocialPost(postId, now, leaseMs) {
+    const stale = new Date(now.getTime() - leaseMs);
+    const { count } = await getPrisma().socialPost.updateMany({ where: { id: postId, OR: [{ status: "SCHEDULED" }, { status: "PUBLISHING", lockedAt: { lt: stale } }] }, data: { status: "PUBLISHING", lockedAt: now } });
+    return count === 1;
+  },
+
+  async recordChannelMetrics(tenantId, data) {
+    const date = new Date(`${data.date.toISOString().slice(0, 10)}T00:00:00Z`);
+    const values = { followers: data.followers ?? null, reach: data.reach ?? null, impressions: data.impressions ?? null, engagements: data.engagements ?? null, clicks: data.clicks ?? null, posts: data.posts ?? null, raw: json(data.raw ?? {}) };
+    await getPrisma().channelMetricSnapshot.upsert({ where: { channelId_date: { channelId: data.channelId, date } }, create: { tenantId, channelId: data.channelId, platform: data.platform, date, ...values }, update: values });
+  },
+
+  async listChannelMetrics(tenantId, opts) {
+    const rows = await getPrisma().channelMetricSnapshot.findMany({ where: { tenantId, date: { gte: opts.since }, ...(opts.channelId ? { channelId: opts.channelId } : {}) }, orderBy: { date: "asc" } });
+    return rows.map(toMetric);
+  },
+
+  async upsertSocialConversation(tenantId, data) {
+    const db = getPrisma();
+    const existing = await db.conversation.findUnique({ where: { tenantId_channel_externalId: { tenantId, channel: data.channel, externalId: data.externalId } } });
+    if (existing) return { record: toConversation(existing), created: false };
+    const row = await db.conversation.create({ data: { tenantId, contactId: data.contactId ?? null, channel: data.channel, externalId: data.externalId, platform: data.platform, channelId: data.channelId, meta: json(data.meta ?? {}), displayName: data.displayName } });
+    return { record: toConversation(row), created: true };
+  },
+
+  async listInboxConversations(tenantId, opts = {}) {
+    const rows = await getPrisma().conversation.findMany({ where: { tenantId, channel: { in: ["SOCIAL_DM", "SOCIAL_COMMENT"] }, ...(opts.awaitingOnly ? { awaitingReply: true } : {}) }, orderBy: { lastMessageAt: "desc" }, take: opts.limit ?? 100 });
+    return rows.map(toConversation);
+  },
+
+  async findConversationById(tenantId, conversationId) {
+    const row = await getPrisma().conversation.findFirst({ where: { id: conversationId, tenantId } });
+    return row ? toConversation(row) : null;
+  },
+
+  async listMessages(tenantId, conversationId, limit = 50) {
+    const rows = await getPrisma().message.findMany({ where: { tenantId, conversationId }, orderBy: { createdAt: "desc" }, take: limit });
+    return rows.reverse().map(toMessage);
+  },
+
+  async hasMessageWithProviderId(tenantId, conversationId, providerMessageId) {
+    return (await getPrisma().message.count({ where: { tenantId, conversationId, providerMessageId } })) > 0;
+  },
+
+  async updateConversation(tenantId, conversationId, patch) {
+    const db = getPrisma();
+    const existing = patch.meta ? await db.conversation.findFirst({ where: { id: conversationId, tenantId } }) : null;
+    await db.conversation.updateMany({ where: { id: conversationId, tenantId }, data: { ...(patch.awaitingReply !== undefined ? { awaitingReply: patch.awaitingReply } : {}), ...(patch.suggestedReply !== undefined ? { suggestedReply: patch.suggestedReply } : {}), ...(patch.meta ? { meta: json({ ...(existing ? obj(existing.meta) : {}), ...patch.meta }) } : {}) } });
   },
 
   async updateContentAssetStatus(tenantId, assetId, status, note) {

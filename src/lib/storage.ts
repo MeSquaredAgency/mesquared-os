@@ -92,9 +92,11 @@ export async function putTenantObject(
 }
 
 /** A presigned GET for one of the tenant's objects (default 1 hour). */
-export async function getTenantObjectUrl(tenantId: string, key: string, expiresIn = 3600): Promise<string> {
+export async function getTenantObjectUrl(tenantId: string, key: string, expiresIn = 3600, opts: { inline?: boolean } = {}): Promise<string> {
   assertOwned(tenantId, key);
-  return getSignedUrl(s3(), new GetObjectCommand({ Bucket: ASSETS_BUCKET, Key: key }), { expiresIn });
+  // Served as an attachment by default so a stored file is never rendered as a page from the storage origin.
+  const filename = key.split("/").pop()?.replace(/[^\w.\-]+/g, "_") || "file";
+  return getSignedUrl(s3(), new GetObjectCommand({ Bucket: ASSETS_BUCKET, Key: key, ...(opts.inline ? {} : { ResponseContentDisposition: `attachment; filename="${filename}"` }) }), { expiresIn });
 }
 
 export async function readTenantObject(tenantId: string, key: string): Promise<{ bytes: Uint8Array; contentType: string | null }> {

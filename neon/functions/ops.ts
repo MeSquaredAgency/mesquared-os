@@ -40,6 +40,11 @@ const STATUS_SQL = `
 const app = new Hono();
 
 app.get("/", async (c) => {
+  // The invocation URL is public: anyone gets a liveness answer, only the job secret unlocks business numbers.
+  const secret = process.env.JOB_SECRET;
+  const given = c.req.header("authorization") ?? "";
+  const authorised = Boolean(secret) && given === `Bearer ${secret}`;
+  if (!authorised) return c.json({ status: "ok", service: "mesquared-os-ops", time: new Date().toISOString() });
   const { rows } = await pool.query<StatusRow>(STATUS_SQL);
   const row = rows[0];
   return c.json({

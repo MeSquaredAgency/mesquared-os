@@ -246,6 +246,39 @@ lapsed customers (respecting recorded consent). Operators drive outcomes from
 the workspace page in the console: attended / no-show, open or close a
 request, mark a review replied.
 
+## Content engine and social
+
+Phase 3. Everything runs in demo mode with simulated publishing (`SOCIAL_MODE=log`) and the
+deterministic drafting stub; add `ANTHROPIC_API_KEY` for Claude drafts and connect a channel in
+the console to publish for real.
+
+**Material in.** Operators paste notes, transcripts or reviews in the console ("Material"), push
+them with `POST /api/v1/content/sources` (needs an API key with the `content` scope; the
+public intake key is refused), or upload files with `POST /api/v1/assets` (same scope). Good
+reviews (4+ stars, with text) become material automatically. Recordings are transcribed when
+`DEEPGRAM_API_KEY` is set; otherwise the console says to paste the transcript.
+
+**Drafts out.** One draft per connected channel, shaped per platform (caption, short-form
+script, YouTube title + description), run through the brand profile and compliance block:
+banned phrases and hype block approval; prices, named people, outcome claims and old figures
+need the client's sign-off; the required footer is applied to every asset; two properties in
+one asset are refused where the tenant forbids combining vendors.
+
+**Approval → calendar.** Operators approve routine drafts in the console; drafts flagged for
+the client are approved in the portal. Approval creates a scheduled post at the next free slot
+from the tenant's posting slots (`content` module settings). The daily batch drafts from unused
+material and raises an exception when the next seven days fall short of the cadence.
+
+**Publishing.** The tick publishes due posts through the platform adapters (Facebook, Instagram,
+Google Business Profile, LinkedIn, YouTube, TikTok) with claim-once semantics, three attempts
+with backoff, and an exception after that. Channel tokens are pasted in the console and stored
+encrypted on the tenant's integration row.
+
+**Inbox and analytics.** The hourly sync (and the Meta webhook) pulls comments, messages and
+reviews into one inbox. Triage drafts a reply, flags complaints and enquiries for a person, and
+answers routine thanks only when the tenant switches `autoReplyRoutine` on. Channel numbers
+(followers, reach, engagements) are snapshotted daily and summarised in the portal.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

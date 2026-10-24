@@ -22,7 +22,9 @@ import { getQualifier, qualifierEngine } from "@/lib/qualify";
 import { leadsLiveQuery, type LiveLeadRow } from "@/lib/realtime/server";
 import { deleteTenantObject, getTenantObjectUrl, putTenantObject, readTenantObject } from "@/lib/storage";
 
-process.env.MESSAGING_MODE ??= "log";
+// This script writes to a real branch: it must never send a message or use a number that could belong to someone.
+process.env.MESSAGING_MODE = "log";
+process.env.SOCIAL_MODE = "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
 registerPlaybook();
 
@@ -163,9 +165,10 @@ if (!services.realtime) {
     const body = intakeSchema.parse({
       source: "META_LEAD_FORM",
       externalId: `neon_check_${stamp}`,
-      name: "Neon Check",
+      name: "Neon Check (test)",
       email: `neon-check-${stamp}@example.com`,
-      phone: `+6140${String(Date.now()).slice(-7)}`,
+      // 0491 570 xxx is reserved by the ACMA for fiction and testing: it never routes to a person.
+      phone: `+6149157${String(1000 + (Date.now() % 9000)).slice(-4)}`,
       message: "Checking that the live lead list updates.",
     });
     const result = await processIntake(tenant, body, { neonCheck: true });

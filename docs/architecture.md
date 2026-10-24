@@ -205,7 +205,7 @@ booking confirmation/reminder/follow-up, document chasing, review requests,
 reactivation; APN's availability replies, inspection reminders and
 application chasing. Console exception queue and escalation rules.
 
-**Phase 3 — Content and social (weeks 5–7).** Source material upload and
+**Phase 3 — Content and social (weeks 5–7). Code shipped 24 Oct.** Source material upload and
 transcription; brand profile and compliance block; per-channel generation;
 approval chain; calendar; publishing to Facebook, Instagram, YouTube
 (TikTok on confirmation); Google Business Profile; unified inbox; review

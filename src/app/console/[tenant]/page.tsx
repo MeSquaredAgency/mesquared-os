@@ -4,6 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContentStudio } from "@/components/console/content-studio";
 import { OperationsPanels } from "@/components/console/operations-panels";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
@@ -12,6 +13,7 @@ import { getConsoleContext } from "@/lib/auth/access";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { repository } from "@/lib/data";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
+import { summarizeChannels } from "@/lib/social/metrics";
 import { leadDisplayName } from "@/lib/leads";
 import { humanize } from "@/lib/utils";
 
@@ -23,14 +25,20 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const access = tenants.find((t) => t.tenant.slug === slug);
   if (!access) notFound();
   const tenant = access.tenant;
-  const [home, config, bookings, requests, reviews, leads] = await Promise.all([
+  const [home, config, bookings, requests, reviews, leads, workbench, snapshots, inbox] = await Promise.all([
     repository.getPortalHome(tenant.id, { timezone: tenant.timezone, currency: tenant.currency, onlyAssigneeId: null, canViewFinances: true }),
     repository.getTenantConfig(tenant.id),
     repository.listBookings(tenant.id, { status: ["SCHEDULED", "NO_SHOW"], limit: 20 }),
     repository.listInformationRequests(tenant.id),
     repository.listReviews(tenant.id, { limit: 10 }),
     repository.listRecentLeads(tenant.id, 50),
+    repository.getWorkbench(tenant.id),
+    repository.listChannelMetrics(tenant.id, { since: new Date(Date.now() - 14 * 86_400_000) }),
+    repository.listInboxConversations(tenant.id, { limit: 40 }),
   ]);
+  const inboxThreads = await Promise.all(inbox.map(async (conversation) => ({ conversation, messages: await repository.listMessages(tenant.id, conversation.id, 10) })));
+  const draftCounts: Record<string, number> = {};
+  for (const a of workbench.assets) if (a.parentId) draftCounts[a.parentId] = (draftCounts[a.parentId] ?? 0) + 1;
   const leadById = new Map(leads.map((l) => [l.id, l]));
   const contactName = async (contactId: string | null, leadId: string | null) => {
     const lead = leadId ? leadById.get(leadId) : null;
@@ -119,6 +127,14 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
       </div>
 
       <OperationsPanels tenantId={tenant.id} fmt={fmt} bookings={bookingRows} requests={requestRows} reviews={reviews} leads={leads} />
+
+      <section aria-labelledby="content-studio-title" className="flex flex-col gap-3">
+        <div>
+          <h2 id="content-studio-title" className="text-lg font-semibold tracking-tight">Content and social</h2>
+          <p className="text-sm text-muted-foreground">Material in, drafts out, approvals, the publishing queue, the inbox and channel numbers.</p>
+        </div>
+        <ContentStudio tenantId={tenant.id} fmt={fmt} sources={workbench.sources} drafts={workbench.assets} posts={workbench.posts} channels={summarizeChannels(workbench.channels, snapshots)} inbox={inboxThreads} draftCounts={draftCounts} />
+      </section>
 
       <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
     </div>

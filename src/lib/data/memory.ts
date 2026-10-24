@@ -9,8 +9,11 @@ import type {
   InformationRequestRecord,
   ReviewRecord,
   ScheduledActionRecord,
+  ChannelMetricSnapshotRecord,
+  ChannelRecord,
   ContentAssetRecord,
   DomainEventRecord,
+  MessageRecord,
   ExceptionRecord,
   IntegrationRecord,
   LeadRecord,
@@ -30,6 +33,7 @@ import {
   type NewBooking,
   type NewContentAsset,
   type NewMessage,
+  type NewSocialPost,
   type NewMissedOpportunity,
   type Repository,
 } from "./repository";
@@ -39,8 +43,9 @@ import {
   demoApiKeyHashes,
   demoAssets,
   demoBookings,
+  demoChannelMetrics,
+  demoChannels,
   demoConfig,
-  demoConnectedPlatforms,
   demoContacts,
   demoExceptions,
   demoIntegrations,
@@ -75,7 +80,9 @@ interface MemoryStore {
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
   assets: ContentAssetRecord[];
-  posts: SocialPostRecord[];
+  posts: (SocialPostRecord & { lockedAt?: Date | null })[];
+  channels: ChannelRecord[];
+  channelMetrics: ChannelMetricSnapshotRecord[];
   transactions: TransactionRecord[];
 }
 
@@ -106,6 +113,8 @@ function store(): MemoryStore {
       integrations: [...demoIntegrations],
       assets: [...demoAssets],
       posts: [...demoPosts],
+      channels: [...demoChannels],
+      channelMetrics: [...demoChannelMetrics],
       transactions: [...demoTransactions],
     };
   }
@@ -143,6 +152,9 @@ function assertContactInTenant(tenantId: string, contactId: string | null | unde
 }
 
 const OPEN_MISSED = new Set(["DETECTED", "RECOVERING", "ESCALATED"]);
+/** Encrypted credentials stored by connect flows in demo mode (never seeded). */
+const demoCredentials: Record<string, string | null> = {};
+const SOURCE_KIND_SET = new Set<string>(["RAW_TEXT", "RAW_AUDIO", "RAW_VIDEO", "IMAGE", "TRANSCRIPT"]);
 /** A resolved missed opportunity stays closed this long before the same signal may raise it again. */
 const SNOOZE_MS = 7 * 86_400_000;
 
@@ -196,7 +208,8 @@ export const memoryRepository: Repository = {
   async findTenantByApiKeyHash(hash) {
     const tenantId = demoApiKeyHashes[hash];
     const tenant = tenantId ? store().tenants.find((t) => t.id === tenantId) : undefined;
-    return tenant ? { tenant, apiKeyId: null } : null;
+    // Demo keys carry both scopes so every example in the README works without a database.
+    return tenant ? { tenant, apiKeyId: null, scopes: ["intake", "content"] } : null;
   },
 
   async getTenantConfig(tenantId) {
@@ -399,7 +412,23 @@ export const memoryRepository: Repository = {
 
   async findIntegration(tenantId, provider) {
     const i = store().integrations.find((x) => x.tenantId === tenantId && x.provider === provider);
-    return i ? { id: i.id, provider: i.provider, status: i.status, externalAccountId: i.externalAccountId, settings: demoIntegrationSettings[i.id] ?? {}, credentialsEnc: null } : null;
+    return i ? { id: i.id, provider: i.provider, status: i.status, externalAccountId: i.externalAccountId, settings: demoIntegrationSettings[i.id] ?? {}, credentialsEnc: demoCredentials[i.id] ?? null } : null;
+  },
+
+  async upsertIntegration(tenantId, data) {
+    const s = store();
+    const existing = s.integrations.find((i) => i.tenantId === tenantId && i.provider === data.provider);
+    if (existing) {
+      Object.assign(existing, { externalAccountId: data.externalAccountId || existing.externalAccountId, label: data.label === undefined ? existing.label : data.label, status: data.status ?? existing.status, lastError: data.lastError === undefined ? existing.lastError : data.lastError, lastSyncAt: data.lastSyncAt === undefined ? existing.lastSyncAt : data.lastSyncAt });
+      if (data.credentialsEnc !== undefined) demoCredentials[existing.id] = data.credentialsEnc;
+      if (data.settings) demoIntegrationSettings[existing.id] = { ...(demoIntegrationSettings[existing.id] ?? {}), ...data.settings };
+      return { id: existing.id, provider: existing.provider, status: existing.status, externalAccountId: existing.externalAccountId, settings: demoIntegrationSettings[existing.id] ?? {}, credentialsEnc: demoCredentials[existing.id] ?? null };
+    }
+    const row: IntegrationRecord = { id: id("int"), tenantId, provider: data.provider, label: data.label ?? null, status: data.status ?? "PENDING", externalAccountId: data.externalAccountId, lastSyncAt: data.lastSyncAt ?? null, lastError: data.lastError ?? null };
+    s.integrations.push(row);
+    if (data.credentialsEnc) demoCredentials[row.id] = data.credentialsEnc;
+    if (data.settings) demoIntegrationSettings[row.id] = data.settings;
+    return { id: row.id, provider: row.provider, status: row.status, externalAccountId: row.externalAccountId, settings: demoIntegrationSettings[row.id] ?? {}, credentialsEnc: demoCredentials[row.id] ?? null };
   },
 
   async findTenantByIntegrationAccount(provider, externalAccountId) {
@@ -754,17 +783,22 @@ export const memoryRepository: Repository = {
 
   async getWorkbench(tenantId) {
     const s = store();
+    const all = s.assets.filter((a) => a.tenantId === tenantId).sort(byNewest);
+    const channels = s.channels.filter((c) => c.tenantId === tenantId && c.isActive);
     return {
-      assets: s.assets.filter((a) => a.tenantId === tenantId).sort(byNewest),
-      posts: s.posts.filter((p) => p.tenantId === tenantId),
-      connectedPlatforms: demoConnectedPlatforms[tenantId] ?? [],
+      assets: all.filter((a) => !SOURCE_KIND_SET.has(a.kind)),
+      sources: all.filter((a) => SOURCE_KIND_SET.has(a.kind)),
+      posts: s.posts.filter((p) => p.tenantId === tenantId).sort((a, b) => (b.scheduledFor?.getTime() ?? 0) - (a.scheduledFor?.getTime() ?? 0)),
+      channels,
+      connectedPlatforms: Array.from(new Set(channels.map((c) => c.platform))),
     };
   },
 
   async createContentAssets(tenantId, items: NewContentAsset[]) {
-    const created = items.map((item) => ({
+    const created: ContentAssetRecord[] = items.map((item) => ({
       id: id("asset"),
       tenantId,
+      parentId: item.parentId ?? null,
       kind: item.kind,
       title: item.title,
       body: item.body,
@@ -772,20 +806,178 @@ export const memoryRepository: Repository = {
       status: item.status,
       needsClientSignoff: item.needsClientSignoff,
       fileUrl: item.fileUrl ?? null,
+      tags: item.tags ?? [],
+      scheduledFor: item.scheduledFor ?? null,
+      generation: item.generation ?? {},
+      rejectionNote: null,
+      approvedAt: null,
       createdAt: new Date(),
     }));
     for (const asset of created) pushBounded(store().assets, asset);
     return created;
   },
 
+  async listContentAssets(tenantId, opts = {}) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    const kinds = opts.kinds ? new Set(opts.kinds) : null;
+    return store()
+      .assets.filter((a) => a.tenantId === tenantId && (!statuses || statuses.has(a.status)) && (!kinds || kinds.has(a.kind)) && (opts.parentId === undefined || a.parentId === opts.parentId))
+      .sort(byNewest)
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async updateContentAsset(tenantId, assetId, patch) {
+    const asset = store().assets.find((a) => a.id === assetId && a.tenantId === tenantId);
+    if (!asset) return null;
+    Object.assign(asset, patch);
+    if (patch.status === "APPROVED") asset.approvedAt = new Date();
+    return asset;
+  },
+
+  // --- social --------------------------------------------------------------------
+
+  async listChannels(tenantId, opts = {}) {
+    return store().channels.filter((c) => c.tenantId === tenantId && (!opts.activeOnly || c.isActive));
+  },
+
+  async upsertChannel(tenantId, data) {
+    const existing = store().channels.find((c) => c.tenantId === tenantId && c.platform === data.platform && c.externalAccountId === data.externalAccountId);
+    if (existing) {
+      Object.assign(existing, { displayName: data.displayName ?? existing.displayName, integrationId: data.integrationId ?? existing.integrationId, isActive: data.isActive ?? existing.isActive, settings: { ...existing.settings, ...(data.settings ?? {}) } });
+      return existing;
+    }
+    const channel: ChannelRecord = { id: id("ch"), tenantId, integrationId: data.integrationId ?? null, platform: data.platform, externalAccountId: data.externalAccountId, displayName: data.displayName ?? null, isActive: data.isActive ?? true, settings: data.settings ?? {} };
+    store().channels.push(channel);
+    return channel;
+  },
+
+  async createSocialPosts(tenantId, items: NewSocialPost[]) {
+    const created: SocialPostRecord[] = items.map((p) => ({
+      id: id("post"),
+      tenantId,
+      channelId: p.channelId,
+      contentAssetId: p.contentAssetId,
+      platform: p.platform,
+      caption: p.caption,
+      mediaUrls: p.mediaUrls ?? [],
+      tags: p.tags ?? [],
+      status: p.status,
+      scheduledFor: p.scheduledFor,
+      publishedAt: null,
+      externalPostId: null,
+      permalink: null,
+      errorMessage: null,
+      attempts: 0,
+      metrics: {},
+      batchId: p.batchId ?? null,
+      createdAt: new Date(),
+    }));
+    for (const p of created) pushBounded(store().posts, p);
+    return created;
+  },
+
+  async listSocialPosts(tenantId, opts = {}) {
+    const statuses = opts.status ? new Set(opts.status) : null;
+    return store()
+      .posts.filter((p) => p.tenantId === tenantId && (!statuses || statuses.has(p.status)) && (!opts.from || (p.scheduledFor && p.scheduledFor >= opts.from)) && (!opts.to || (p.scheduledFor && p.scheduledFor < opts.to)))
+      .sort((a, b) => (a.scheduledFor?.getTime() ?? 0) - (b.scheduledFor?.getTime() ?? 0))
+      .slice(0, opts.limit ?? 200);
+  },
+
+  async findSocialPostById(tenantId, postId) {
+    return store().posts.find((p) => p.id === postId && p.tenantId === tenantId) ?? null;
+  },
+
+  async updateSocialPost(tenantId, postId, patch) {
+    const p = store().posts.find((x) => x.id === postId && x.tenantId === tenantId);
+    if (!p) return null;
+    Object.assign(p, patch);
+    if (patch.status && patch.status !== "PUBLISHING") p.lockedAt = null;
+    return p;
+  },
+
+  async listDueSocialPosts(now, limit = 50) {
+    return store()
+      .posts.filter((p) => p.scheduledFor && p.scheduledFor <= now && (p.status === "SCHEDULED" || (p.status === "PUBLISHING" && p.lockedAt && now.getTime() - p.lockedAt.getTime() > 10 * 60_000)))
+      .sort((a, b) => a.scheduledFor!.getTime() - b.scheduledFor!.getTime())
+      .slice(0, limit);
+  },
+
+  async claimSocialPost(postId, now, leaseMs) {
+    const p = store().posts.find((x) => x.id === postId);
+    if (!p) return false;
+    const stale = p.status === "PUBLISHING" && p.lockedAt && now.getTime() - p.lockedAt.getTime() > leaseMs;
+    if (p.status !== "SCHEDULED" && !stale) return false;
+    p.status = "PUBLISHING";
+    p.lockedAt = now;
+    return true;
+  },
+
+  async recordChannelMetrics(tenantId, data) {
+    const s = store();
+    const dateKey = data.date.toISOString().slice(0, 10);
+    const existing = s.channelMetrics.find((m) => m.channelId === data.channelId && m.date.toISOString().slice(0, 10) === dateKey);
+    const row: ChannelMetricSnapshotRecord = { id: existing?.id ?? id("cm"), tenantId, channelId: data.channelId, platform: data.platform, date: new Date(`${dateKey}T00:00:00Z`), followers: data.followers ?? null, reach: data.reach ?? null, impressions: data.impressions ?? null, engagements: data.engagements ?? null, clicks: data.clicks ?? null, posts: data.posts ?? null };
+    if (existing) Object.assign(existing, row);
+    else pushBounded(s.channelMetrics, row, false);
+  },
+
+  async listChannelMetrics(tenantId, opts) {
+    return store()
+      .channelMetrics.filter((m) => m.tenantId === tenantId && m.date >= opts.since && (!opts.channelId || m.channelId === opts.channelId))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  },
+
+  async upsertSocialConversation(tenantId, data) {
+    const s = store();
+    const existing = s.conversations.find((c) => c.tenantId === tenantId && c.channel === data.channel && c.externalId === data.externalId);
+    if (existing) return { record: existing, created: false };
+    const convo: ConversationRecord = { id: id("cv"), tenantId, contactId: data.contactId ?? null, channel: data.channel, externalId: data.externalId, lastMessageAt: null, awaitingReply: false, platform: data.platform, channelId: data.channelId, meta: data.meta ?? {}, displayName: data.displayName, suggestedReply: null };
+    pushBounded(s.conversations, convo, false);
+    return { record: convo, created: true };
+  },
+
+  async listInboxConversations(tenantId, opts = {}) {
+    return store()
+      .conversations.filter((c) => c.tenantId === tenantId && (c.channel === "SOCIAL_DM" || c.channel === "SOCIAL_COMMENT") && (!opts.awaitingOnly || c.awaitingReply))
+      .sort((a, b) => (b.lastMessageAt?.getTime() ?? 0) - (a.lastMessageAt?.getTime() ?? 0))
+      .slice(0, opts.limit ?? 100);
+  },
+
+  async findConversationById(tenantId, conversationId) {
+    return store().conversations.find((c) => c.id === conversationId && c.tenantId === tenantId) ?? null;
+  },
+
+  async listMessages(tenantId, conversationId, limit = 50) {
+    return store()
+      .messages.filter((m) => m.tenantId === tenantId && m.conversationId === conversationId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(-limit)
+      .map((m): MessageRecord => ({ id: m.id, tenantId: m.tenantId, conversationId: m.conversationId, direction: m.direction, sender: m.sender, body: m.body, status: m.status, providerMessageId: m.providerMessageId ?? null, createdAt: m.createdAt }));
+  },
+
+  async hasMessageWithProviderId(tenantId, conversationId, providerMessageId) {
+    return store().messages.some((m) => m.tenantId === tenantId && m.conversationId === conversationId && m.providerMessageId === providerMessageId);
+  },
+
+  async updateConversation(tenantId, conversationId, patch) {
+    const c = store().conversations.find((x) => x.id === conversationId && x.tenantId === tenantId);
+    if (!c) return;
+    if (patch.awaitingReply !== undefined) c.awaitingReply = patch.awaitingReply;
+    if (patch.suggestedReply !== undefined) c.suggestedReply = patch.suggestedReply;
+    if (patch.meta) c.meta = { ...(c.meta ?? {}), ...patch.meta };
+  },
+
   async findContentAssetById(tenantId, assetId) {
     return store().assets.find((a) => a.id === assetId && a.tenantId === tenantId) ?? null;
   },
 
-  async updateContentAssetStatus(tenantId, assetId, status) {
+  async updateContentAssetStatus(tenantId, assetId, status, note) {
     const asset = store().assets.find((a) => a.id === assetId && a.tenantId === tenantId);
     if (!asset) return null;
     asset.status = status;
+    asset.rejectionNote = status === "REJECTED" ? (note ?? null) : null;
+    if (status === "APPROVED") asset.approvedAt = new Date();
     return asset;
   },
 

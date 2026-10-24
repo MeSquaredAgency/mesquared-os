@@ -14,7 +14,7 @@ const URL_TTL_SECONDS = 600;
  * must belong to the tenant the API key resolves to.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await resolveTenantFromRequest(req);
+  const auth = await resolveTenantFromRequest(req, "content");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
   const asset = await repository.findContentAssetById(auth.tenant.id, id);

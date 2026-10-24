@@ -2,12 +2,17 @@ import { ACTION_LEASE_MS, registerAutomations, runScheduledAction } from "@/lib/
 import { repository } from "@/lib/data";
 import { detectForTenant } from "@/lib/opportunities/detect";
 import { registerPlaybook } from "@/lib/playbook";
+import { registerContentEngine } from "@/lib/content/engine";
+import { quietHoursEnd } from "@/lib/messaging";
+import { publishDuePosts } from "@/lib/social/publish";
+import { localKey } from "@/lib/content/calendar";
 
 export interface TickResult {
   tenants: number;
   detected: number;
   actionsRun: number;
   actionsFailed: number;
+  published: number;
 }
 
 /**
@@ -18,6 +23,7 @@ export interface TickResult {
 export async function tick(now = new Date()): Promise<TickResult> {
   registerPlaybook();
   registerAutomations();
+  registerContentEngine();
   const tenants = await repository.listAllTenants();
   let detected = 0;
   for (const tenant of tenants) {
@@ -26,7 +32,17 @@ export async function tick(now = new Date()): Promise<TickResult> {
     } catch (error) {
       console.error(`[jobs] detectors failed for ${tenant.slug}: ${error instanceof Error ? error.message : error}`);
     }
+    // Recurring per-tenant work rides the same queue: one content batch a day (after quiet hours end), one social sync an hour.
+    const day = localKey(tenant.timezone, now);
+    await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)) > now ? now : quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)), payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
+    const hourBucket = now.toISOString().slice(0, 13);
+    await repository.scheduleAction(tenant.id, { typeKey: "social_sync", action: "run", runAt: now, payload: {}, dedupeKey: `social:sync:${hourBucket}` }).catch(() => {});
   }
+
+  const publishing = await publishDuePosts(now).catch((error) => {
+    console.error(`[jobs] publishing failed: ${error instanceof Error ? error.message : error}`);
+    return { published: 0, failed: 0, simulated: 0 };
+  });
 
   let actionsRun = 0;
   let actionsFailed = 0;
@@ -51,5 +67,5 @@ export async function tick(now = new Date()): Promise<TickResult> {
       actionsFailed++;
     }
   }
-  return { tenants: tenants.length, detected, actionsRun, actionsFailed };
+  return { tenants: tenants.length, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated };
 }

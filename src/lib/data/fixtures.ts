@@ -6,14 +6,15 @@ import { realEstateTemplate } from "@/lib/templates/real-estate";
 import type {
   AutomationRunRecord,
   BookingRecord,
+  ChannelMetricSnapshotRecord,
+  ChannelRecord,
   ContactRecord,
-  ReviewRecord,
   ContentAssetRecord,
   ExceptionRecord,
   IntegrationRecord,
   LeadRecord,
   MissedOpportunityRecord,
-  SocialPlatform,
+  ReviewRecord,
   SocialPostRecord,
   TenantSummary,
   TransactionRecord,
@@ -164,10 +165,26 @@ export const demoIntegrations: IntegrationRecord[] = [
   { id: "int_9", tenantId: "tenant_summit", provider: "CALCOM", label: "Cal.com", status: "DISCONNECTED", externalAccountId: null, lastSyncAt: ago(60 * 24 * 3), lastError: "Calendar access revoked" },
 ];
 
-export const demoConnectedPlatforms: Record<string, SocialPlatform[]> = {
-  tenant_harbor: ["FACEBOOK", "INSTAGRAM", "YOUTUBE"],
-  tenant_summit: ["FACEBOOK", "INSTAGRAM"],
+export const demoChannels: ChannelRecord[] = [
+  { id: "ch_1", tenantId: "tenant_harbor", integrationId: "int_2", platform: "FACEBOOK", externalAccountId: "page_1", displayName: "Harbor Realty Group", isActive: true, settings: {} },
+  { id: "ch_2", tenantId: "tenant_harbor", integrationId: "int_2", platform: "INSTAGRAM", externalAccountId: "ig_1", displayName: "@harborrealty", isActive: true, settings: { igUserId: "ig_1" } },
+  { id: "ch_3", tenantId: "tenant_harbor", integrationId: null, platform: "YOUTUBE", externalAccountId: "UC_harbor", displayName: "Harbor Realty Group", isActive: true, settings: {} },
+  { id: "ch_4", tenantId: "tenant_summit", integrationId: "int_7", platform: "FACEBOOK", externalAccountId: "page_2", displayName: "Summit Health & Fitness", isActive: true, settings: {} },
+  { id: "ch_5", tenantId: "tenant_summit", integrationId: "int_7", platform: "INSTAGRAM", externalAccountId: "ig_2", displayName: "@summitfit", isActive: true, settings: { igUserId: "ig_2" } },
+  { id: "ch_6", tenantId: "tenant_summit", integrationId: null, platform: "GOOGLE_BUSINESS", externalAccountId: "accounts/1/locations/2", displayName: "Summit Health & Fitness (Google)", isActive: true, settings: {} },
+];
+
+const day = (n: number) => {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d;
 };
+export const demoChannelMetrics: ChannelMetricSnapshotRecord[] = [0, 1, 2, 3, 4, 5, 6].flatMap((n) => [
+  { id: `cm_fb_${n}`, tenantId: "tenant_harbor", channelId: "ch_1", platform: "FACEBOOK" as const, date: day(n), followers: 2140 - n * 3, reach: 640 - n * 20, impressions: 910 - n * 25, engagements: 38 - n, clicks: 12, posts: n % 3 === 0 ? 1 : 0 },
+  { id: `cm_ig_${n}`, tenantId: "tenant_harbor", channelId: "ch_2", platform: "INSTAGRAM" as const, date: day(n), followers: 1875 - n * 4, reach: 1210 - n * 40, impressions: 1600 - n * 50, engagements: 96 - n * 2, clicks: 9, posts: n % 2 === 0 ? 1 : 0 },
+  { id: `cm_s_ig_${n}`, tenantId: "tenant_summit", channelId: "ch_5", platform: "INSTAGRAM" as const, date: day(n), followers: 3320 - n * 6, reach: 2100 - n * 60, impressions: 2900 - n * 70, engagements: 210 - n * 4, clicks: 31, posts: 1 },
+]);
 
 /** Ad spend this month in minor units; stands in for the ads module until Phase 4. */
 export const demoAdSpendMonthCents: Record<string, { spentCents: number; budgetCents: number }> = {
@@ -376,16 +393,48 @@ export const demoExceptions: ExceptionRecord[] = [
 // Content, posts, money
 // ---------------------------------------------------------------------------
 
+const asset = (a: Partial<ContentAssetRecord> & Pick<ContentAssetRecord, "id" | "tenantId" | "kind" | "title" | "body" | "targetPlatform" | "status" | "needsClientSignoff" | "createdAt">): ContentAssetRecord => ({
+  parentId: null,
+  tags: [],
+  scheduledFor: null,
+  generation: {},
+  rejectionNote: null,
+  approvedAt: null,
+  fileUrl: null,
+  ...a,
+});
+
 export const demoAssets: ContentAssetRecord[] = [
-  { id: "asset_1", tenantId: "tenant_harbor", kind: "POST_COPY", title: "Facebook — Why Glenelg owners are switching managers", body: "Three things owners told us this month about switching managers…", targetPlatform: "FACEBOOK", status: "IN_REVIEW", needsClientSignoff: false, createdAt: ago(60 * 5) },
-  { id: "asset_2", tenantId: "tenant_harbor", kind: "SHORT_FORM_SCRIPT", title: "Reel — 12 Marine Parade just leased", body: "0–3s: exterior. 3–10s: leased in 6 days at $620/week. 10–20s: what we did differently. CTA.", targetPlatform: "INSTAGRAM", status: "IN_REVIEW", needsClientSignoff: true, createdAt: ago(60 * 4) },
-  { id: "asset_3", tenantId: "tenant_harbor", kind: "YOUTUBE_META", title: "Short — What an appraisal actually involves", body: "Title: What happens at a rental appraisal (90 seconds). Description: …", targetPlatform: "YOUTUBE", status: "APPROVED", needsClientSignoff: false, createdAt: ago(60 * 30) },
-  { id: "asset_4", tenantId: "tenant_summit", kind: "POST_COPY", title: "Instagram — Member story: Chloe's first 5k", body: "Chloe joined in March and ran her first 5k on Saturday…", targetPlatform: "INSTAGRAM", status: "IN_REVIEW", needsClientSignoff: true, createdAt: ago(60 * 8) },
+  // Source material the engine worked from
+  asset({ id: "src_1", tenantId: "tenant_harbor", kind: "RAW_TEXT", title: "Voice note — owners switching managers (transcribed)", body: "Three owners this month told us the same thing: they switched because nobody called them back. One had waited eleven days for an answer about a leaking tap. We call back the same day, every time, and we send a written update after every inspection. That's it. That's the whole trick.", targetPlatform: null, status: "DRAFT", needsClientSignoff: false, generation: { origin: "operator" }, createdAt: ago(60 * 6) }),
+  asset({ id: "src_2", tenantId: "tenant_summit", kind: "RAW_TEXT", title: "Review — Chloe B. (Google, 5 stars)", body: "Joined in March barely able to run for the bus. Ran my first 5k on Saturday with the Summit crew cheering at the finish. The coaches never made me feel like the slow one.", targetPlatform: null, status: "DRAFT", needsClientSignoff: false, generation: { origin: "review", sourceRef: "rv_2" }, createdAt: ago(60 * 9) }),
+  // Drafts
+  asset({ id: "asset_1", tenantId: "tenant_harbor", parentId: "src_1", kind: "POST_COPY", title: "Facebook — Why Glenelg owners are switching managers", body: "Three things owners told us this month about switching managers: nobody called back, nobody followed up, nobody explained. We call back the same day and send a written update after every inspection. If your manager has gone quiet, we're happy to talk.", targetPlatform: "FACEBOOK", status: "IN_REVIEW", needsClientSignoff: false, tags: ["propertymanagement", "glenelg"], generation: { engine: "stub", compliance: { ok: true, needsClientSignoff: false, issues: [], checkedAt: new Date().toISOString() } }, createdAt: ago(60 * 5) }),
+  asset({ id: "asset_2", tenantId: "tenant_harbor", parentId: "src_1", kind: "SHORT_FORM_SCRIPT", title: "Reel — 12 Marine Parade just leased", body: "0–3s: exterior. 3–10s: leased in 6 days at $620/week. 10–20s: what we did differently. CTA.", targetPlatform: "INSTAGRAM", status: "IN_REVIEW", needsClientSignoff: true, generation: { engine: "stub", compliance: { ok: true, needsClientSignoff: true, issues: [{ code: "PRICE", message: "Mentions a price ($620/week): the client signs this off.", severity: "signoff" }], checkedAt: new Date().toISOString() } }, createdAt: ago(60 * 4) }),
+  asset({ id: "asset_3", tenantId: "tenant_harbor", kind: "YOUTUBE_META", title: "Short — What an appraisal actually involves", body: "Title: What happens at a rental appraisal (90 seconds). Description: A walk-through of what we look at and what you get afterwards.", targetPlatform: "YOUTUBE", status: "SCHEDULED", needsClientSignoff: false, scheduledFor: ahead(60 * 26), approvedAt: ago(60 * 28), createdAt: ago(60 * 30) }),
+  asset({ id: "asset_4", tenantId: "tenant_summit", parentId: "src_2", kind: "POST_COPY", title: "Instagram — Member story: Chloe's first 5k", body: "Chloe joined in March and ran her first 5k on Saturday with the Summit crew at the finish line. Her words: \"the coaches never made me feel like the slow one.\" Proud of you, Chloe.", targetPlatform: "INSTAGRAM", status: "IN_REVIEW", needsClientSignoff: true, tags: ["memberstory"], generation: { engine: "stub", compliance: { ok: true, needsClientSignoff: true, issues: [{ code: "NAMED_PERSON", message: "Names a member (Chloe): the client confirms consent.", severity: "signoff" }], checkedAt: new Date().toISOString() } }, createdAt: ago(60 * 8) }),
 ];
 
+const post = (p: Partial<SocialPostRecord> & Pick<SocialPostRecord, "id" | "tenantId" | "platform" | "caption" | "status" | "scheduledFor">): SocialPostRecord => ({
+  channelId: null,
+  contentAssetId: null,
+  mediaUrls: [],
+  tags: [],
+  publishedAt: null,
+  externalPostId: null,
+  permalink: null,
+  errorMessage: null,
+  attempts: 0,
+  metrics: {},
+  batchId: null,
+  createdAt: p.scheduledFor ?? new Date(),
+  ...p,
+});
+
 export const demoPosts: SocialPostRecord[] = [
-  { id: "post_1", tenantId: "tenant_harbor", platform: "YOUTUBE", caption: "What happens at a rental appraisal (90 seconds)", tags: ["appraisal"], status: "SCHEDULED", scheduledFor: ahead(60 * 26), batchId: "batch_1" },
-  { id: "post_2", tenantId: "tenant_summit", platform: "FACEBOOK", caption: "Spring trial week starts Monday", tags: ["trial"], status: "PUBLISHED", scheduledFor: ago(60 * 24), batchId: "batch_2" },
+  post({ id: "post_1", tenantId: "tenant_harbor", channelId: "ch_3", contentAssetId: "asset_3", platform: "YOUTUBE", caption: "What happens at a rental appraisal (90 seconds)", tags: ["appraisal"], status: "SCHEDULED", scheduledFor: ahead(60 * 26), batchId: "batch_1" }),
+  post({ id: "post_2", tenantId: "tenant_summit", channelId: "ch_4", platform: "FACEBOOK", caption: "Spring trial week starts Monday. Seven days, every class, no lock-in. Reply or message us to grab a spot.", tags: ["trial"], status: "PUBLISHED", scheduledFor: ago(60 * 24), publishedAt: ago(60 * 24), externalPostId: "page_2_1001", permalink: "https://www.facebook.com/page_2/posts/1001", metrics: { reach: 1420, engagements: 61 }, batchId: "batch_2" }),
+  post({ id: "post_3", tenantId: "tenant_harbor", channelId: "ch_1", platform: "FACEBOOK", caption: "Open for inspection this Saturday: two homes in Glenelg North. Times on our website.", tags: ["inspections"], status: "PUBLISHED", scheduledFor: ago(60 * 24 * 3), publishedAt: ago(60 * 24 * 3), externalPostId: "page_1_887", permalink: "https://www.facebook.com/page_1/posts/887", metrics: { reach: 512, engagements: 19 }, batchId: "batch_3" }),
 ];
 
 export const demoTransactions: TransactionRecord[] = [

@@ -57,7 +57,10 @@ export default defineConfig({
   // Branch policy: per-branch tuning
   branch: (branch) => {
     if (branch.isDefault) {
-      // Default branch: no overrides, uses project defaults
+      // Production: the ops Function must forward the tick, or SLA detection and scheduled sends stop silently.
+      if (!tickEnv && process.env.ALLOW_DEPLOY_WITHOUT_TICK !== "1") {
+        throw new Error("Refusing to deploy the production branch without tick forwarding: set a public NEXT_PUBLIC_APP_URL and JOB_SECRET in the env file passed to --env (or ALLOW_DEPLOY_WITHOUT_TICK=1 to override).");
+      }
       return {};
     }
     if (!branch.exists) {

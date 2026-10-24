@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { ForbiddenError, requirePermission } from "@/lib/auth/permissions";
 import { getPortalContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
+import { scheduleApproved } from "@/lib/content/engine";
 import { emit } from "@/lib/events";
 import type { ContentStatus } from "@/lib/types";
 
@@ -25,16 +26,25 @@ export async function decideAsset(tenantSlug: string, assetId: string, status: C
   try {
     const { access, user } = await getPortalContext(tenantSlug);
     requirePermission(access, "APPROVE_CONTENT");
-    const current = (await repository.getWorkbench(access.tenant.id)).assets.find((a) => a.id === assetId);
+    const current = await repository.findContentAssetById(access.tenant.id, assetId);
     if (!current) return { ok: false, message: "That draft no longer exists." };
     if (current.needsClientSignoff && status === "APPROVED" && access.via !== "member") {
       return { ok: false, message: "This one mentions prices, names or claims and needs the client's own sign-off." };
     }
+    if (status === "APPROVED" && current.generation.compliance && !current.generation.compliance.ok) {
+      return { ok: false, message: "This draft has a brand or compliance issue to fix first; Me² will sort it." };
+    }
     const updated = await repository.updateContentAssetStatus(access.tenant.id, assetId, status);
     if (!updated) return { ok: false, message: "That draft no longer exists." };
     await emit(access.tenant.id, `content.${status.toLowerCase()}`, { assetId, by: user.id, via: access.via });
+    let message = status === "REJECTED" ? "Sent back to the engine." : "Moved back to review.";
+    if (status === "APPROVED") {
+      const { when, post } = await scheduleApproved(access.tenant, updated);
+      message = post?.status === "SCHEDULED" && when ? `Approved and scheduled for ${when.toLocaleString(access.tenant.locale, { timeZone: access.tenant.timezone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}.` : "Approved; it goes out once the channel is connected.";
+    }
     revalidatePath(`/app/${tenantSlug}`);
-    return { ok: true, message: status === "APPROVED" ? "Approved and queued for scheduling." : status === "REJECTED" ? "Sent back to the engine." : "Moved back to review." };
+    revalidatePath(`/app/${tenantSlug}/content`);
+    return { ok: true, message };
   } catch (error) {
     if (error instanceof ForbiddenError) return { ok: false, message: error.message };
     console.error("[content] decision failed", error instanceof Error ? error.message : error);

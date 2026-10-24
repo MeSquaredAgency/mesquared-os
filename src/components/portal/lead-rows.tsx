@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createRealtimeClient, type SealedLiveQuery } from "@neon/realtime/client";
 import { RealtimeProvider, useLiveQuery } from "@neon/realtime-react";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +77,8 @@ let signedOut = false;
 export function LiveLeads({ realtimeUrl, ...props }: LiveProps) {
   // Created once per mounted page; the server render never subscribes, so it never connects there.
   const [client] = useState(() => createRealtimeClient({ url: realtimeUrl }));
+  // The provider does not close the client on unmount; without this every soft navigation leaves a socket open.
+  useEffect(() => () => client.close(), [client]);
   return (
     <RealtimeProvider client={client}>
       <LiveLeadRows {...props} />

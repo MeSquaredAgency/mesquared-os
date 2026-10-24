@@ -24,6 +24,13 @@ function makeKey() {
   return { raw, hash: createHash("sha256").update(raw).digest("hex"), prefix: raw.slice(0, 15) };
 }
 
+interface SeedChannel {
+  platform: "FACEBOOK" | "INSTAGRAM" | "GOOGLE_BUSINESS" | "YOUTUBE";
+  externalAccountId: string;
+  displayName: string;
+  settings?: Record<string, unknown>;
+}
+
 interface SeedTenant {
   slug: string;
   name: string;
@@ -34,11 +41,12 @@ interface SeedTenant {
   currency: string;
   branding: Record<string, unknown>;
   serviceAreas?: string[];
+  channels?: SeedChannel[];
 }
 
 const TENANTS: SeedTenant[] = [
-  { slug: "harbor-realty", name: "Harbor Realty Group", templateKey: "real_estate", region: "AU", timezone: "Australia/Adelaide", locale: "en-AU", currency: "AUD", branding: { primaryColor: "#0f4c81", fromName: "Harbor Realty" }, serviceAreas: ["Adelaide", "Mount Gambier"] },
-  { slug: "summit-fitness", name: "Summit Health & Fitness", templateKey: "health_fitness", region: "AU", timezone: "Australia/Sydney", locale: "en-AU", currency: "AUD", branding: { primaryColor: "#c2410c", fromName: "Summit" } },
+  { slug: "harbor-realty", name: "Harbor Realty Group", templateKey: "real_estate", region: "AU", timezone: "Australia/Adelaide", locale: "en-AU", currency: "AUD", branding: { primaryColor: "#0f4c81", fromName: "Harbor Realty" }, serviceAreas: ["Adelaide", "Mount Gambier"], channels: [{ platform: "FACEBOOK", externalAccountId: "demo_page_harbor", displayName: "Harbor Realty Group" }, { platform: "INSTAGRAM", externalAccountId: "demo_ig_harbor", displayName: "@harborrealty", settings: { igUserId: "demo_ig_harbor" } }, { platform: "YOUTUBE", externalAccountId: "demo_yt_harbor", displayName: "Harbor Realty Group" }] },
+  { slug: "summit-fitness", name: "Summit Health & Fitness", templateKey: "health_fitness", region: "AU", timezone: "Australia/Sydney", locale: "en-AU", currency: "AUD", branding: { primaryColor: "#c2410c", fromName: "Summit" }, channels: [{ platform: "FACEBOOK", externalAccountId: "demo_page_summit", displayName: "Summit Health & Fitness" }, { platform: "INSTAGRAM", externalAccountId: "demo_ig_summit", displayName: "@summitfit", settings: { igUserId: "demo_ig_summit" } }, { platform: "GOOGLE_BUSINESS", externalAccountId: "accounts/demo/locations/summit", displayName: "Summit Health & Fitness (Google)" }] },
 ];
 
 /** Applies an industry template to a tenant: roles, pipelines, modules, automations, brand. Idempotent. */
@@ -73,7 +81,8 @@ async function applyTemplate(tenantId: string, templateKey: string) {
   for (const m of MODULES) {
     await prisma.tenantModule.upsert({
       where: { tenantId_moduleKey: { tenantId, moduleKey: m.key } },
-      update: {},
+      // Demo tenants track their template: re-seeding applies new modules and settings the template gained.
+      update: { enabled: enabledModules.has(m.key), settings: json(enabledModules.get(m.key) ?? {}) },
       create: { tenantId, moduleKey: m.key, enabled: enabledModules.has(m.key), settings: json(enabledModules.get(m.key) ?? {}) },
     });
   }
@@ -82,7 +91,7 @@ async function applyTemplate(tenantId: string, templateKey: string) {
   for (const a of AUTOMATIONS) {
     await prisma.tenantAutomation.upsert({
       where: { tenantId_typeKey: { tenantId, typeKey: a.key } },
-      update: {},
+      update: { enabled: enabledAutomations.has(a.key), settings: json(enabledAutomations.get(a.key) ?? {}) },
       create: { tenantId, typeKey: a.key, enabled: enabledAutomations.has(a.key), settings: json(enabledAutomations.get(a.key) ?? {}) },
     });
   }
@@ -135,6 +144,14 @@ async function main() {
       },
     });
     await applyTemplate(tenant.id, t.templateKey);
+    // Demo channels (no credentials): the content engine drafts for them and publishing stays simulated until a real token is connected.
+    for (const ch of t.channels ?? []) {
+      await prisma.channel.upsert({
+        where: { tenantId_platform_externalAccountId: { tenantId: tenant.id, platform: ch.platform, externalAccountId: ch.externalAccountId } },
+        update: { displayName: ch.displayName, settings: json(ch.settings ?? {}) },
+        create: { tenantId: tenant.id, platform: ch.platform, externalAccountId: ch.externalAccountId, displayName: ch.displayName, settings: json(ch.settings ?? {}) },
+      });
+    }
     await prisma.operatorAssignment.upsert({ where: { tenantId_userId: { tenantId: tenant.id, userId: ops.id } }, update: {}, create: { tenantId: tenant.id, userId: ops.id } });
 
     const ownerRole = await prisma.tenantRole.findFirst({ where: { tenantId: tenant.id, templateKey: "owner" } });
@@ -148,7 +165,7 @@ async function main() {
     const existingKey = await prisma.tenantApiKey.findFirst({ where: { tenantId: tenant.id, revokedAt: null } });
     if (!existingKey) {
       const key = makeKey();
-      await prisma.tenantApiKey.create({ data: { tenantId: tenant.id, label: "Seed key", keyHash: key.hash, keyPrefix: key.prefix } });
+      await prisma.tenantApiKey.create({ data: { tenantId: tenant.id, label: "Seed key", keyHash: key.hash, keyPrefix: key.prefix, scopes: ["intake", "content"] } });
       console.log(`${t.name}: API key ${key.raw}  (shown once — store it now)`);
     }
   }

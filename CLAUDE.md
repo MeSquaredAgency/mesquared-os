@@ -58,6 +58,8 @@ tested modules free of `next/*` imports and JSX.
 - `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
 - `src/lib/data` — repository contract with Prisma and in-memory implementations
 - `src/lib/copy.ts` — the only place client-facing words for green/red live
+- `src/lib/content` — the content engine: `compliance.ts` (brand + compliance block, enforced on every asset), `generate.ts` (Claude or the stub), `calendar.ts` (slots, gaps), `engine.ts` (material → drafts → approval → calendar), `actions.ts` (server actions)
+- `src/lib/social` — publishing (`publish.ts`), inbox + triage (`inbox.ts`), analytics (`metrics.ts`), hourly sync, encrypted channel credentials; `providers/` holds one adapter per platform behind `SocialProvider`; `SOCIAL_MODE=log` simulates everything
 - `neon.ts` — Neon branch config (AI Gateway, `assets` bucket, `ops` Function with its minute trigger, Realtime); `neon/functions/ops.ts` is the Function
 - `src/lib/neon.ts` — which Neon services are configured; `src/lib/storage.ts` — tenant-prefixed object storage; `src/lib/realtime` — sealed live queries
 

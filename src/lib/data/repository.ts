@@ -1,31 +1,36 @@
 import type {
+  AssetGeneration,
   AutomationOutcome,
   AutomationRunRecord,
   BookingRecord,
   BookingStatus,
   BrandProfileRecord,
+  ChannelMetricSnapshotRecord,
+  ChannelRecord,
   ContactRecord,
-  ConversationRecord,
-  FormSessionRecord,
-  InformationRequestRecord,
-  InformationRequestStatus,
-  ReviewRecord,
-  ScheduledActionRecord,
-  ScheduledActionStatus,
   ContentAssetRecord,
   ContentStatus,
+  ConversationRecord,
   DomainEventRecord,
   ExceptionRecord,
   ExceptionStatus,
+  FormSessionRecord,
+  InformationRequestRecord,
+  InformationRequestStatus,
   IntegrationRecord,
   LeadRecord,
   LeadSource,
+  MessageRecord,
   MissedOpportunityRecord,
   MissedOpportunityStatus,
   MissedOpportunityType,
   PipelineRecord,
   PortalHome,
   PortfolioRow,
+  PostStatus,
+  ReviewRecord,
+  ScheduledActionRecord,
+  ScheduledActionStatus,
   SocialPlatform,
   SocialPostRecord,
   TenantAccess,
@@ -126,6 +131,9 @@ export interface NewContentAsset {
   needsClientSignoff: boolean;
   tags: string[];
   scheduledFor: Date | null;
+  /** The source asset this was generated from. */
+  parentId?: string | null;
+  generation?: AssetGeneration;
   /** `neon-storage://assets/<key>` for files we hold (see src/lib/storage.ts), or an external link. */
   fileUrl?: string | null;
 }
@@ -190,6 +198,90 @@ export interface NewReview {
   receivedAt: Date;
 }
 
+export type ApiKeyScope = "intake" | "content";
+
+export interface IntegrationUpsert {
+  provider: import("@/lib/types").IntegrationProvider;
+  externalAccountId: string;
+  label?: string | null;
+  status?: import("@/lib/types").IntegrationStatus;
+  credentialsEnc?: string | null;
+  settings?: Record<string, unknown>;
+  lastError?: string | null;
+  lastSyncAt?: Date | null;
+}
+
+export interface ContentAssetPatch {
+  title?: string | null;
+  body?: string | null;
+  tags?: string[];
+  scheduledFor?: Date | null;
+  status?: ContentStatus;
+  needsClientSignoff?: boolean;
+  generation?: AssetGeneration;
+  rejectionNote?: string | null;
+  targetPlatform?: SocialPlatform | null;
+}
+
+export interface NewChannel {
+  platform: SocialPlatform;
+  externalAccountId: string;
+  displayName?: string | null;
+  integrationId?: string | null;
+  isActive?: boolean;
+  settings?: Record<string, unknown>;
+}
+
+export interface NewSocialPost {
+  channelId: string | null;
+  contentAssetId: string | null;
+  platform: SocialPlatform;
+  caption: string;
+  mediaUrls?: string[];
+  tags?: string[];
+  status: PostStatus;
+  scheduledFor: Date | null;
+  batchId?: string | null;
+}
+
+export interface SocialPostPatch {
+  status?: PostStatus;
+  scheduledFor?: Date | null;
+  publishedAt?: Date | null;
+  externalPostId?: string | null;
+  permalink?: string | null;
+  errorMessage?: string | null;
+  attempts?: number;
+  caption?: string;
+  mediaUrls?: string[];
+  channelId?: string | null;
+  metrics?: Record<string, number>;
+}
+
+export interface NewChannelMetrics {
+  channelId: string;
+  platform: SocialPlatform;
+  date: Date;
+  followers?: number | null;
+  reach?: number | null;
+  impressions?: number | null;
+  engagements?: number | null;
+  clicks?: number | null;
+  posts?: number | null;
+  raw?: Record<string, unknown>;
+}
+
+export interface NewSocialConversation {
+  channelId: string | null;
+  platform: SocialPlatform;
+  channel: "SOCIAL_DM" | "SOCIAL_COMMENT";
+  /** Provider thread id: the post for comments, the conversation for DMs. */
+  externalId: string;
+  displayName: string | null;
+  meta?: Record<string, unknown>;
+  contactId?: string | null;
+}
+
 export interface BookingPatch {
   status?: BookingStatus;
   startsAt?: Date | null;
@@ -218,8 +310,12 @@ export interface PortalHomeOptions {
 }
 
 export interface Workbench {
+  /** Everything the engine produced, newest first (sources excluded). */
   assets: ContentAssetRecord[];
+  /** Raw material and transcripts, newest first. */
+  sources: ContentAssetRecord[];
   posts: SocialPostRecord[];
+  channels: ChannelRecord[];
   connectedPlatforms: SocialPlatform[];
 }
 
@@ -247,7 +343,7 @@ export interface Repository {
   findTenantById(tenantId: string): Promise<TenantSummary | null>;
   /** Every active tenant; used by scheduled jobs, never by request handlers. */
   listAllTenants(): Promise<TenantSummary[]>;
-  findTenantByApiKeyHash(hash: string): Promise<{ tenant: TenantSummary; apiKeyId: string | null } | null>;
+  findTenantByApiKeyHash(hash: string): Promise<{ tenant: TenantSummary; apiKeyId: string | null; scopes: ApiKeyScope[] } | null>;
 
   // --- configuration -----------------------------------------------------------
   getTenantConfig(tenantId: string): Promise<TenantConfig>;
@@ -278,6 +374,8 @@ export interface Repository {
   listAlertRecipients(tenantId: string): Promise<AlertRecipient[]>;
   /** Integration row (with encrypted credentials) for a provider, or null when not connected. */
   findIntegration(tenantId: string, provider: import("@/lib/types").IntegrationProvider): Promise<IntegrationSettings | null>;
+  /** Creates or updates the tenant's integration for a provider (one per provider per tenant). Only the fields given change. */
+  upsertIntegration(tenantId: string, data: IntegrationUpsert): Promise<IntegrationSettings>;
   /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
   findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
 
@@ -354,7 +452,32 @@ export interface Repository {
   getWorkbench(tenantId: string): Promise<Workbench>;
   createContentAssets(tenantId: string, items: NewContentAsset[]): Promise<ContentAssetRecord[]>;
   findContentAssetById(tenantId: string, assetId: string): Promise<ContentAssetRecord | null>;
+  listContentAssets(tenantId: string, opts?: { status?: ContentStatus[]; kinds?: string[]; parentId?: string | null; limit?: number }): Promise<ContentAssetRecord[]>;
   updateContentAssetStatus(tenantId: string, assetId: string, status: ContentStatus, note?: string | null): Promise<ContentAssetRecord | null>;
+  updateContentAsset(tenantId: string, assetId: string, patch: ContentAssetPatch): Promise<ContentAssetRecord | null>;
+
+  // --- social: channels, posts, metrics, inbox ----------------------------------------
+  listChannels(tenantId: string, opts?: { activeOnly?: boolean }): Promise<ChannelRecord[]>;
+  /** Creates or updates the channel for (platform, externalAccountId). */
+  upsertChannel(tenantId: string, data: NewChannel): Promise<ChannelRecord>;
+  createSocialPosts(tenantId: string, items: NewSocialPost[]): Promise<SocialPostRecord[]>;
+  listSocialPosts(tenantId: string, opts?: { status?: PostStatus[]; from?: Date; to?: Date; limit?: number }): Promise<SocialPostRecord[]>;
+  findSocialPostById(tenantId: string, postId: string): Promise<SocialPostRecord | null>;
+  updateSocialPost(tenantId: string, postId: string, patch: SocialPostPatch): Promise<SocialPostRecord | null>;
+  /** SCHEDULED posts across all tenants whose time has come (read-only; claim with claimSocialPost). */
+  listDueSocialPosts(now: Date, limit?: number): Promise<SocialPostRecord[]>;
+  /** Atomically moves a SCHEDULED (or stale PUBLISHING) post to PUBLISHING. False when another worker got it first. */
+  claimSocialPost(postId: string, now: Date, leaseMs: number): Promise<boolean>;
+  recordChannelMetrics(tenantId: string, data: NewChannelMetrics): Promise<void>;
+  listChannelMetrics(tenantId: string, opts: { since: Date; channelId?: string }): Promise<ChannelMetricSnapshotRecord[]>;
+  /** One thread per provider thread id per channel; returns the existing thread when it already exists. */
+  upsertSocialConversation(tenantId: string, data: NewSocialConversation): Promise<{ record: ConversationRecord; created: boolean }>;
+  listInboxConversations(tenantId: string, opts?: { awaitingOnly?: boolean; limit?: number }): Promise<ConversationRecord[]>;
+  findConversationById(tenantId: string, conversationId: string): Promise<ConversationRecord | null>;
+  listMessages(tenantId: string, conversationId: string, limit?: number): Promise<MessageRecord[]>;
+  /** True when a message with this provider id is already on the conversation (webhook and poll dedupe). */
+  hasMessageWithProviderId(tenantId: string, conversationId: string, providerMessageId: string): Promise<boolean>;
+  updateConversation(tenantId: string, conversationId: string, patch: { awaitingReply?: boolean; suggestedReply?: string | null; meta?: Record<string, unknown> }): Promise<void>;
   listRecentTransactions(tenantId: string, limit?: number): Promise<TransactionRecord[]>;
 
   // --- read models for the two surfaces --------------------------------------------------

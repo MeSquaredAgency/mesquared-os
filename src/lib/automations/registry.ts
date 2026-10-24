@@ -21,6 +21,10 @@ export const AUTOMATIONS: AutomationDefinition[] = [
   { key: "inbox_triage", name: "DM and comment triage", description: "Answers routine messages and comments, escalates the rest.", triggers: ["inbox.received"], defaultEnabled: false },
   { key: "reactivation", name: "Reactivate lapsed customers", description: "Reaches out to past customers who have gone quiet.", triggers: ["contact.lapsed"], defaultEnabled: false },
   { key: "sla_watch", name: "Response and booking watch", description: "Turns leads that miss the response or booking window into missed opportunities for an operator.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "content_engine", name: "Content engine", description: "Drafts one post per channel from new material and good reviews, checks brand and compliance rules, and flags gaps in the calendar.", triggers: ["content.source.created", "review.received", "schedule"], defaultEnabled: true },
+  { key: "social_publish", name: "Social publishing", description: "Publishes approved posts at their scheduled time and reports what went out.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "social_sync", name: "Social inbox and analytics sync", description: "Pulls comments, messages, reviews and channel numbers from connected platforms.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "messaging", name: "Held messages", description: "Sends messages held during quiet hours when the morning comes.", triggers: ["schedule"], defaultEnabled: true },
 ];
 
 export const AUTOMATION_BY_KEY: Record<string, AutomationDefinition> = Object.fromEntries(AUTOMATIONS.map((a) => [a.key, a]));

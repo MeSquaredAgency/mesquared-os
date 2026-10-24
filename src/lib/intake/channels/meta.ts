@@ -44,6 +44,53 @@ export function parseMetaLeadgenEvents(body: unknown): MetaLeadgenEvent[] {
   return out;
 }
 
+/** A comment or Messenger message from a page webhook, in the inbox's shape. */
+export interface MetaInboxEvent {
+  pageId: string;
+  kind: "COMMENT" | "DM";
+  externalId: string;
+  threadId: string;
+  authorName: string | null;
+  authorId: string | null;
+  text: string;
+  receivedAt: Date;
+  postExternalId: string | null;
+}
+
+/**
+ * Parses `feed` changes (comments) and `messaging` entries (Messenger) from a
+ * page webhook. Items authored by the page itself are dropped, so our own
+ * replies never come back as new inbox items.
+ */
+export function parseMetaInboxEvents(body: unknown): MetaInboxEvent[] {
+  const out: MetaInboxEvent[] = [];
+  const root = body as { object?: string; entry?: { id?: string; changes?: { field?: string; value?: Record<string, unknown> }[]; messaging?: Record<string, unknown>[] }[] };
+  if ((root?.object !== "page" && root?.object !== "instagram") || !Array.isArray(root.entry)) return out;
+  for (const entry of root.entry) {
+    const pageId = entry.id ? String(entry.id) : null;
+    if (!pageId) continue;
+    for (const change of entry.changes ?? []) {
+      const v = change.value ?? {};
+      const isComment = (change.field === "feed" && v.item === "comment" && v.verb === "add") || (change.field === "comments" && typeof v.text === "string");
+      if (!isComment) continue;
+      const from = (v.from ?? {}) as { id?: string; name?: string; username?: string };
+      if (from.id && from.id === pageId) continue;
+      const commentId = String(v.comment_id ?? v.id ?? "");
+      const text = typeof v.message === "string" ? v.message : typeof v.text === "string" ? v.text : "";
+      if (!commentId || !text) continue;
+      const postId = String(v.post_id ?? (v.media as { id?: string } | undefined)?.id ?? "");
+      out.push({ pageId, kind: "COMMENT", externalId: commentId, threadId: postId || commentId, authorName: from.name ?? from.username ?? null, authorId: from.id ?? null, text, receivedAt: typeof v.created_time === "number" ? new Date(v.created_time * 1000) : new Date(), postExternalId: postId || null });
+    }
+    for (const m of entry.messaging ?? []) {
+      const sender = (m.sender ?? {}) as { id?: string };
+      const message = (m.message ?? {}) as { mid?: string; text?: string; is_echo?: boolean };
+      if (!sender.id || sender.id === pageId || message.is_echo || !message.mid || !message.text) continue;
+      out.push({ pageId, kind: "DM", externalId: message.mid, threadId: `dm:${sender.id}`, authorName: null, authorId: sender.id, text: message.text, receivedAt: typeof m.timestamp === "number" ? new Date(m.timestamp) : new Date(), postExternalId: null });
+    }
+  }
+  return out;
+}
+
 export interface MetaLeadFields {
   name: string | null;
   firstName: string | null;
