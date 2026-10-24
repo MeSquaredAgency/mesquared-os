@@ -12,3 +12,6 @@ next-env.d.ts
 coverage/
 .pg/
 .neon
+
+# personal Claude Code settings
+.claude/settings.local.json
