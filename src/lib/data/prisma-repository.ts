@@ -530,8 +530,11 @@ export const prismaRepository: Repository = {
       const reset = await db.scheduledAction.update({ where: { id: existing.id }, data: { typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), status: "PENDING", attempts: 0, lastError: null, ranAt: null } });
       return { record: toAction(reset), created: true };
     }
-    const row = await db.scheduledAction.create({ data: { tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), dedupeKey: data.dedupeKey } });
-    return { record: toAction(row), created: true };
+    // Two ticks can race here (overlapping schedulers, two instances); skipDuplicates makes the loser a quiet no-op
+    // instead of a logged unique-constraint error, and the re-read returns whichever row won.
+    const { count } = await db.scheduledAction.createMany({ data: { tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), dedupeKey: data.dedupeKey }, skipDuplicates: true });
+    const row = await db.scheduledAction.findUniqueOrThrow({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+    return { record: toAction(row), created: count === 1 };
   },
 
   async listDueActions(now, limit = 100) {

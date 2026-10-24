@@ -119,8 +119,10 @@ await step("bookings: schedule, confirm, remind, auto-complete, follow-up, revie
   await repository.markLeadBooked(harbor!.id, lead!.id, startsAt);
   assert.equal((await repository.findLeadById(harbor!.id, lead!.id))?.status, "BOOKED");
   await onBookingCreated(harbor!, lead!, booking!.id, startsAt, endsAt);
-  const reminder = (await repository.listDueActions(new Date(startsAt.getTime() - 23 * 3_600_000))).find((a) => a.action === "reminder" && a.payload.bookingId === booking!.id);
+  // About 24 h before, then moved out of quiet hours if that falls at night: look for it anywhere before the booking.
+  const reminder = (await repository.listDueActions(startsAt)).find((a) => a.action === "reminder" && a.payload.bookingId === booking!.id);
   assert.ok(reminder, "reminder scheduled");
+  assert.ok(reminder!.runAt.getTime() <= startsAt.getTime() && reminder!.runAt.getTime() >= startsAt.getTime() - 36 * 3_600_000, "reminder within the day before");
   await runScheduledAction(reminder!);
   await repository.completeAction(reminder!.id, "DONE");
   const auto = (await repository.listDueActions(new Date(endsAt.getTime() + 3 * 3_600_000))).find((a) => a.action === "auto_complete" && a.payload.bookingId === booking!.id);

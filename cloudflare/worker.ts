@@ -15,19 +15,22 @@ interface Env {
 
 export default {
   fetch: handler.fetch,
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext) {
     if (!env.JOB_SECRET) {
       console.error("[cron] JOB_SECRET is not set; the tick cannot authenticate.");
       return;
     }
     const origin = env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://mesquared-os.workers.dev";
-    ctx.waitUntil(
-      env.WORKER_SELF_REFERENCE.fetch(`${origin}/api/jobs/tick`, { method: "POST", headers: { authorization: `Bearer ${env.JOB_SECRET}`, "content-type": "application/json" }, body: "{}" })
-        .then(async (res) => {
-          if (!res.ok) console.error(`[cron] tick returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        })
-        .catch((error: unknown) => console.error(`[cron] tick failed: ${error instanceof Error ? error.message : String(error)}`)),
-    );
+    // Awaited, not waitUntil: the cron invocation must stay alive for as long as the tick runs (it has a 15-minute wall-clock
+    // budget), and a tick cut short would leave claimed actions to their lease timeout.
+    try {
+      const res = await env.WORKER_SELF_REFERENCE.fetch(`${origin}/api/jobs/tick`, { method: "POST", headers: { authorization: `Bearer ${env.JOB_SECRET}`, "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(10 * 60_000) });
+      const text = (await res.text()).slice(0, 300);
+      if (!res.ok) console.error(`[cron] tick returned ${res.status}: ${text}`);
+      else console.log(`[cron] tick ${text}`);
+    } catch (error) {
+      console.error(`[cron] tick failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
 } satisfies ExportedHandler<Env>;
 
