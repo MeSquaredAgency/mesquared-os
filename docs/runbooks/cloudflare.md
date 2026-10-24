@@ -18,8 +18,24 @@ worker served the whole app:
   same adapter (`DATABASE_DRIVER=pg`), so both drivers exercise one code path
 - credential encryption (AES-GCM) and API-key hashing under `nodejs_compat`
 
-Not yet proven: a deploy to a real Cloudflare account, Hyperdrive, and the
-cron trigger firing in production. Each is configuration, not code.
+Then deployed for real (24 Oct 2026) to the Me² Cloudflare account:
+`https://mesquared-os.mesquared-site.workers.dev`, with Hyperdrive
+`mesquared-os-neon` in front of the Neon production branch. Health reports
+`postgres`, API-key lookups and the login query run through Hyperdrive, the
+tick rejects calls without `JOB_SECRET`, and the minute cron is registered.
+
+**Plan:** the account is on the Workers Free plan. That caps CPU at 10 ms per
+request and refuses the `limits.cpu_ms` setting, so the setting is commented
+out in `wrangler.jsonc`. Sign-in (scrypt) and the tick need more than 10 ms;
+upgrade to Workers Paid ($5 a month) in the dashboard under Workers & Pages →
+Plans, then uncomment `limits` and redeploy. Do this before any client uses
+the site.
+
+**Credentials on this machine:** `.env.cloudflare.local` (ignored by git)
+holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; deploy with
+`set -a; . ./.env.cloudflare.local; set +a; npm run cf:deploy`. The token
+was once committed to GitHub by mistake; after it is removed from the
+repository history, rotate it in the dashboard and replace the local file.
 
 ## Pieces
 
@@ -49,9 +65,11 @@ cf:preview` (build and run on `http://localhost:8787`), `npm run cf:deploy`.
    `DEFAULT_FROM_EMAIL` and the `*_MODE` switches go under `vars` in
    `wrangler.jsonc` or through the dashboard.
 3. Database connection. Two options:
-   - **Hyperdrive (recommended):** create a Hyperdrive config pointing at the
-     Neon pooled endpoint, bind it in `wrangler.jsonc`, and set
-     `DATABASE_URL` to the Hyperdrive connection string. Hyperdrive keeps
+   - **Hyperdrive (recommended, in place):** `wrangler hyperdrive create
+     mesquared-os-neon --connection-string=<Neon pooled URL>` and bind it as
+     `HYPERDRIVE` in `wrangler.jsonc`; `src/lib/prisma.ts` prefers the
+     binding's connection string on Workers and falls back to the
+     `DATABASE_URL` secret. Hyperdrive keeps
      warm connections near the Worker, which matters because each Worker
      request opens its own.
    - **Neon serverless driver:** set `DATABASE_DRIVER=neon` and use the

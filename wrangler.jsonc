@@ -8,10 +8,12 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "mesquared-os" }],
+  // Pooled Postgres near the Worker; created with `wrangler hyperdrive create mesquared-os-neon --connection-string=...`.
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "f5a0029270154af3998c6c3db58b54f1", "localConnectionString": "postgresql://postgres:postgres@localhost:54329/mesquared_os" }],
   // The scheduler: one tick a minute, forwarded to /api/jobs/tick through the self-reference binding (see cloudflare/worker.ts).
   "triggers": { "crons": ["* * * * *"] },
   // The tick runs every tenant's detectors and due actions in one request; give it headroom beyond the 30 s default.
-  "limits": { "cpu_ms": 300000 },
+  // "limits": { "cpu_ms": 300000 }, // needs the Workers Paid plan; re-enable after upgrading (the tick needs more than the Free plan's 10 ms CPU)
   "observability": { "enabled": true },
-  "vars": { "NEXTJS_ENV": "production" }
+  "vars": { "NEXTJS_ENV": "production", "MESSAGING_MODE": "log", "NEXT_PUBLIC_APP_URL": "https://mesquared-os.mesquared-site.workers.dev", "DEFAULT_FROM_EMAIL": "hello@example.com" }
 }

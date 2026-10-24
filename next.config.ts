@@ -22,6 +22,6 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// Lets `next dev` see Cloudflare bindings when the OpenNext adapter is installed; a no-op on Vercel or Node.
+// Lets `next dev` see Cloudflare bindings (Hyperdrive and friends). Only in development: `next build` must not touch bindings.
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+if (process.env.NODE_ENV === "development") initOpenNextCloudflareForDev();

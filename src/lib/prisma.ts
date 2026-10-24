@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -21,9 +22,20 @@ const driver = (): "engine" | "pg" | "neon" => {
   return onWorkers ? "pg" : "engine";
 };
 
+/** On Workers, a Hyperdrive binding (pooled, near the Worker) wins over the raw DATABASE_URL secret. */
+function workersConnectionString(): string | null {
+  if (!onWorkers) return null;
+  try {
+    const env = getCloudflareContext().env as { HYPERDRIVE?: { connectionString: string } };
+    return env.HYPERDRIVE?.connectionString ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function construct(): PrismaClient {
   const log: ("warn" | "error")[] = process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"];
-  const connectionString = process.env.DATABASE_URL ?? "";
+  const connectionString = workersConnectionString() ?? process.env.DATABASE_URL ?? "";
   switch (driver()) {
     case "neon":
       return new PrismaClient({ adapter: new PrismaNeon({ connectionString }), log });
