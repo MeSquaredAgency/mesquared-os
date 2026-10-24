@@ -17,5 +17,5 @@
   // Run near the database (Neon, Sydney) rather than near the caller: the tick is many sequential queries.
   "placement": { "mode": "smart" },
   "observability": { "enabled": true },
-  "vars": { "NEXTJS_ENV": "production", "MESSAGING_MODE": "live", "TWILIO_WEBHOOK_URL": "https://mesquared-os.mesquared-site.workers.dev/api/v1/inbound/sms", "NEXT_PUBLIC_APP_URL": "https://mesquared-os.mesquared-site.workers.dev", "DEFAULT_FROM_EMAIL": "hello@example.com" }
+  "vars": { "NEXTJS_ENV": "production", "MESSAGING_MODE": "live", "TWILIO_WEBHOOK_URL": "https://mesquared-os.mesquared-site.workers.dev/api/v1/inbound/sms", "NEXT_PUBLIC_APP_URL": "https://mesquared-os.mesquared-site.workers.dev", "DEFAULT_FROM_EMAIL": "hello@mesquaredagency.com" }
 }
