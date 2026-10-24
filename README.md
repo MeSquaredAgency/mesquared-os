@@ -346,6 +346,15 @@ Postgres; `npm run db:parity` provisions a throwaway workspace to prove it.
 Runbooks live in `docs/runbooks/` and the launch gate is
 `docs/launch-checklist.md`.
 
+## Hosting on Cloudflare Workers
+
+The app also builds for Cloudflare Workers through the OpenNext adapter:
+`npm run cf:build`, `npm run cf:preview` (production build on port 8787 in
+the real Workers runtime, secrets from `.dev.vars`), `npm run cf:deploy`.
+`src/lib/prisma.ts` switches to the `pg` driver adapter on Workers (or with
+`DATABASE_DRIVER=pg`), and `cloudflare/worker.ts` adds the minute cron that
+runs the scheduler tick. See `docs/runbooks/cloudflare.md`.
+
 ## Operations
 
 - `GET /api/v1/health` reports data mode and qualifier engine for uptime checks.

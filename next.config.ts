@@ -13,11 +13,15 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Prisma's engine must stay external to the server bundle.
-  serverExternalPackages: ["@prisma/client", "prisma"],
+  // Prisma's engine must stay external to the server bundle; ".prisma/client" is what OpenNext needs to patch for Workers.
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "prisma"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
 };
 
 export default nextConfig;
+
+// Lets `next dev` see Cloudflare bindings when the OpenNext adapter is installed; a no-op on Vercel or Node.
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+initOpenNextCloudflareForDev();

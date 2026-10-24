@@ -3,7 +3,8 @@
 ## What runs where
 
 - **App**: Next.js 15, deployed from `main`. Any Node host works (Vercel is the
-  default assumption); the public URL goes in `NEXT_PUBLIC_APP_URL`.
+  default assumption); Cloudflare Workers through OpenNext is covered in
+  [cloudflare.md](cloudflare.md). The public URL goes in `NEXT_PUBLIC_APP_URL`.
 - **Database**: Neon Postgres, production branch. `DATABASE_URL` is the pooled
   URL, `DATABASE_URL_UNPOOLED` the direct one Prisma uses for migrations.
 - **Scheduler**: the Neon `ops` Function with its one-minute trigger, defined in

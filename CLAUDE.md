@@ -64,6 +64,7 @@ tested modules free of `next/*` imports and JSX.
 - `docs/runbooks/` and `docs/launch-checklist.md` — how it is run and what "ready" means
 - `src/lib/social` — publishing (`publish.ts`), inbox + triage (`inbox.ts`), analytics (`metrics.ts`), hourly sync, encrypted channel credentials; `providers/` holds one adapter per platform behind `SocialProvider`; `SOCIAL_MODE=log` simulates everything
 - `neon.ts` — Neon branch config (AI Gateway, `assets` bucket, `ops` Function with its minute trigger, Realtime); `neon/functions/ops.ts` is the Function
+- `wrangler.jsonc`, `open-next.config.ts`, `cloudflare/worker.ts` — Cloudflare Workers build and the cron tick; `src/lib/prisma.ts` picks the Postgres driver per host (`DATABASE_DRIVER`)
 - `src/lib/neon.ts` — which Neon services are configured; `src/lib/storage.ts` — tenant-prefixed object storage; `src/lib/realtime` — sealed live queries
 
 ## Conventions

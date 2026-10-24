@@ -6,6 +6,7 @@ what is this, how do I check it is healthy, what do I do when it is not.
 | Runbook | When to open it |
 |---------|-----------------|
 | [deploy.md](deploy.md) | Shipping a build, running migrations, rolling back |
+| [cloudflare.md](cloudflare.md) | Running the app on Cloudflare Workers: what the spike proved, secrets, Hyperdrive, the cron |
 | [scheduler.md](scheduler.md) | The minute tick, SLA detection and scheduled sends |
 | [incidents.md](incidents.md) | Something is wrong for a client right now |
 | [onboarding-a-tenant.md](onboarding-a-tenant.md) | Setting up a new client workspace end to end |

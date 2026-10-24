@@ -18,3 +18,9 @@ coverage/
 
 # Real client workspace definitions used by `npm run tenant:provision`: data, never source.
 /tenants/
+
+# Cloudflare Workers build output and local secrets
+/.open-next/
+/.wrangler/
+.dev.vars
+cloudflare-env.d.ts

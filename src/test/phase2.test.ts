@@ -98,9 +98,12 @@ describe("booking lifecycle and scheduled work", () => {
     // A redelivered webhook never confirms twice.
     await onBookingCreated(summit, lead, booking!.id, booking!.startsAt, booking!.endsAt);
     assert.equal((await repository.listAutomationRuns(summit.id, 50)).filter((r) => /Confirmed Jordan Lee/.test(r.summary)).length, 1, "confirmed once");
-    const due = await repository.listDueActions(new Date(booking!.startsAt!.getTime() - 23 * 3_600_000));
+    // The reminder is queued about 24 h before the booking, then moved out of quiet hours if that lands at night, so look
+    // for it anywhere before the booking starts rather than at an exact hour (the fixture's time of day is relative to now).
+    const due = await repository.listDueActions(booking!.startsAt!);
     const reminder = due.find((a) => a.action === "reminder" && a.payload.bookingId === booking!.id);
-    assert.ok(reminder, "reminder scheduled 24h before");
+    assert.ok(reminder, "reminder scheduled before the booking");
+    assert.ok(reminder!.runAt.getTime() <= booking!.startsAt!.getTime() && reminder!.runAt.getTime() >= booking!.startsAt!.getTime() - 36 * 3_600_000, "within the day before, outside quiet hours");
     await runScheduledAction(reminder!);
     assert.ok((await repository.findBookingById(summit.id, booking!.id))?.remindedAt, "reminded");
 
