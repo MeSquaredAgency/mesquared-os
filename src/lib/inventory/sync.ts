@@ -34,7 +34,8 @@ export async function loadInventoryConnection(tenantId: string): Promise<Invento
 
 /** Stores the vendor token encrypted on the tenant's PROPERTY_MANAGEMENT integration row. */
 export async function connectInventoryVendor(tenantId: string, vendor: InventoryVendor, creds: InventoryCredentials, opts: { externalAccountId?: string; label?: string | null } = {}) {
-  const externalAccountId = opts.externalAccountId ?? vendor;
+  // Integration rows are unique on (provider, externalAccountId) across the platform, so the default is per tenant.
+  const externalAccountId = opts.externalAccountId ?? `${vendor}:${tenantId}`;
   const existing = await repository.findIntegration(tenantId, "PROPERTY_MANAGEMENT");
   const row = existing ?? (await repository.upsertIntegration(tenantId, { provider: "PROPERTY_MANAGEMENT", externalAccountId, label: opts.label ?? null, status: "PENDING", settings: { vendor } }));
   await repository.upsertIntegration(tenantId, { provider: "PROPERTY_MANAGEMENT", externalAccountId, label: opts.label ?? null, status: "CONNECTED", settings: { ...(existing?.settings ?? {}), vendor }, credentialsEnc: encryptSecret(JSON.stringify(creds), row.id), lastError: null });

@@ -47,8 +47,9 @@ console.log(`Parity check against ${dataMode} repository`);
 assert.equal(dataMode, "postgres", "DATABASE_URL must be set for the parity check");
 
 const tenants = await repository.listAllTenants();
-const harbor = tenants.find((t) => t.templateKey === "real_estate");
-const summit = tenants.find((t) => t.templateKey === "health_fitness");
+// The seeded demo tenants by slug: a database that also holds real or rehearsal workspaces must not change what is checked.
+const harbor = tenants.find((t) => t.slug === "harbor-realty") ?? tenants.find((t) => t.templateKey === "real_estate");
+const summit = tenants.find((t) => t.slug === "summit-fitness") ?? tenants.find((t) => t.templateKey === "health_fitness");
 assert.ok(harbor && summit, "seeded tenants present");
 const stamp = Date.now().toString(36);
 // A per-run phone number so contact dedupe (24h window on phone/email) does not collapse runs into each other.
@@ -56,7 +57,7 @@ const phone = "+6140" + String(Date.now()).slice(-7);
 
 await step("tenant config applied from template (roles, pipelines, modules, automations, brand)", async () => {
   const cfg = await repository.getTenantConfig(harbor!.id);
-  assert.deepEqual(cfg.roles.map((r) => r.name).sort(), ["Director", "External accountant", "Property Manager", "Region Manager"]);
+  assert.deepEqual(cfg.roles.map((r) => r.name).sort(), ["Director", "External accountant", "Property Manager", "Region Manager", "Team member"]);
   assert.ok(cfg.pipelines.find((p) => p.isDefault)?.stages.length === 6);
   assert.ok(cfg.pipelines.flatMap((p) => p.stages).some((s) => s.quietAfterDays === 4));
   assert.ok(cfg.automations.find((a) => a.typeKey === "sla_watch")?.enabled);
