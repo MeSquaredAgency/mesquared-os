@@ -13,7 +13,7 @@
  *   "templateKey": "real_estate", "name": "...", "slug": "...",
  *   "region": "AU", "timezone": "Australia/Adelaide", "locale": "en-AU", "currency": "AUD",
  *   "fromName": "...", "replyTo": "...", "primaryColor": "#rrggbb", "serviceAreas": ["..."],
- *   "requiredFooter": "...", "signAsAssignee": true,
+ *   "requiredFooter": "...", "signAsAssignee": true, "smsNumber": "+614...",
  *   "people": [{ "email": "...", "name": "...", "role": "owner" }],
  *   "operators": ["ops@..."],
  *   "admins": [{ "email": "ops@...", "name": "..." }]
@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { hashPassword } from "@/lib/auth/password";
 import { dataMode, repository } from "@/lib/data";
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
+import { normalizePhone } from "@/lib/intake/schema";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import { inviteMember, provisionTenant, slugify } from "@/lib/tenants/provision";
 
@@ -41,6 +42,7 @@ interface Definition {
   serviceAreas?: string[];
   requiredFooter?: string;
   signAsAssignee?: boolean;
+  smsNumber?: string;
   people?: { email: string; name: string; role: string }[];
   operators?: string[];
   admins?: { email: string; name: string }[];
@@ -87,6 +89,15 @@ tenant =
     qualificationRules: { ...tenant.qualificationRules, ...(def.serviceAreas?.length ? { serviceAreas: def.serviceAreas } : {}) },
   })) ?? tenant;
 if (def.requiredFooter) await repository.updateBrandProfile(tenant.id, { complianceBlock: { requiredFooter: def.requiredFooter } });
+
+// 2b. The workspace's SMS number: texts go out from it and replies to it are
+// routed back to this workspace (Twilio credentials stay in the deployment).
+if (def.smsNumber) {
+  const number = normalizePhone(def.smsNumber);
+  assert.ok(number && number.startsWith("+"), `smsNumber must be in E.164 form (+614...), got ${def.smsNumber}`);
+  await repository.upsertIntegration(tenant.id, { provider: "TWILIO", externalAccountId: number, label: "SMS", status: "CONNECTED", settings: { fromNumber: number } });
+  console.log(`  sms      ${number} attached`);
+}
 
 // 3. People by template role key.
 const config = await repository.getTenantConfig(tenant.id);
