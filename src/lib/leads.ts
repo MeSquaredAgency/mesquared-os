@@ -2,7 +2,7 @@ import type { LeadRecord, TicketType } from "@/lib/types";
 
 /** Name to show for a lead, falling back to whatever contact detail we have. */
 export function leadDisplayName(lead: Pick<LeadRecord, "firstName" | "lastName" | "email" | "phone">): string {
-  return [lead.firstName, lead.lastName].filter(Boolean).join(" ") || lead.email || lead.phone || "Unknown";
+  return [lead.firstName, lead.lastName].filter(Boolean).join(" ") || lead.email || lead.phone || "Someone (no name given)";
 }
 
 export function ticketVariant(type: TicketType | null): "green" | "red" | "muted" {

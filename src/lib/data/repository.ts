@@ -126,12 +126,16 @@ export interface NewContentAsset {
   needsClientSignoff: boolean;
   tags: string[];
   scheduledFor: Date | null;
+  /** `neon-storage://assets/<key>` for files we hold (see src/lib/storage.ts), or an external link. */
+  fileUrl?: string | null;
 }
 
 export type MessageChannel = "SMS" | "EMAIL" | "WHATSAPP" | "SOCIAL_DM" | "SOCIAL_COMMENT" | "PHONE";
 
 export interface NewMessage {
   contactId: string | null;
+  /** Destination address or number for outbound messages (used for per-recipient caps). */
+  to?: string | null;
   channel: MessageChannel;
   direction: "INBOUND" | "OUTBOUND";
   sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF";
@@ -191,7 +195,7 @@ export interface BookingPatch {
   startsAt?: Date | null;
   endsAt?: Date | null;
   externalId?: string | null;
-  confirmedAt?: Date;
+  confirmedAt?: Date | null;
   remindedAt?: Date;
   followedUpAt?: Date;
 }
@@ -263,6 +267,8 @@ export interface Repository {
   markLeadResponded(tenantId: string, leadId: string, at: Date): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
   markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
+  /** After a cancellation: back to BOOKING_SENT with a fresh booking window so "never booked" can fire again. */
+  unbookLead(tenantId: string, leadId: string, bookBy: Date): Promise<void>;
   assignLead(tenantId: string, leadId: string, assigneeId: string | null): Promise<void>;
   createBooking(tenantId: string, data: NewBooking): Promise<{ id: string; bookingUrl: string }>;
   recordIntakeEvent(tenantId: string, data: IntakeEventInput): Promise<void>;
@@ -284,13 +290,19 @@ export interface Repository {
 
   // --- scheduled actions, requests, reviews, form sessions, conversations, contacts --------
   scheduleAction(tenantId: string, data: NewScheduledAction): Promise<{ record: ScheduledActionRecord; created: boolean }>;
-  /** Pending actions across all tenants whose time has come. */
+  /** Pending actions across all tenants whose time has come (read-only; the tick claims them with claimAction). */
   listDueActions(now: Date, limit?: number): Promise<ScheduledActionRecord[]>;
-  completeAction(actionId: string, status: Exclude<ScheduledActionStatus, "PENDING">, error?: string | null): Promise<void>;
+  /** Atomically moves a PENDING (or stale RUNNING) action to RUNNING. False when another worker got it first. */
+  claimAction(actionId: string, now: Date, leaseMs: number): Promise<boolean>;
+  /** DONE/CANCELLED/FAILED finish the action; PENDING re-queues it at `retryAt`. */
+  completeAction(actionId: string, status: Exclude<ScheduledActionStatus, "RUNNING">, error?: string | null, retryAt?: Date): Promise<void>;
+  /** Outbound automated messages this tenant sent since `since`, optionally to one destination. */
+  countOutboundMessages(tenantId: string, opts: { since: Date; to?: string }): Promise<number>;
   cancelActions(tenantId: string, dedupePrefix: string): Promise<number>;
 
   createInformationRequest(tenantId: string, data: NewInformationRequest): Promise<InformationRequestRecord>;
   listInformationRequests(tenantId: string, opts?: { status?: InformationRequestStatus[]; limit?: number }): Promise<InformationRequestRecord[]>;
+  findInformationRequestById(tenantId: string, requestId: string): Promise<InformationRequestRecord | null>;
   updateInformationRequest(tenantId: string, requestId: string, patch: { status?: InformationRequestStatus; chaseCount?: number; lastChasedAt?: Date; receivedAt?: Date }): Promise<InformationRequestRecord | null>;
 
   upsertReview(tenantId: string, data: NewReview): Promise<{ record: ReviewRecord; created: boolean }>;
@@ -315,12 +327,22 @@ export interface Repository {
   touchLead(tenantId: string, leadId: string, at: Date): Promise<void>;
 
   // --- missed opportunities, automation, exceptions, events ----------------------------
-  /** Creates the item unless an open one with the same dedupeKey exists. */
+  /**
+   * Creates the item unless an open one with the same dedupeKey exists. An item
+   * resolved within the last `snoozeDays` (default 7) is not re-raised either, so
+   * closing something an operator has looked at sticks; older ones reopen.
+   */
   upsertMissedOpportunity(tenantId: string, data: NewMissedOpportunity): Promise<{ record: MissedOpportunityRecord; created: boolean }>;
   listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number }): Promise<MissedOpportunityRecord[]>;
+  /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
   resolveMissedOpportunity(tenantId: string, id: string, status: MissedOpportunityStatus, recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
+  /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
+  resolveMissedOpportunityByKey(tenantId: string, dedupeKey: string, status: "RECOVERED" | "EXPIRED", recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   recordAutomationRun(tenantId: string, data: NewAutomationRun): Promise<AutomationRunRecord>;
+  /** Corrects a run after the fact (a send that failed after the run was logged). */
+  updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number): Promise<AutomationRunRecord[]>;
+  /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
   listExceptions(tenantIds: string[], opts?: { status?: ExceptionStatus[]; limit?: number }): Promise<ExceptionRecord[]>;
@@ -331,6 +353,7 @@ export interface Repository {
   // --- content and money -----------------------------------------------------------
   getWorkbench(tenantId: string): Promise<Workbench>;
   createContentAssets(tenantId: string, items: NewContentAsset[]): Promise<ContentAssetRecord[]>;
+  findContentAssetById(tenantId: string, assetId: string): Promise<ContentAssetRecord | null>;
   updateContentAssetStatus(tenantId: string, assetId: string, status: ContentStatus, note?: string | null): Promise<ContentAssetRecord | null>;
   listRecentTransactions(tenantId: string, limit?: number): Promise<TransactionRecord[]>;
 

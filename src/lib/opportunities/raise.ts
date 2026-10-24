@@ -40,6 +40,7 @@ export async function raiseMissedOpportunity(tenant: TenantSummary, input: Raise
   const rule = tenant.escalationRules.find((r) => r.when === input.type || r.when === "*");
   const escalatedToUserId = rule?.notifyUserId ?? null;
 
+  const escalatee = escalatedToUserId ? await repository.findUserById(escalatedToUserId) : null;
   await repository.resolveMissedOpportunity(tenant.id, record.id, "ESCALATED");
   const exception = await repository.createException(tenant.id, {
     reason: input.summary,
@@ -53,15 +54,15 @@ export async function raiseMissedOpportunity(tenant: TenantSummary, input: Raise
   await repository.recordAutomationRun(tenant.id, {
     typeKey: "sla_watch",
     outcome: "ESCALATED",
-    summary: `${input.summary} ${escalatedToUserId ? "Escalated to your team." : "Raised for an operator."}`,
+    summary: `${input.summary} ${escalatee ? `We've passed this to ${escalatee.name ?? "your team"}.` : "We've flagged this for a person to pick up."}`,
     leadId: input.leadId,
     contactId: input.contactId,
     missedOpportunityId: record.id,
   });
 
-  if (escalatedToUserId) {
-    const user = await repository.findUserById(escalatedToUserId);
-    if (user) {
+  if (escalatee) {
+    const user = escalatee;
+    {
       const mail = templates.escalationEmail({ tenant, summary: input.summary, suggestedAction: input.suggestedAction, portalUrl: `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/opportunities` });
       await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: user.email, body: mail.body, subject: mail.subject, transactional: true });
     }

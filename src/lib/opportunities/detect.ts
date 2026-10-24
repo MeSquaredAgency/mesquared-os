@@ -1,5 +1,7 @@
 import { repository } from "@/lib/data";
+import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { leadDisplayName } from "@/lib/leads";
+import { quoteUntrusted, safeName } from "@/lib/messaging/templates";
 import type { MissedOpportunityType, TenantSummary } from "@/lib/types";
 import { raiseMissedOpportunity } from "./raise";
 
@@ -8,6 +10,13 @@ export { opportunityValue } from "./raise";
 export interface DetectionResult {
   tenantId: string;
   detected: { type: MissedOpportunityType; subjectId: string }[];
+}
+
+function agoPhrase(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return "less than an hour ago";
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.floor(hours / 24)} days ago`;
 }
 
 function setting<T>(settings: Record<string, unknown>, key: string, fallback: T): T {
@@ -39,7 +48,7 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
       contactId: lead.contactId,
       subjectId: lead.id,
       summary: `${leadDisplayName(lead)} has waited more than ${tenant.sla.firstResponseMinutes} minutes without a reply.`,
-      suggestedAction: "Reply now, then check why the automated acknowledgement didn't go out.",
+      suggestedAction: "Please call them now; the automatic reply didn't reach them.",
       fallbackValueCents: lead.valueCents,
     });
     if (r) note("UNANSWERED_ENQUIRY", lead.id);
@@ -66,7 +75,7 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
       leadId: lead.id,
       contactId: lead.contactId,
       subjectId: b.id,
-      summary: `${leadDisplayName(lead)} didn't show for their appointment${b.startsAt ? ` on ${b.startsAt.toLocaleDateString("en-AU", { timeZone: tenant.timezone, day: "numeric", month: "short" })}` : ""}.`,
+      summary: `${leadDisplayName(lead)} didn't show for their appointment${b.startsAt ? ` on ${b.startsAt.toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, day: "numeric", month: "short" })}` : ""}.`,
       suggestedAction: "Offer a new time. Most no-shows rebook if asked the same day.",
       fallbackValueCents: lead.valueCents,
     });
@@ -99,7 +108,7 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
       leadId: null,
       contactId: c.contactId,
       subjectId: c.id,
-      summary: `${who} sent a ${c.channel === "SOCIAL_DM" ? "message" : "comment"} ${Math.round((now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime())) / 3_600_000)} hours ago and hasn't had a reply.`,
+      summary: `${who} sent a ${c.channel === "SOCIAL_DM" ? "message" : "comment"} ${agoPhrase(now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime()))} and hasn't had a reply.`,
       suggestedAction: "Reply from the inbox. Public comments are seen by everyone who visits the page.",
     });
     if (r) note(type, c.id);
@@ -132,7 +141,7 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
       contactId: contact.id,
       subjectId: contact.id,
       summary: `${leadDisplayName(contact)} hasn't been in touch for over ${inactiveDays} days.`,
-      suggestedAction: reactivation?.enabled ? "A reactivation message has been sent; follow up personally if there's no reply in a week." : "Switch on the reactivation automation, or reach out personally.",
+      suggestedAction: reactivation?.enabled ? "If they've agreed to hear from you, a win-back message goes out automatically; follow up personally if there's no reply in a week." : "Reach out personally, or ask Me² to turn on win-back messages.",
       confidence: 0.6,
     });
     if (r) note("LAPSED_CUSTOMER", contact.id);
@@ -142,15 +151,21 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
   const idleBefore = new Date(now.getTime() - 30 * 60_000);
   for (const f of await repository.listAbandonedFormSessions(tenant.id, idleBefore)) {
     await repository.updateFormSession(tenant.id, f.sessionKey, { flaggedAt: now });
-    const email = typeof f.partial.email === "string" ? f.partial.email : null;
-    const phone = typeof f.partial.phone === "string" ? f.partial.phone : null;
-    const contact = await repository.upsertContact(tenant.id, { firstName: typeof f.partial.name === "string" ? f.partial.name.split(" ")[0] : null, lastName: null, email, phone, company: null });
+    const rawEmail = typeof f.partial.email === "string" ? f.partial.email.trim().toLowerCase() : null;
+    const email = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmail) ? rawEmail : null;
+    const phone = toE164(normalizePhone(typeof f.partial.phone === "string" ? f.partial.phone : null), tenant.region);
+    if (!email && !phone) continue;
+    const contact = await repository.upsertContact(tenant.id, { firstName: safeName(typeof f.partial.name === "string" ? f.partial.name : null), lastName: null, email, phone, company: null });
+    let site: string | null = null;
+    try {
+      site = f.pageUrl ? new URL(f.pageUrl).host : null;
+    } catch {}
     const r = await raiseMissedOpportunity(tenant, {
       type: "ABANDONED_FORM",
       leadId: null,
       contactId: contact.id,
       subjectId: f.id,
-      summary: `${leadDisplayName(contact)} started the ${f.formName ?? "contact"} form${f.pageUrl ? ` on ${f.pageUrl}` : ""} and didn't finish.`,
+      summary: `${leadDisplayName(contact)} started the ${quoteUntrusted(f.formName ?? "contact", 40)} form${site ? ` on ${site}` : ""} and didn't finish.`,
       suggestedAction: "A gentle 'can we help?' message recovers a good share of these.",
       confidence: 0.4,
     });

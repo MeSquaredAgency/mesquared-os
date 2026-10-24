@@ -36,3 +36,13 @@ export function takeIntakeToken(key: string, now = Date.now()): { allowed: boole
 export function _resetIntakeLimiter() {
   buckets.clear();
 }
+
+/** Per-IP and per-tenant buckets together: a public key can no longer be used to exhaust a tenant's bucket from one machine. */
+export function takeIntakeTokens(keys: string[], now = Date.now()): { allowed: boolean; retryAfterSeconds: number } {
+  let worst = { allowed: true, retryAfterSeconds: 0 };
+  for (const key of keys) {
+    const r = takeIntakeToken(key, now);
+    if (!r.allowed) worst = { allowed: false, retryAfterSeconds: Math.max(worst.retryAfterSeconds, r.retryAfterSeconds) };
+  }
+  return worst;
+}

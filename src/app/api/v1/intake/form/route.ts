@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { repository } from "@/lib/data";
 import { processIntake } from "@/lib/intake/process";
-import { takeIntakeToken } from "@/lib/intake/rate-limit";
+import { clientIpFromHeaders } from "@/lib/auth/client-ip";
+import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { intakeSchema } from "@/lib/intake/schema";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 
@@ -31,15 +32,28 @@ export async function POST(req: NextRequest) {
   const auth = await resolveTenantFromRequest(authReq);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const limit = takeIntakeToken(auth.tenant.id);
+  const ip = clientIpFromHeaders((n) => req.headers.get(n));
+  const limit = takeIntakeTokens([auth.tenant.id, `ip:${ip}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
 
+  // Redirect only back to the site the form lives on (the page that posted, or the tenant's connected website).
   const redirect = get("_redirect");
+  const website = await repository.findIntegration(auth.tenant.id, "WEBSITE");
+  const allowedHosts = new Set<string>();
+  try {
+    const referer = req.headers.get("referer");
+    if (referer) allowedHosts.add(new URL(referer).host);
+  } catch {}
+  if (typeof website?.settings.domain === "string") allowedHosts.add(website.settings.domain);
   const finish = (ok: boolean, body: Record<string, unknown>, status = 200) => {
     if (redirect && /^https?:\/\//.test(redirect)) {
-      const url = new URL(redirect);
-      url.searchParams.set("submitted", ok ? "1" : "0");
-      return NextResponse.redirect(url, 303);
+      try {
+        const url = new URL(redirect);
+        if (allowedHosts.has(url.host)) {
+          url.searchParams.set("submitted", ok ? "1" : "0");
+          return NextResponse.redirect(url, 303);
+        }
+      } catch {}
     }
     return NextResponse.json(body, { status });
   };
@@ -53,7 +67,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = intakeSchema.safeParse({
     source: get("source") ?? "WEB_FORM",
-    externalId: get("external_id"),
+    externalId: get("external_id") ? `form:${auth.apiKeyId ?? auth.tenant.id}:${get("external_id")}` : null,
     name: get("name"),
     firstName: get("first_name") ?? get("firstName"),
     lastName: get("last_name") ?? get("lastName"),

@@ -10,7 +10,7 @@ export interface OutboundMessage {
   /** Email only. */
   subject?: string;
   /** Display identity the message is sent under: the tenant's own, never Me²'s. */
-  from: { name: string; address: string };
+  from: { name: string; address: string; replyTo?: string | null };
 }
 
 export interface SendResult {
@@ -20,6 +20,8 @@ export interface SendResult {
   error: string | null;
   /** True when nothing was sent because the provider is not configured (demo/dev). */
   simulated: boolean;
+  /** True when the message was not sent now but is queued for the end of quiet hours. */
+  held?: boolean;
 }
 
 export interface MessageProvider {

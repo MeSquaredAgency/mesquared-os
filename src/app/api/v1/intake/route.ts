@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { processIntake } from "@/lib/intake/process";
-import { takeIntakeToken } from "@/lib/intake/rate-limit";
+import { clientIpFromHeaders } from "@/lib/auth/client-ip";
+import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { INTAKE_MAX_BODY_BYTES, intakeSchema } from "@/lib/intake/schema";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const limit = takeIntakeToken(auth.tenant.id);
+  const limit = takeIntakeTokens([auth.tenant.id, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many requests for this workspace. Slow down and retry." },
@@ -54,7 +55,9 @@ export async function POST(req: NextRequest) {
   const rawPayload = (raw && typeof raw === "object" ? raw : { value: raw }) as Record<string, unknown>;
 
   try {
-    const result = await processIntake(auth.tenant, parsed.data, rawPayload);
+    // Namespace caller-chosen ids so a relay cannot pre-empt a Meta or email lead's id.
+    const body = parsed.data.externalId ? { ...parsed.data, externalId: `api:${auth.apiKeyId ?? auth.tenant.id}:${parsed.data.externalId}` } : parsed.data;
+    const result = await processIntake(auth.tenant, body, rawPayload);
 
     if (result.outcome === "dry_run") {
       return NextResponse.json({ outcome: "dry_run", tenant: auth.tenant.slug, qualification: result.qualification });

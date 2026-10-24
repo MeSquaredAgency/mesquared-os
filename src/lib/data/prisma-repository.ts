@@ -139,12 +139,12 @@ const toLead = (l: Lead): LeadRecord => ({
   createdAt: l.createdAt,
 });
 
-const toMissed = (m: MissedOpportunity): MissedOpportunityRecord => ({ id: m.id, tenantId: m.tenantId, type: m.type, status: m.status, contactId: m.contactId, leadId: m.leadId, estimatedValueCents: m.estimatedValueCents, recoveredValueCents: m.recoveredValueCents, summary: m.summary, detectedAt: m.detectedAt, resolvedAt: m.resolvedAt });
+const toMissed = (m: MissedOpportunity): MissedOpportunityRecord => ({ id: m.id, tenantId: m.tenantId, type: m.type, status: m.status, dedupeKey: m.dedupeKey, contactId: m.contactId, leadId: m.leadId, estimatedValueCents: m.estimatedValueCents, recoveredValueCents: m.recoveredValueCents, summary: m.summary, detectedAt: m.detectedAt, resolvedAt: m.resolvedAt });
 const toRun = (r: AutomationRun): AutomationRunRecord => ({ id: r.id, tenantId: r.tenantId, typeKey: r.typeKey, outcome: r.outcome, summary: r.summary, leadId: r.leadId, contactId: r.contactId, missedOpportunityId: r.missedOpportunityId, createdAt: r.createdAt });
 const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, createdAt: e.createdAt });
 const toEvent = (e: DomainEvent): DomainEventRecord => ({ id: e.id, tenantId: e.tenantId, type: e.type, payload: obj(e.payload), causationId: e.causationId, occurredAt: e.occurredAt });
 const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.tenantId, contactId: t.contactId, leadId: t.leadId, provider: t.provider, providerId: t.providerId, kind: t.kind, status: t.status, amountCents: t.amountCents, currency: t.currency, note: t.note, occurredAt: t.occurredAt });
-const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, createdAt: a.createdAt });
+const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, createdAt: a.createdAt });
 const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, platform: p.platform, caption: p.caption, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, batchId: p.batchId });
 
 const OPEN_MISSED: MissedOpportunity["status"][] = ["DETECTED", "RECOVERING", "ESCALATED"];
@@ -246,16 +246,10 @@ export const prismaRepository: Repository = {
     if (data.phone) filters.push({ phone: data.phone });
     const existing = filters.length ? await db.contact.findFirst({ where: { tenantId, OR: filters } }) : null;
     if (existing) {
+      // Never attach a new email or phone from an unauthenticated channel to an existing contact.
       const updated = await db.contact.update({
         where: { id: existing.id },
-        data: {
-          lastActivityAt: new Date(),
-          firstName: existing.firstName ?? data.firstName,
-          lastName: existing.lastName ?? data.lastName,
-          email: existing.email ?? data.email,
-          phone: existing.phone ?? data.phone,
-          company: existing.company ?? data.company,
-        },
+        data: { lastActivityAt: new Date(), lapsedAt: null, firstName: existing.firstName ?? data.firstName, lastName: existing.lastName ?? data.lastName, company: existing.company ?? data.company },
       });
       return toContact(updated);
     }
@@ -369,6 +363,10 @@ export const prismaRepository: Repository = {
     return toLead(updated);
   },
 
+  async unbookLead(tenantId, leadId, bookBy) {
+    await getPrisma().lead.updateMany({ where: { id: leadId, tenantId, status: "BOOKED" }, data: { status: "BOOKING_SENT", bookedAt: null, bookBy, lastActivityAt: new Date() } });
+  },
+
   async assignLead(tenantId, leadId, assigneeId) {
     await getPrisma().lead.updateMany({ where: { id: leadId, tenantId }, data: { assigneeId } });
   },
@@ -411,6 +409,7 @@ export const prismaRepository: Repository = {
           conversationId: convo.id,
           direction: data.direction,
           sender: data.sender,
+          to: data.to ?? null,
           body: data.body,
           status: data.status,
           providerMessageId: data.providerMessageId ?? null,
@@ -419,7 +418,7 @@ export const prismaRepository: Repository = {
         },
       }),
       db.conversation.update({ where: { id: convo.id }, data: { lastMessageAt: new Date(), awaitingReply: data.direction === "INBOUND" } }),
-      ...(data.contactId ? [db.contact.updateMany({ where: { id: data.contactId, tenantId }, data: { lastActivityAt: new Date() } })] : []),
+      ...(data.contactId && data.direction === "INBOUND" ? [db.contact.updateMany({ where: { id: data.contactId, tenantId }, data: { lastActivityAt: new Date(), lapsedAt: null } })] : []),
     ]);
     return { conversationId: convo.id, messageId: message.id };
   },
@@ -483,12 +482,26 @@ export const prismaRepository: Repository = {
   },
 
   async listDueActions(now, limit = 100) {
-    const rows = await getPrisma().scheduledAction.findMany({ where: { status: "PENDING", runAt: { lte: now } }, orderBy: { runAt: "asc" }, take: limit });
+    const stale = new Date(now.getTime() - 10 * 60_000);
+    const rows = await getPrisma().scheduledAction.findMany({ where: { runAt: { lte: now }, OR: [{ status: "PENDING" }, { status: "RUNNING", lockedAt: { lt: stale } }] }, orderBy: { runAt: "asc" }, take: limit });
     return rows.map(toAction);
   },
 
-  async completeAction(actionId, status, error = null) {
-    await getPrisma().scheduledAction.update({ where: { id: actionId }, data: { status, lastError: error, ranAt: new Date(), attempts: { increment: 1 } } });
+  async claimAction(actionId, now, leaseMs) {
+    const stale = new Date(now.getTime() - leaseMs);
+    const { count } = await getPrisma().scheduledAction.updateMany({
+      where: { id: actionId, OR: [{ status: "PENDING" }, { status: "RUNNING", lockedAt: { lt: stale } }] },
+      data: { status: "RUNNING", lockedAt: now },
+    });
+    return count === 1;
+  },
+
+  async completeAction(actionId, status, error = null, retryAt) {
+    await getPrisma().scheduledAction.update({ where: { id: actionId }, data: { status, lastError: error, ranAt: new Date(), lockedAt: null, attempts: { increment: 1 }, ...(status === "PENDING" && retryAt ? { runAt: retryAt } : {}) } });
+  },
+
+  async countOutboundMessages(tenantId, opts) {
+    return getPrisma().message.count({ where: { tenantId, direction: "OUTBOUND", status: { not: "FAILED" }, createdAt: { gte: opts.since }, ...(opts.to ? { to: opts.to } : {}) } });
   },
 
   async cancelActions(tenantId, dedupePrefix) {
@@ -501,6 +514,11 @@ export const prismaRepository: Repository = {
     await assertContactInTenant(tenantId, data.contactId);
     const row = await getPrisma().informationRequest.create({ data: { tenantId, ...data } });
     return toRequest(row);
+  },
+
+  async findInformationRequestById(tenantId, requestId) {
+    const row = await getPrisma().informationRequest.findFirst({ where: { id: requestId, tenantId } });
+    return row ? toRequest(row) : null;
   },
 
   async listInformationRequests(tenantId, opts = {}) {
@@ -574,6 +592,8 @@ export const prismaRepository: Repository = {
         lapsedAt: null,
         lastActivityAt: { lt: inactiveBefore },
         OR: [{ leads: { some: { status: "WON" } } }, { transactions: { some: { status: "COMPLETED" } } }, { tags: { has: "customer" } }],
+        // Someone who paid or attended inside the window is a current customer, whatever the CRM says.
+        NOT: [{ transactions: { some: { status: "COMPLETED", occurredAt: { gte: inactiveBefore } } } }, { leads: { some: { bookings: { some: { status: "COMPLETED", startsAt: { gte: inactiveBefore } } } } } }],
       },
       orderBy: { lastActivityAt: "asc" },
       take: limit,
@@ -615,7 +635,9 @@ export const prismaRepository: Repository = {
     const existing = await db.missedOpportunity.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
     if (existing && OPEN_MISSED.includes(existing.status)) return { record: toMissed(existing), created: false };
     if (existing) {
-      // A previously resolved item for the same subject: reopen rather than violate the unique key.
+      // Recently closed by a person: leave it closed.
+      if ((existing.resolvedAt ?? existing.detectedAt).getTime() > Date.now() - 7 * 86_400_000) return { record: toMissed(existing), created: false };
+      // Older: reopen rather than violate the unique key.
       const reopened = await db.missedOpportunity.update({ where: { id: existing.id }, data: { status: "DETECTED", summary: data.summary, estimatedValueCents: data.estimatedValueCents, detectedAt: new Date(), resolvedAt: null } });
       return { record: toMissed(reopened), created: true };
     }
@@ -636,8 +658,16 @@ export const prismaRepository: Repository = {
       data: { status, resolvedAt: status === "RECOVERED" || status === "EXPIRED" ? new Date() : null, ...(recoveredValueCents !== undefined ? { recoveredValueCents } : {}) },
     });
     if (count === 0) return null;
+    if (status === "RECOVERED" || status === "EXPIRED") {
+      await getPrisma().exceptionItem.updateMany({ where: { tenantId, missedOpportunityId: moId, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { status: "RESOLVED", resolution: status === "RECOVERED" ? "Recovered" : "No longer relevant", resolvedAt: new Date() } });
+    }
     const row = await getPrisma().missedOpportunity.findUnique({ where: { id: moId } });
     return row ? toMissed(row) : null;
+  },
+
+  async resolveMissedOpportunityByKey(tenantId, dedupeKey, status, recoveredValueCents) {
+    const row = await getPrisma().missedOpportunity.findFirst({ where: { tenantId, dedupeKey, status: { in: OPEN_MISSED } } });
+    return row ? this.resolveMissedOpportunity(tenantId, row.id, status, recoveredValueCents ?? (status === "RECOVERED" ? row.estimatedValueCents : 0)) : null;
   },
 
   async recordAutomationRun(tenantId, data) {
@@ -649,6 +679,10 @@ export const prismaRepository: Repository = {
     return toRun(row);
   },
 
+  async updateAutomationRun(tenantId, runId, patch) {
+    await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
+  },
+
   async listAutomationRuns(tenantId, limit = 50) {
     const rows = await getPrisma().automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: limit });
     return rows.map(toRun);
@@ -657,6 +691,13 @@ export const prismaRepository: Repository = {
   async createException(tenantId, data) {
     await assertLeadInTenant(tenantId, data.leadId);
     await assertContactInTenant(tenantId, data.contactId);
+    if (data.missedOpportunityId) {
+      const prior = await getPrisma().exceptionItem.findUnique({ where: { missedOpportunityId: data.missedOpportunityId } });
+      if (prior && prior.tenantId === tenantId) {
+        const reopened = await getPrisma().exceptionItem.update({ where: { id: prior.id }, data: { reason: data.reason, suggestedAction: data.suggestedAction ?? null, confidence: data.confidence ?? null, status: "OPEN", resolvedAt: null, resolution: null, escalatedToUserId: data.escalatedToUserId ?? prior.escalatedToUserId, createdAt: new Date() } });
+        return toException(reopened);
+      }
+    }
     const row = await getPrisma().exceptionItem.create({
       data: { tenantId, reason: data.reason, suggestedAction: data.suggestedAction ?? null, confidence: data.confidence ?? null, contactId: data.contactId ?? null, leadId: data.leadId ?? null, missedOpportunityId: data.missedOpportunityId ?? null, escalatedToUserId: data.escalatedToUserId ?? null },
     });
@@ -707,12 +748,18 @@ export const prismaRepository: Repository = {
             targetPlatform: item.targetPlatform,
             status: item.status,
             needsClientSignoff: item.needsClientSignoff,
+            fileUrl: item.fileUrl ?? null,
             generation: json({ tags: item.tags, scheduledFor: item.scheduledFor?.toISOString() ?? null }),
           },
         }),
       ),
     );
     return rows.map(toAsset);
+  },
+
+  async findContentAssetById(tenantId, assetId) {
+    const row = await getPrisma().contentAsset.findFirst({ where: { id: assetId, tenantId } });
+    return row ? toAsset(row) : null;
   },
 
   async updateContentAssetStatus(tenantId, assetId, status, note) {

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
     try {
       const integration = await repository.findIntegration(tenant.id, "META");
-      const token = integration?.credentialsEnc ? decryptSecret(integration.credentialsEnc) : process.env.META_PAGE_ACCESS_TOKEN;
+      const token = integration?.credentialsEnc ? decryptSecret(integration.credentialsEnc, integration.id) : process.env.META_PAGE_ACCESS_TOKEN;
       if (!token) {
         results.push({ leadgenId: ev.leadgenId, outcome: "no_token" });
         continue;

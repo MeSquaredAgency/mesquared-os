@@ -6,6 +6,29 @@ import type { TenantSummary } from "@/lib/types";
  * Tenants can override wording later through MessageTemplate rows.
  */
 
+/**
+ * A first name safe to put in an outbound message: letters, spaces, hyphens
+ * and apostrophes only, short, title-cased. Anything else (URLs, "verify your
+ * account", 500-character strings) comes back as null and the message says
+ * "Hi," instead. This is what stops a public form turning tenant SMS into
+ * phishing.
+ */
+export function safeName(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const words = value.trim().split(/\s+/);
+  if (words.length > 3) return null; // a sentence, not a name
+  const trimmed = words[0] ?? "";
+  if (!/^[\p{L}][\p{L}'’-]{0,29}$/u.test(trimmed)) return null;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+/** Only a topic the tenant itself lists as a service may be echoed back in a message. */
+export function safeTopic(value: string | null | undefined, allowed: string[] | undefined): string | null {
+  if (!value || !allowed?.length) return null;
+  const v = value.trim().toLowerCase();
+  return allowed.find((a) => a.toLowerCase() === v) ?? null;
+}
+
 export interface AcknowledgementInput {
   tenant: TenantSummary;
   firstName: string | null;
@@ -15,9 +38,10 @@ export interface AcknowledgementInput {
 }
 
 export function acknowledgementSms({ tenant, firstName, bookingUrl, topic }: AcknowledgementInput): string {
-  const name = firstName ? `Hi ${firstName}, ` : "Hi, ";
+  const safe = safeName(firstName);
+  const name = safe ? `Hi ${safe}, ` : "Hi, ";
   const about = topic ? ` about ${topic}` : "";
-  return `${name}thanks for getting in touch with ${tenant.name}${about}. Pick a time that suits you here: ${bookingUrl} — or just reply to this message and a person will call you. (Automated reply from ${tenant.name}.)`;
+  return `${name}thanks for contacting ${tenant.name}${about}. Book a time here: ${bookingUrl} or reply and a person will get back to you during business hours. This is an automated reply from ${tenant.name}.`;
 }
 
 export function acknowledgementEmail(input: AcknowledgementInput): { subject: string; body: string } {
@@ -26,7 +50,7 @@ export function acknowledgementEmail(input: AcknowledgementInput): { subject: st
   return {
     subject: `Thanks for contacting ${tenant.name}`,
     body: [
-      firstName ? `Hi ${firstName},` : "Hi,",
+      safeName(firstName) ? `Hi ${safeName(firstName)},` : "Hi,",
       "",
       `Thank you for getting in touch with ${tenant.name}${about}. We've received your message and someone will be in contact soon.`,
       "",
@@ -42,22 +66,32 @@ export function acknowledgementEmail(input: AcknowledgementInput): { subject: st
   };
 }
 
-export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string; summary: string; score: number; reason: string; phone: string | null; email: string | null; portalUrl: string }): { subject: string; body: string } {
-  const { tenant, leadName, summary, score, reason, phone, email, portalUrl } = input;
+/** Text written by a stranger, shown to staff: URLs removed, length capped, so an alert can't carry a phishing link. */
+export function quoteUntrusted(text: string, max = 400): string {
+  return text.replace(/https?:\/\/\S+|www\.\S+/gi, "[link removed]").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** Staff-facing sign-off: the client's own assistant, run by Me²; never "workspace" or "operator". */
+const staffSignoff = (tenant: TenantSummary) => `— ${tenant.name} assistant, run by Me²`;
+
+export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string; summary: string; score: number; reason: string; phone: string | null; email: string | null; portalUrl: string; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" }): { subject: string; body: string } {
+  const { tenant, leadName, summary, reason, phone, email, portalUrl } = input;
+  const ackLine = { SENT: "They've been sent a booking link automatically.", HELD: "Their booking link is queued for the morning (quiet hours).", SKIPPED: "No automatic reply went out (messaging isn't connected yet), so please reach them yourself.", FAILED: "The automatic reply couldn't be sent, so please call them.", NONE: "Automatic replies are off, so please reach them yourself." }[input.acknowledged];
   return {
-    subject: `New lead for ${tenant.name}: ${leadName}`,
+    subject: `New lead for ${tenant.name}: ${quoteUntrusted(leadName, 60)}`,
     body: [
-      `${leadName} just got in touch with ${tenant.name}.`,
+      `${quoteUntrusted(leadName, 60)} just got in touch with ${tenant.name}.`,
       "",
-      `"${summary}"`,
+      "They wrote (quoted as received):",
+      `"${quoteUntrusted(summary)}"`,
       "",
-      `Why it matters: ${reason} (intent ${score}/100)`,
+      `Why: ${reason}`,
       phone ? `Phone: ${phone}` : null,
       email ? `Email: ${email}` : null,
       "",
-      `They've been sent a booking link. See the lead: ${portalUrl}`,
+      `${ackLine} See the lead: ${portalUrl}`,
       "",
-      "— MeSquared OS, on behalf of your workspace",
+      staffSignoff(tenant),
     ]
       .filter((l) => l !== null)
       .join("\n"),
@@ -70,50 +104,74 @@ interface Base {
   firstName: string | null;
   channel: Channel;
 }
-const hi = (firstName: string | null) => (firstName ? `Hi ${firstName},` : "Hi,");
+const hi = (firstName: string | null) => {
+  const safe = safeName(firstName);
+  return safe ? `Hi ${safe},` : "Hi,";
+};
 const signoff = (tenant: TenantSummary) => tenant.branding.fromName ?? tenant.name;
-const auto = (tenant: TenantSummary) => `(Automated message from ${tenant.name}.)`;
+const auto = (tenant: TenantSummary) => `This is an automated message from ${tenant.name}.`;
 
 function pack(channel: Channel, subject: string, lines: string[], tenant: TenantSummary): { subject?: string; body: string } {
   if (channel === "EMAIL") return { subject, body: [...lines, "", "Kind regards,", signoff(tenant), "", `This is an automated message from ${tenant.name}.`].join("\n") };
   return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant)}` };
 }
 
-export function bookingConfirmation({ tenant, firstName, when, channel }: Base & { when: string | null }) {
-  return pack(channel, `Your appointment with ${tenant.name} is confirmed`, [hi(firstName), when ? `your appointment with ${tenant.name} is confirmed for ${when}.` : `your appointment with ${tenant.name} is confirmed.`, "If you need to change it, just reply to this message."], tenant);
+/** "on Wednesday 4 November at 10:00 am" in the tenant's locale and timezone. */
+export function whenPhrase(tenant: TenantSummary, at: Date | null): string | null {
+  if (!at) return null;
+  const date = at.toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, weekday: "long", day: "numeric", month: "long" });
+  const time = at.toLocaleTimeString(tenant.locale, { timeZone: tenant.timezone, hour: "numeric", minute: "2-digit" });
+  return `on ${date} at ${time}`;
+}
+
+export function bookingConfirmation({ tenant, firstName, when, channel, rescheduled = false }: Base & { when: string | null; rescheduled?: boolean }) {
+  const verb = rescheduled ? "has been moved to" : "is confirmed for";
+  return pack(channel, rescheduled ? `Your appointment with ${tenant.name} has moved` : `Your appointment with ${tenant.name} is confirmed`, [hi(firstName), when ? `your appointment with ${tenant.name} ${verb} ${when.replace(/^on /, "")}.` : `your appointment with ${tenant.name} is confirmed.`, "If you need to change it, just reply to this message."], tenant);
+}
+
+export function bookingCancelled({ tenant, firstName, bookingUrl, channel }: Base & { bookingUrl: string }) {
+  return pack(channel, `Your appointment with ${tenant.name} has been cancelled`, [hi(firstName), `your appointment with ${tenant.name} has been cancelled. If you'd like another time, pick one here: ${bookingUrl}`, "Or reply and a person will get back to you during business hours."], tenant);
 }
 
 export function bookingReminder({ tenant, firstName, when, channel }: Base & { when: string | null }) {
-  return pack(channel, `A reminder from ${tenant.name}`, [hi(firstName), when ? `a quick reminder about your appointment ${when} with ${tenant.name}.` : `a quick reminder about your upcoming appointment with ${tenant.name}.`, "Reply if you need to change the time."], tenant);
+  return pack(channel, `A reminder from ${tenant.name}`, [hi(firstName), when ? `a quick reminder about your appointment with ${tenant.name} ${when}.` : `a quick reminder about your upcoming appointment with ${tenant.name}.`, "Reply if you need to change the time."], tenant);
 }
 
-export function bookingFollowUp({ tenant, firstName, channel }: Base) {
+/** After an attended appointment; `uncertain` when nobody confirmed they came, so the wording assumes nothing. */
+export function bookingFollowUp({ tenant, firstName, channel, uncertain = false }: Base & { uncertain?: boolean }) {
+  if (uncertain) return pack(channel, `Following up from ${tenant.name}`, [hi(firstName), `thanks for booking time with ${tenant.name} this week. If anything is unclear or you'd like to talk it through, reply here and a person will come back to you.`], tenant);
   return pack(channel, `Thanks for meeting with ${tenant.name}`, [hi(firstName), `thank you for your time with ${tenant.name}. If you have any questions about what we discussed, just reply and a person will get back to you.`], tenant);
 }
 
 export function reviewRequest({ tenant, firstName, reviewUrl, channel }: Base & { reviewUrl: string }) {
-  return pack(channel, `How did we do?`, [hi(firstName), `thanks again for choosing ${tenant.name}. If you have a moment, a short review helps other people find us: ${reviewUrl}`], tenant);
+  return pack(channel, `How did we do?`, [hi(firstName), `thanks for coming in to ${tenant.name}. If you have a minute, a short review helps other people find us: ${reviewUrl}`, "Reply STOP if you'd rather we didn't ask again."], tenant);
 }
 
 export function reactivation({ tenant, firstName, bookingUrl, channel }: Base & { bookingUrl: string }) {
-  return pack(channel, `We'd love to see you again`, [hi(firstName), `it's been a while since we've seen you at ${tenant.name}, and we'd love to help again whenever you're ready. You can pick a time here: ${bookingUrl}`, "Reply STOP if you'd rather not hear from us."], tenant);
+  return pack(channel, `A quick hello from ${tenant.name}`, [hi(firstName), `it's been a while since we last spoke at ${tenant.name}. If there's anything we can help with, we'd be glad to. Pick a time here: ${bookingUrl}`, "Reply STOP if you'd rather not hear from us."], tenant);
 }
 
 export function missedCallSms({ tenant, firstName, bookingUrl }: { tenant: TenantSummary; firstName: string | null; bookingUrl: string }) {
-  return `${hi(firstName)} sorry we missed your call to ${tenant.name}. We'll call you back shortly, or you can pick a time that suits you here: ${bookingUrl} ${auto(tenant)}`;
+  return `${hi(firstName)} sorry we missed your call to ${tenant.name}. Someone will call you back during business hours. If you'd rather pick a time now: ${bookingUrl} ${auto(tenant)}`;
 }
 
 export function chase({ tenant, firstName, what, channel }: Base & { what: string }) {
   return pack(channel, `A quick reminder from ${tenant.name}`, [hi(firstName), `when you have a moment, we're still waiting on ${what}. Reply here if you have any questions or need a hand with it.`], tenant);
 }
 
-export function generalReply({ tenant, firstName, channel, custom }: Base & { custom: string | null }) {
-  return pack(channel, `Thanks for contacting ${tenant.name}`, [hi(firstName), custom ?? `thanks for getting in touch with ${tenant.name}. We've received your message and will get back to you with the details shortly.`], tenant);
+/**
+ * The reply to an enquiry handled without a person (e.g. a rental availability
+ * question). The default is true on its own: it points at where the details
+ * live and offers a human path, promising no follow-up.
+ */
+export function generalReply({ tenant, firstName, channel, custom, infoUrl }: Base & { custom: string | null; infoUrl?: string | null }) {
+  const body = custom ?? (infoUrl ? `thanks for your message to ${tenant.name}. The quickest way to get details and times is here: ${infoUrl}. If your question is about something else, reply here and a person will pick it up.` : `thanks for your message to ${tenant.name}. If you need anything else, reply here and a person will pick it up during business hours.`);
+  return pack(channel, `Thanks for contacting ${tenant.name}`, [hi(firstName), body], tenant);
 }
 
 export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {
   return {
-    subject: `Needs you: ${summary.slice(0, 70)}`,
-    body: [`Something at ${tenant.name} needs a person:`, "", summary, "", `Suggested: ${suggestedAction}`, "", `See it here: ${portalUrl}`, "", "— MeSquared OS, on behalf of your workspace"].join("\n"),
+    subject: `${tenant.name}: needs a person — ${summary.slice(0, 60)}`,
+    body: [`Something at ${tenant.name} needs a person:`, "", summary, "", `What we suggest: ${suggestedAction}`, "", `See it here: ${portalUrl}`, "", staffSignoff(tenant)].join("\n"),
   };
 }

@@ -24,20 +24,22 @@ const openTypes = (list: { type: string; status: string }[]) => list.filter((m) 
 
 describe("detectors", () => {
   it("find quiet quotes, unanswered reviews, lapsed customers, no-shows and idempotently raise each once", async () => {
-    // Fixtures: lead_2 is 6 days quiet in "Agreement sent" (quietAfterDays 4), rv_1 is an unanswered 3-day-old review,
-    // ct_4 is a customer inactive 200 days (reactivation inactiveDays 180).
+    // Fixtures: lead_2 is 6 days quiet in "Agreement sent" (quietAfterDays 4), rv_1 is an unanswered 3-day-old review that
+    // already has an open item (mo_2), ct_4 has had no CRM activity for 200 days but paid a commission 6 days ago.
     const first = await detectForTenant(harbor);
     const types = first.detected.map((d) => d.type);
     assert.ok(types.includes("QUIET_QUOTE"), `quiet quote detected: ${types}`);
-    assert.ok(types.includes("UNANSWERED_REVIEW"), "unanswered review detected");
-    assert.ok(types.includes("LAPSED_CUSTOMER"), "lapsed customer detected");
+    assert.ok(!types.includes("UNANSWERED_REVIEW"), "the review's existing open item is reused, not duplicated");
+    assert.ok(!types.includes("LAPSED_CUSTOMER"), "a customer who paid inside the window is not lapsed, however quiet the CRM is");
     const second = await detectForTenant(harbor);
     assert.equal(second.detected.length, 0, "second pass finds nothing new");
     const open = await repository.listMissedOpportunities(harbor.id, { limit: 500 });
     assert.ok(openTypes(open).includes("QUIET_QUOTE"));
-    // The lapsed customer got a reactivation message (SMS consent recorded on ct_4).
-    const runs = await repository.listAutomationRuns(harbor.id, 50);
-    assert.ok(runs.some((r) => r.typeKey === "reactivation" && r.outcome === "SENT" && r.contactId === "ct_4"), "reactivation sent");
+    assert.equal(open.filter((m) => m.dedupeKey === "UNANSWERED_REVIEW:rv_1").length, 1, "one item per review");
+    // Real estate leaves win-back messages off (a quiet landlord is still a client), so nothing was sent to anyone.
+    const runs = await repository.listAutomationRuns(harbor.id, 100);
+    assert.ok(!runs.some((r) => r.typeKey === "reactivation"), "no reactivation for a real-estate tenant by default");
+    assert.ok(!(await repository.listAutomationRuns(harbor.id, 100)).some((r) => /operator|workspace/i.test(r.summary)), "no internal words reach the owner");
     // Exceptions were created for each, escalated to an operator.
     const exceptions = await repository.listExceptions([harbor.id]);
     assert.ok(exceptions.some((e) => e.reason.includes("silent for")));
@@ -89,9 +91,13 @@ describe("booking lifecycle and scheduled work", () => {
     const lead = (await repository.listRecentLeads(summit.id, 10)).find((l) => l.id === "lead_5")!;
     const booking = await repository.findBookingById(summit.id, "bk_fixture_2");
     assert.ok(booking?.startsAt);
+    await repository.updateBooking(summit.id, booking!.id, { confirmedAt: null });
     await onBookingCreated(summit, lead, booking!.id, booking!.startsAt, booking!.endsAt);
     const runs = await repository.listAutomationRuns(summit.id, 50);
-    assert.ok(runs.some((r) => /Confirmed Jordan Lee/.test(r.summary)), "confirmation run");
+    assert.ok(runs.some((r) => /Confirmed Jordan Lee/.test(r.summary) && r.outcome === "SENT"), "confirmation run");
+    // A redelivered webhook never confirms twice.
+    await onBookingCreated(summit, lead, booking!.id, booking!.startsAt, booking!.endsAt);
+    assert.equal((await repository.listAutomationRuns(summit.id, 50)).filter((r) => /Confirmed Jordan Lee/.test(r.summary)).length, 1, "confirmed once");
     const due = await repository.listDueActions(new Date(booking!.startsAt!.getTime() - 23 * 3_600_000));
     const reminder = due.find((a) => a.action === "reminder" && a.payload.bookingId === booking!.id);
     assert.ok(reminder, "reminder scheduled 24h before");
@@ -105,10 +111,15 @@ describe("booking lifecycle and scheduled work", () => {
     assert.equal((await repository.findBookingById(summit.id, booking!.id))?.status, "COMPLETED");
     const queued = await repository.listDueActions(new Date(Date.now() + 2 * DAY));
     const followUp = queued.find((a) => a.action === "follow_up" && a.payload.bookingId === booking!.id);
-    const review = queued.find((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id);
-    assert.ok(followUp && review, "follow-up and review request queued");
+    assert.ok(followUp, "follow-up queued");
+    assert.equal(followUp!.payload.uncertain, true, "nobody confirmed they came, so the follow-up assumes nothing");
+    assert.ok(!queued.some((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id), "no review ask after an unconfirmed appointment");
     await runScheduledAction(followUp!);
     assert.ok((await repository.findBookingById(summit.id, booking!.id))?.followedUpAt);
+    // A person marks it attended: now the review ask is queued.
+    await emit(summit.id, "booking.completed", { bookingId: booking!.id, leadId: lead.id, by: "operator" });
+    const review = (await repository.listDueActions(new Date(Date.now() + 2 * DAY))).find((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id);
+    assert.ok(review, "review request queued after an explicit completion");
     await runScheduledAction(review!);
     const later = await repository.listAutomationRuns(summit.id, 50);
     assert.ok(later.some((r) => r.typeKey === "review_request" && r.outcome === "SKIPPED" && /no review link/.test(r.summary)), "review skipped honestly without a review link");

@@ -104,21 +104,10 @@ export async function processIntake(tenant: TenantSummary, input: IntakeBody, ra
   await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: contact.id, leadId: lead.id, outcome: "CREATED", classifier: qualification.classifier });
   await emit(tenant.id, "intake.received", { leadId: lead.id, contactId: contact.id, channel, source: body.source });
 
-  const displayName = [firstName, lastName].filter(Boolean).join(" ") || body.email || body.phone || "New lead";
   let bookingUrl: string | null = null;
 
-  if (green) {
-    bookingUrl = await bookingLinkFor(tenant, lead);
-  } else {
-    await repository.recordAutomationRun(tenant.id, {
-      typeKey: "enquiry_auto_reply",
-      outcome: "COMPLETED",
-      summary: `Answered ${displayName}'s enquiry automatically. Nothing needed from you.`,
-      details: { reason: qualification.reason },
-      leadId: lead.id,
-      contactId: contact.id,
-    });
-  }
+  // RED enquiries are answered (or honestly logged as filed) by the automation layer off lead.qualified.
+  if (green) bookingUrl = await bookingLinkFor(tenant, lead);
 
   // The green-lead playbook (acknowledgement, alerts, booking) runs off this event.
   await emit(tenant.id, "lead.qualified", { leadId: lead.id, tenantSlug: tenant.slug, ticketType: qualification.ticketType, intentScore: qualification.intentScore, classifier: qualification.classifier });

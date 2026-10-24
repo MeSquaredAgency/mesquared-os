@@ -59,8 +59,13 @@ describe("intake pipeline (demo repository)", () => {
     assert.equal(result.bookingUrl, null);
     assert.equal(result.lead.pipelineId, null);
     assert.equal(result.lead.respondBy, null);
-    const runs = await repository.listAutomationRuns(tenant.id, 5);
-    assert.ok(runs.some((r) => r.leadId === result.lead.id && r.outcome === "COMPLETED"));
+    // The RED reply is logged honestly by the automation layer: sent (log provider) or filed when no reply is configured.
+    const runs = await repository.listAutomationRuns(tenant.id, 10);
+    const run = runs.find((r) => r.leadId === result.lead.id && r.typeKey === "enquiry_auto_reply");
+    assert.ok(run, "a run for the red lead");
+    assert.ok(["SENT", "SKIPPED"].includes(run!.outcome));
+    assert.match(run!.summary, /Answered|Filed|Didn't reply/);
+    assert.doesNotMatch(run!.summary, /operator|workspace/i);
   });
 
   it("dedupes on externalId and on recent contact details", async () => {

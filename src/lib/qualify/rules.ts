@@ -84,7 +84,7 @@ function containsStem(body: string, stem: string): boolean {
   const key = `stem:${stem}`;
   let re = matcherCache.get(key);
   if (!re) {
-    const escaped = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\const matcherCache = new Map<string, RegExp>();");
+    const escaped = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}`, "iu");
     matcherCache.set(key, re);
   }

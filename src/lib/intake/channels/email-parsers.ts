@@ -73,7 +73,9 @@ export function parseEnquiryEmail(mail: InboundEmail): ParsedEnquiry {
   const text = mail.text.replace(/\r/g, "");
   const name = labelled(text, ["Name", "From", "Enquirer", "Contact name"]) ?? (provider === "GENERIC" ? displayNameOf(mail.from) : null);
   const email = labelled(text, ["Email", "Email address"])?.match(EMAIL_RE)?.[0]?.toLowerCase() ?? (provider === "GENERIC" ? addressOf(mail.from) : null);
-  const phone = labelled(text, ["Phone", "Mobile", "Phone number", "Contact number"])?.match(PHONE_RE)?.[0] ?? phoneAnywhere(text);
+  // A phone number anywhere in a stranger's email is not trusted as a destination for tenant SMS: for
+  // portal emails take the labelled field; for ordinary emails we reply to the sender's address instead.
+  const phone = labelled(text, ["Phone", "Mobile", "Phone number", "Contact number"])?.match(PHONE_RE)?.[0] ?? (provider === "GENERIC" ? null : phoneAnywhere(text));
   const property = labelled(text, ["Property", "Listing", "Address", "Property address"]) ?? /(?:enquiry (?:about|for|on)|re:)\s*(.+)/i.exec(mail.subject)?.[1]?.trim() ?? null;
   const enquiryType = labelled(text, ["Enquiry type", "Type", "Reason"]);
 

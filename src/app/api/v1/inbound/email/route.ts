@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { clientIpFromHeaders } from "@/lib/auth/client-ip";
+import { safeEqual } from "@/lib/crypto";
+import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { repository } from "@/lib/data";
 import { parseEnquiryEmail, type InboundEmail } from "@/lib/intake/channels/email-parsers";
 import { processIntake } from "@/lib/intake/process";
@@ -18,8 +22,8 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.INBOUND_EMAIL_SECRET;
-  const given = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? req.nextUrl.searchParams.get("token");
-  if (secret && given !== secret) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const given = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  if (secret && !safeEqual(given, secret)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (!secret && process.env.NODE_ENV === "production") return NextResponse.json({ error: "INBOUND_EMAIL_SECRET is not configured." }, { status: 503 });
 
   let payload: Record<string, unknown>;
@@ -35,7 +39,13 @@ export async function POST(req: NextRequest) {
   const tenant = await repository.findTenantByIntegrationAccount("EMAIL_FORWARDING", mail.to.toLowerCase());
   if (!tenant) return NextResponse.json({ received: true, ignored: "no workspace for this inbox address" });
 
+  const sender = mail.from.toLowerCase().replace(/.*<|>.*/g, "");
+  const limit = takeIntakeTokens([`email:${tenant.id}`, `email:${tenant.id}:${sender}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
+
   const enquiry = parseEnquiryEmail(mail);
+  // Message ids are sender-controlled; bind them to the inbox so they cannot pre-empt other ids.
+  if (enquiry.externalId) enquiry.externalId = `email:${createHash("sha256").update(`${mail.to.toLowerCase()}|${mail.messageId}`).digest("hex").slice(0, 32)}`;
   const parsed = intakeSchema.safeParse({
     source: enquiry.source,
     externalId: enquiry.externalId,

@@ -79,7 +79,6 @@ export const realEstateTemplate: IndustryTemplate = {
     { key: "booking_lifecycle", settings: { kind: "inspection_and_appraisal", reminderHoursBefore: 24, followUpHoursAfter: 24 } },
     { key: "chase_information", settings: { applications: true, chaseEveryDays: 2, maxChases: 3 } },
     { key: "review_request", settings: { delayHours: 3 } },
-    { key: "reactivation", settings: { inactiveDays: 180 } },
     { key: "sla_watch", settings: { unrepliedInboxMinutes: 120, unansweredReviewHours: 48 } },
   ],
   brand: {

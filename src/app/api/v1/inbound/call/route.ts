@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { onMissedCall, registerAutomations } from "@/lib/automations/handlers";
+import { clientIpFromHeaders } from "@/lib/auth/client-ip";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { leadDisplayName } from "@/lib/leads";
+import { quoteUntrusted, safeName } from "@/lib/messaging/templates";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 
@@ -12,56 +15,57 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const callSchema = z.object({
-  from: z.string().min(6),
-  /** The business number that was called; resolves the tenant when no API key is sent. */
-  to: z.string().optional(),
+  from: z.string().min(6).max(40),
   status: z.enum(["missed", "voicemail", "answered"]),
-  callerName: z.string().optional().nullable(),
-  transcription: z.string().max(5000).optional().nullable(),
-  externalId: z.string().optional().nullable(),
+  callerName: z.string().max(120).optional().nullable(),
+  transcription: z.string().max(2000).optional().nullable(),
+  externalId: z.string().max(120).optional().nullable(),
   occurredAt: z.string().optional(),
 });
 
 /**
  * POST /api/v1/inbound/call
  *
- * Call-tracking providers post call outcomes here. A missed call or voicemail
- * becomes a PHONE conversation entry, a missed opportunity raised for an
- * operator, and (when the tenant has it on) an immediate text back with a
- * booking link. Authenticate with the tenant API key, or send `to` (the
- * tracked number stored on the tenant's CALL_TRACKING or TWILIO integration).
+ * Call-tracking providers post call outcomes here, authenticated with the
+ * tenant's API key (configure it as a header in the provider). A missed call
+ * or voicemail becomes a PHONE conversation entry, a missed opportunity for an
+ * operator, and (when the tenant has it on) one text back per caller per day
+ * with a booking link. The business number is never accepted as a credential.
  */
 export async function POST(req: NextRequest) {
   registerAutomations();
-  const body = await req.json().catch(() => null);
-  const parsed = callSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Invalid call payload.", issues: z.flattenError(parsed.error).fieldErrors }, { status: 422 });
-
   const auth = await resolveTenantFromRequest(req);
-  const tenant = auth.ok
-    ? auth.tenant
-    : parsed.data.to
-      ? ((await repository.findTenantByIntegrationAccount("CALL_TRACKING", normalizePhone(parsed.data.to) ?? parsed.data.to)) ?? (await repository.findTenantByIntegrationAccount("TWILIO", normalizePhone(parsed.data.to) ?? parsed.data.to)))
-      : null;
-  if (!tenant) return NextResponse.json({ error: auth.ok ? "Unknown tenant." : auth.error }, { status: auth.ok ? 404 : auth.status });
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const tenant = auth.tenant;
+
+  const parsed = callSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Invalid call payload.", issues: z.flattenError(parsed.error).fieldErrors }, { status: 422 });
 
   const phone = toE164(normalizePhone(parsed.data.from), tenant.region);
   if (!phone) return NextResponse.json({ error: "Caller number is not usable." }, { status: 422 });
-  const [firstName, ...rest] = (parsed.data.callerName ?? "").trim().split(/\s+/).filter(Boolean);
-  const contact = await repository.upsertContact(tenant.id, { firstName: firstName ?? null, lastName: rest.join(" ") || null, email: null, phone, company: null });
+
+  const ip = clientIpFromHeaders((n) => req.headers.get(n));
+  const limit = takeIntakeTokens([`call:${tenant.id}`, `call:${tenant.id}:${phone}`, `ip:${ip}`]);
+  if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
+
+  const name = safeName(parsed.data.callerName);
+  const contact = await repository.upsertContact(tenant.id, { firstName: name, lastName: null, email: null, phone, company: null });
 
   const label = parsed.data.status === "voicemail" ? "Voicemail" : parsed.data.status === "missed" ? "Missed call" : "Call";
-  await repository.recordMessage(tenant.id, { contactId: contact.id, channel: "PHONE", direction: "INBOUND", sender: "CONTACT", body: parsed.data.transcription ? `${label}: ${parsed.data.transcription}` : label, status: "RECEIVED", providerMessageId: parsed.data.externalId ?? null });
-  await emit(tenant.id, "call.received", { contactId: contact.id, status: parsed.data.status, externalId: parsed.data.externalId ?? null });
+  const transcript = parsed.data.transcription ? quoteUntrusted(parsed.data.transcription, 500) : null;
+  await repository.recordMessage(tenant.id, { contactId: contact.id, channel: "PHONE", direction: "INBOUND", sender: "CONTACT", body: transcript ? `${label}: ${transcript}` : label, status: "RECEIVED", providerMessageId: parsed.data.externalId ?? null });
+  await emit(tenant.id, "call.received", { contactId: contact.id, status: parsed.data.status });
 
   if (parsed.data.status === "answered") return NextResponse.json({ received: true, outcome: "logged" });
 
+  // One open item per caller per day, whatever the provider sends as an id.
+  const day = new Date().toISOString().slice(0, 10);
   const raised = await raiseMissedOpportunity(tenant, {
     type: "MISSED_CALL",
     leadId: null,
     contactId: contact.id,
-    subjectId: parsed.data.externalId ?? `${contact.id}:${new Date().toISOString().slice(0, 13)}`,
-    summary: `${leadDisplayName(contact)} called and nobody answered${parsed.data.transcription ? ` (voicemail: "${parsed.data.transcription.slice(0, 120)}")` : ""}.`,
+    subjectId: `${contact.id}:${day}`,
+    summary: `${leadDisplayName(contact)} called and nobody answered${transcript ? ` (voicemail: "${transcript.slice(0, 120)}")` : ""}.`,
     suggestedAction: "Call back within the hour. A text with a booking link has gone out if the workspace has that on.",
     confidence: 0.8,
   });

@@ -339,7 +339,7 @@ export interface ConversationRecord {
   awaitingReply: boolean;
 }
 
-export type ScheduledActionStatus = "PENDING" | "DONE" | "CANCELLED" | "FAILED";
+export type ScheduledActionStatus = "PENDING" | "RUNNING" | "DONE" | "CANCELLED" | "FAILED";
 
 export interface ScheduledActionRecord {
   id: string;
@@ -408,6 +408,8 @@ export interface MissedOpportunityRecord {
   tenantId: string;
   type: MissedOpportunityType;
   status: MissedOpportunityStatus;
+  /** `${type}:${subjectId}`; the subject is a lead, contact, review, booking or conversation id. */
+  dedupeKey: string;
   contactId: string | null;
   leadId: string | null;
   estimatedValueCents: number;
@@ -482,6 +484,8 @@ export interface ContentAssetRecord {
   targetPlatform: SocialPlatform | null;
   status: ContentStatus;
   needsClientSignoff: boolean;
+  /** `neon-storage://assets/<key>` for files held on Neon Object Storage, an external URL, or absent. */
+  fileUrl?: string | null;
   createdAt: Date;
 }
 

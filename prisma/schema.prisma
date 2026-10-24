@@ -14,8 +14,8 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  /// Non-pooled connection for migrations (Neon/pgBouncer setups). Set it to the same value as DATABASE_URL when there is no pooler.
-  directUrl = env("DIRECT_URL")
+  /// Direct (non-pooled) connection for Prisma Migrate. `neon deploy` / `neon env pull` write it; locally make it the same value as DATABASE_URL.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +256,8 @@ model Integration {
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   channels Channel[]
 
+  /// An external account (Meta page, inbox address, phone number) belongs to exactly one tenant.
+  @@unique([provider, externalAccountId])
   @@index([tenantId, provider])
   @@index([tenantId, status])
 }
@@ -561,6 +563,8 @@ model Message {
   conversationId    String
   direction         MessageDirection
   sender            MessageSender
+  /// Destination for outbound messages (E.164 or email), for per-recipient caps.
+  to                String?
   body              String
   status            MessageStatus    @default(QUEUED)
   providerMessageId String?
@@ -573,6 +577,7 @@ model Message {
   automationRun AutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, direction, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -633,6 +638,8 @@ model ScheduledAction {
   status    ScheduledActionStatus @default(PENDING)
   attempts  Int      @default(0)
   lastError String?
+  /// Set when a tick claims the row; a claim older than the lease is reclaimable.
+  lockedAt  DateTime?
   createdAt DateTime @default(now())
   ranAt     DateTime?
 
@@ -644,6 +651,7 @@ model ScheduledAction {
 
 enum ScheduledActionStatus {
   PENDING
+  RUNNING
   DONE
   CANCELLED
   FAILED

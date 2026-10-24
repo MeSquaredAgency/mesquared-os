@@ -15,7 +15,7 @@ interface Props {
 const STATUS_LABEL: Record<string, { text: string; variant: "red" | "secondary" | "green" | "muted" }> = {
   DETECTED: { text: "Spotted", variant: "red" },
   RECOVERING: { text: "Recovering", variant: "secondary" },
-  ESCALATED: { text: "With your operator", variant: "secondary" },
+  ESCALATED: { text: "With the Me² team", variant: "secondary" },
   RECOVERED: { text: COPY.recovered, variant: "green" },
   EXPIRED: { text: "Closed", variant: "muted" },
 };

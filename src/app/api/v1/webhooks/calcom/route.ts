@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 interface CalEvent {
   triggerEvent?: string;
-  payload?: { uid?: string; startTime?: string; endTime?: string; metadata?: Record<string, unknown>; noShowHost?: boolean; attendees?: { noShow?: boolean }[] };
+  payload?: { uid?: string; startTime?: string; endTime?: string; metadata?: Record<string, unknown>; noShowHost?: boolean; attendees?: { noShow?: boolean; email?: string; phoneNumber?: string }[] };
 }
 
 /**
@@ -47,22 +47,40 @@ export async function POST(req: NextRequest) {
   if (!tenant) return NextResponse.json({ received: true, ignored: "unknown tenant" });
   const lead = await repository.findLeadById(tenant.id, leadId);
   if (!lead) return NextResponse.json({ received: true, ignored: "unknown lead" });
-
   const startsAt = event.payload?.startTime ? new Date(event.payload.startTime) : null;
   const endsAt = event.payload?.endTime ? new Date(event.payload.endTime) : null;
   const uid = event.payload?.uid ?? null;
-  const existing = await repository.findLatestBookingForLead(tenant.id, lead.id);
+
+  // The metadata is a hint carried on a link the lead holds. The booker must be the lead.
+  const attendee = event.payload?.attendees?.[0];
+  const attendeeEmail = attendee?.email?.toLowerCase() ?? null;
+  const attendeePhone = attendee?.phoneNumber?.replace(/\D/g, "") ?? null;
+  const matches = (attendeeEmail && lead.email && attendeeEmail === lead.email) || (attendeePhone && lead.phone && attendeePhone.endsWith(lead.phone.replace(/\D/g, "").slice(-9)));
+  if (attendee && (attendeeEmail || attendeePhone) && !matches) {
+    console.warn(`[webhooks/calcom] attendee does not match lead ${lead.id} for ${tenant.slug}; ignored`);
+    return NextResponse.json({ received: true, ignored: "attendee does not match lead" });
+  }
+
+  const latest = await repository.findLatestBookingForLead(tenant.id, lead.id);
+  // Only a live booking row is updated in place; a finished one (completed, no-show, cancelled) keeps its history.
+  const live = new Set(["LINK_PENDING", "LINK_SENT", "SCHEDULED"]);
+  const existing = latest && (live.has(latest.status) || (uid && latest.externalId === uid)) ? latest : null;
 
   switch (event.triggerEvent) {
     case "BOOKING_CREATED":
     case "BOOKING_RESCHEDULED": {
-      const booking = existing ? await repository.updateBooking(tenant.id, existing.id, { status: "SCHEDULED", startsAt, endsAt, externalId: uid }) : null;
+      // Replay guard: the same booking at the same time has already been applied.
+      if (existing && uid && existing.externalId === uid && existing.status === "SCHEDULED" && existing.startsAt?.getTime() === startsAt?.getTime()) {
+        return NextResponse.json({ received: true, ignored: "already applied" });
+      }
+      const rescheduled = event.triggerEvent === "BOOKING_RESCHEDULED" || (existing?.status === "SCHEDULED" && existing.externalId === uid);
+      if (existing && existing.status === "SCHEDULED") await repository.cancelActions(tenant.id, `booking:${existing.id}:`);
+      const booking = existing ? await repository.updateBooking(tenant.id, existing.id, { status: "SCHEDULED", startsAt, endsAt, externalId: uid, confirmedAt: null }) : null;
       const bookingId = booking?.id ?? (await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl: "", sent: true })).id;
       if (!booking) await repository.updateBooking(tenant.id, bookingId, { status: "SCHEDULED", startsAt, endsAt, externalId: uid });
       await repository.markLeadBooked(tenant.id, lead.id, startsAt ?? new Date());
-      if (event.triggerEvent === "BOOKING_RESCHEDULED") await repository.cancelActions(tenant.id, `booking:${bookingId}:`);
-      await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "COMPLETED", summary: `${leadDisplayName(lead)} ${event.triggerEvent === "BOOKING_RESCHEDULED" ? "moved their appointment to" : "booked a time for"} ${startsAt ? startsAt.toLocaleString(tenant.locale, { timeZone: tenant.timezone, dateStyle: "medium", timeStyle: "short" }) : "a new time"}.`, leadId: lead.id, contactId: lead.contactId, details: { bookingUid: uid } });
-      await emit(tenant.id, "booking.created", { bookingId, leadId: lead.id, startsAt: startsAt?.toISOString() ?? null, endsAt: endsAt?.toISOString() ?? null, provider: "CALCOM" });
+      await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "COMPLETED", summary: `${leadDisplayName(lead)} ${rescheduled ? "moved their appointment to" : "booked a time for"} ${startsAt ? startsAt.toLocaleString(tenant.locale, { timeZone: tenant.timezone, dateStyle: "medium", timeStyle: "short" }) : "a new time"}.`, leadId: lead.id, contactId: lead.contactId, details: { bookingUid: uid } });
+      await emit(tenant.id, "booking.created", { bookingId, leadId: lead.id, startsAt: startsAt?.toISOString() ?? null, endsAt: endsAt?.toISOString() ?? null, provider: "CALCOM", rescheduled });
       const open = await repository.listMissedOpportunities(tenant.id, { status: ["DETECTED", "RECOVERING", "ESCALATED"], limit: 500 });
       for (const m of open.filter((x) => x.leadId === lead.id && (x.type === "NOT_BOOKED" || x.type === "NO_SHOW"))) {
         await repository.resolveMissedOpportunity(tenant.id, m.id, "RECOVERED", m.estimatedValueCents);
@@ -70,7 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, bookingId });
     }
     case "BOOKING_CANCELLED": {
-      if (existing) {
+      if (existing && existing.status !== "CANCELLED") {
         await repository.updateBooking(tenant.id, existing.id, { status: "CANCELLED" });
         await repository.cancelActions(tenant.id, `booking:${existing.id}:`);
         await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "COMPLETED", summary: `${leadDisplayName(lead)} cancelled their appointment.`, leadId: lead.id, contactId: lead.contactId });

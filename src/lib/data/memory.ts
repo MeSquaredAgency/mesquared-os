@@ -62,14 +62,14 @@ interface MemoryStore {
   contacts: ContactRecord[];
   leads: LeadRecord[];
   bookings: BookingRecord[];
-  actions: ScheduledActionRecord[];
+  actions: (ScheduledActionRecord & { lockedAt?: Date | null })[];
   requests: InformationRequestRecord[];
   reviews: ReviewRecord[];
   formSessions: FormSessionRecord[];
   intakeEvents: (IntakeEventInput & { id: string; tenantId: string; createdAt: Date })[];
   conversations: ConversationRecord[];
   messages: (NewMessage & { id: string; tenantId: string; conversationId: string; createdAt: Date })[];
-  missed: (MissedOpportunityRecord & { dedupeKey?: string })[];
+  missed: MissedOpportunityRecord[];
   runs: AutomationRunRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
@@ -143,6 +143,8 @@ function assertContactInTenant(tenantId: string, contactId: string | null | unde
 }
 
 const OPEN_MISSED = new Set(["DETECTED", "RECOVERING", "ESCALATED"]);
+/** A resolved missed opportunity stays closed this long before the same signal may raise it again. */
+const SNOOZE_MS = 7 * 86_400_000;
 
 /** In-memory repository backed by demo fixtures. Used when DATABASE_URL is unset. */
 export const memoryRepository: Repository = {
@@ -215,11 +217,12 @@ export const memoryRepository: Repository = {
       (c) => c.tenantId === tenantId && ((data.email && c.email === data.email) || (data.phone && c.phone === data.phone)),
     );
     if (existing) {
+      // Match on an identifier we already hold. Never attach a *new* email or phone from an
+      // unauthenticated channel to an existing contact: that would redirect their messages.
       existing.lastActivityAt = new Date();
+      existing.lapsedAt = null;
       existing.firstName ??= data.firstName;
       existing.lastName ??= data.lastName;
-      existing.email ??= data.email;
-      existing.phone ??= data.phone;
       existing.company ??= data.company;
       return existing;
     }
@@ -327,6 +330,15 @@ export const memoryRepository: Repository = {
     return lead;
   },
 
+  async unbookLead(tenantId, leadId, bookBy) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead || lead.status !== "BOOKED") return;
+    lead.status = "BOOKING_SENT";
+    lead.bookedAt = null;
+    lead.bookBy = bookBy;
+    lead.lastActivityAt = new Date();
+  },
+
   async assignLead(tenantId, leadId, assigneeId) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (lead) lead.assigneeId = assigneeId;
@@ -362,9 +374,12 @@ export const memoryRepository: Repository = {
       convo = { id: id("cv"), tenantId, contactId: data.contactId, channel: data.channel, externalId: data.externalConversationId ?? null, lastMessageAt: new Date(), awaitingReply: false };
       pushBounded(s.conversations, convo, false);
     }
-    if (data.contactId) {
+    if (data.contactId && data.direction === "INBOUND") {
       const c = s.contacts.find((x) => x.id === data.contactId);
-      if (c) c.lastActivityAt = new Date();
+      if (c) {
+        c.lastActivityAt = new Date();
+        c.lapsedAt = null;
+      }
     }
     convo.lastMessageAt = new Date();
     convo.awaitingReply = data.direction === "INBOUND";
@@ -431,17 +446,33 @@ export const memoryRepository: Repository = {
 
   async listDueActions(now, limit = 100) {
     return store()
-      .actions.filter((a) => a.status === "PENDING" && a.runAt <= now)
+      .actions.filter((a) => (a.status === "PENDING" || (a.status === "RUNNING" && a.lockedAt && now.getTime() - a.lockedAt.getTime() > 10 * 60_000)) && a.runAt <= now)
       .sort((a, b) => a.runAt.getTime() - b.runAt.getTime())
       .slice(0, limit);
   },
 
-  async completeAction(actionId, status, error = null) {
+  async claimAction(actionId, now, leaseMs) {
+    const a = store().actions.find((x) => x.id === actionId);
+    if (!a) return false;
+    const stale = a.status === "RUNNING" && a.lockedAt && now.getTime() - a.lockedAt.getTime() > leaseMs;
+    if (a.status !== "PENDING" && !stale) return false;
+    a.status = "RUNNING";
+    a.lockedAt = now;
+    return true;
+  },
+
+  async completeAction(actionId, status, error = null, retryAt) {
     const a = store().actions.find((x) => x.id === actionId);
     if (!a) return;
     a.status = status;
     a.attempts += 1;
+    a.lockedAt = null;
+    if (status === "PENDING" && retryAt) a.runAt = retryAt;
     void error;
+  },
+
+  async countOutboundMessages(tenantId, opts) {
+    return store().messages.filter((x) => x.tenantId === tenantId && x.direction === "OUTBOUND" && x.status !== "FAILED" && x.createdAt >= opts.since && (!opts.to || x.to === opts.to)).length;
   },
 
   async cancelActions(tenantId, dedupePrefix) {
@@ -461,6 +492,10 @@ export const memoryRepository: Repository = {
     const req: InformationRequestRecord = { id: id("req"), tenantId, ...data, status: "OPEN", chaseCount: 0, lastChasedAt: null, receivedAt: null, createdAt: new Date() };
     pushBounded(store().requests, req);
     return req;
+  },
+
+  async findInformationRequestById(tenantId, requestId) {
+    return store().requests.find((r) => r.tenantId === tenantId && r.id === requestId) ?? null;
   },
 
   async listInformationRequests(tenantId, opts = {}) {
@@ -542,7 +577,11 @@ export const memoryRepository: Repository = {
       ...s.transactions.filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.contactId).map((t) => t.contactId!),
       ...s.contacts.filter((c) => c.tenantId === tenantId && c.tags.includes("customer")).map((c) => c.id),
     ]);
-    return s.contacts.filter((c) => c.tenantId === tenantId && customerIds.has(c.id) && !c.lapsedAt && c.lastActivityAt !== null && c.lastActivityAt < inactiveBefore).slice(0, limit);
+    const recentlyActive = new Set([
+      ...s.transactions.filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.contactId && t.occurredAt >= inactiveBefore).map((t) => t.contactId!),
+      ...s.bookings.filter((b) => b.tenantId === tenantId && b.status === "COMPLETED" && b.startsAt && b.startsAt >= inactiveBefore).map((b) => s.leads.find((l) => l.id === b.leadId)?.contactId).filter((x): x is string => Boolean(x)),
+    ]);
+    return s.contacts.filter((c) => c.tenantId === tenantId && customerIds.has(c.id) && !recentlyActive.has(c.id) && !c.lapsedAt && c.lastActivityAt !== null && c.lastActivityAt < inactiveBefore).slice(0, limit);
   },
 
   async markContactLapsed(tenantId, contactId, at) {
@@ -559,7 +598,7 @@ export const memoryRepository: Repository = {
     const stages = new Map((demoConfig[tenantId]?.pipelines ?? []).flatMap((p) => p.stages.map((s) => [s.id, s])));
     const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
     for (const lead of store().leads) {
-      if (lead.tenantId !== tenantId || !lead.stageId) continue;
+      if (lead.tenantId !== tenantId || !lead.stageId || lead.status === "WON" || lead.status === "LOST" || lead.status === "ARCHIVED") continue;
       const stage = stages.get(lead.stageId);
       if (!stage?.quietAfterDays) continue;
       const since = Math.max(lead.stageEnteredAt?.getTime() ?? 0, lead.lastActivityAt?.getTime() ?? 0, lead.createdAt.getTime());
@@ -577,9 +616,14 @@ export const memoryRepository: Repository = {
   async upsertMissedOpportunity(tenantId, data: NewMissedOpportunity) {
     assertLeadInTenant(tenantId, data.leadId);
     assertContactInTenant(tenantId, data.contactId);
-    const existing = store().missed.find((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && (m.dedupeKey ?? `${m.type}:${m.leadId ?? m.contactId ?? ""}`) === data.dedupeKey);
-    if (existing) return { record: existing, created: false };
-    const record: MissedOpportunityRecord & { dedupeKey: string } = {
+    const existing = store().missed.find((m) => m.tenantId === tenantId && m.dedupeKey === data.dedupeKey);
+    if (existing && OPEN_MISSED.has(existing.status)) return { record: existing, created: false };
+    if (existing) {
+      if ((existing.resolvedAt ?? existing.detectedAt).getTime() > Date.now() - SNOOZE_MS) return { record: existing, created: false };
+      Object.assign(existing, { status: "DETECTED", summary: data.summary, estimatedValueCents: data.estimatedValueCents, detectedAt: new Date(), resolvedAt: null });
+      return { record: existing, created: true };
+    }
+    const record: MissedOpportunityRecord = {
       dedupeKey: data.dedupeKey,
       id: id("mo"),
       tenantId,
@@ -609,9 +653,18 @@ export const memoryRepository: Repository = {
     const m = store().missed.find((x) => x.id === moId && x.tenantId === tenantId);
     if (!m) return null;
     m.status = status;
-    if (status === "RECOVERED" || status === "EXPIRED") m.resolvedAt = new Date();
+    if (status === "RECOVERED" || status === "EXPIRED") {
+      m.resolvedAt = new Date();
+      const ex = store().exceptions.find((e) => e.tenantId === tenantId && e.missedOpportunityId === m.id && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
+      if (ex) ex.status = "RESOLVED";
+    }
     if (recoveredValueCents !== undefined) m.recoveredValueCents = recoveredValueCents;
     return m;
+  },
+
+  async resolveMissedOpportunityByKey(tenantId, dedupeKey, status, recoveredValueCents) {
+    const m = store().missed.find((x) => x.tenantId === tenantId && x.dedupeKey === dedupeKey && OPEN_MISSED.has(x.status));
+    return m ? this.resolveMissedOpportunity(tenantId, m.id, status, recoveredValueCents ?? (status === "RECOVERED" ? m.estimatedValueCents : 0)) : null;
   },
 
   async recordAutomationRun(tenantId, data) {
@@ -632,6 +685,11 @@ export const memoryRepository: Repository = {
     return run;
   },
 
+  async updateAutomationRun(tenantId, runId, patch) {
+    const run = store().runs.find((r) => r.id === runId && r.tenantId === tenantId);
+    if (run) Object.assign(run, { outcome: patch.outcome, summary: patch.summary });
+  },
+
   async listAutomationRuns(tenantId, limit = 50) {
     return store().runs.filter((r) => r.tenantId === tenantId).sort(byNewest).slice(0, limit);
   },
@@ -639,6 +697,13 @@ export const memoryRepository: Repository = {
   async createException(tenantId, data) {
     assertLeadInTenant(tenantId, data.leadId);
     assertContactInTenant(tenantId, data.contactId);
+    if (data.missedOpportunityId) {
+      const prior = store().exceptions.find((e) => e.tenantId === tenantId && e.missedOpportunityId === data.missedOpportunityId);
+      if (prior) {
+        Object.assign(prior, { reason: data.reason, suggestedAction: data.suggestedAction ?? null, confidence: data.confidence ?? null, status: "OPEN", escalatedToUserId: data.escalatedToUserId ?? prior.escalatedToUserId, createdAt: new Date() });
+        return prior;
+      }
+    }
     const ex: ExceptionRecord = {
       id: id("ex"),
       tenantId,
@@ -706,10 +771,15 @@ export const memoryRepository: Repository = {
       targetPlatform: item.targetPlatform,
       status: item.status,
       needsClientSignoff: item.needsClientSignoff,
+      fileUrl: item.fileUrl ?? null,
       createdAt: new Date(),
     }));
     for (const asset of created) pushBounded(store().assets, asset);
     return created;
+  },
+
+  async findContentAssetById(tenantId, assetId) {
+    return store().assets.find((a) => a.id === assetId && a.tenantId === tenantId) ?? null;
   },
 
   async updateContentAssetStatus(tenantId, assetId, status) {

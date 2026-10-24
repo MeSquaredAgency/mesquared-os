@@ -31,3 +31,21 @@ export const MISSED_OPPORTUNITY_LABEL: Record<string, string> = {
   UNANSWERED_REVIEW: "Unanswered review",
   LAPSED_CUSTOMER: "Lapsed customer",
 };
+
+/** Client-facing label for an automation run outcome. Internal states never leak to the portal. */
+export function outcomeLabel(outcome: string): string {
+  switch (outcome) {
+    case "SENT":
+      return "Sent";
+    case "COMPLETED":
+      return "Done";
+    case "SKIPPED":
+      return "Nothing sent";
+    case "ESCALATED":
+      return "Needs a person";
+    case "FAILED":
+      return "Didn't go through";
+    default:
+      return outcome;
+  }
+}

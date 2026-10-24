@@ -39,7 +39,8 @@ describe("messaging policy", () => {
   it("templates identify as automated and come from the tenant", () => {
     const sms = templates.acknowledgementSms({ tenant: harbor, firstName: "Margaret", bookingUrl: "https://x/y", topic: "an appraisal" });
     assert.match(sms, /Hi Margaret/);
-    assert.match(sms, /Automated reply from Harbor Realty Group/);
+    assert.match(sms, /automated reply from Harbor Realty Group/);
+    assert.ok(!/[—–]/.test(sms), "no em dash: keeps the SMS in the cheap GSM-7 alphabet");
     assert.match(sms, /https:\/\/x\/y/);
     const mail = templates.acknowledgementEmail({ tenant: harbor, firstName: null, bookingUrl: "https://x/y", topic: null });
     assert.match(mail.subject, /Harbor Realty Group/);
@@ -146,9 +147,13 @@ describe("email parsers", () => {
     assert.equal(parsed.email, "jane@example.com");
     assert.equal(parsed.name, "Jane Owner");
     assert.match(parsed.message ?? "", /appraise my place/);
+    // A number buried in a stranger's email is not trusted as an SMS destination; the reply goes to the sender's address.
     const withPhone = parseEnquiryEmail({ from: "ken@example.com", to: "x@y", subject: "Appraisal", text: "Call me on 0411 222 333 about my unit.", messageId: null });
-    assert.equal(withPhone.phone, "0411 222 333");
+    assert.equal(withPhone.phone, null);
+    assert.equal(withPhone.email, "ken@example.com");
     assert.equal(withPhone.name, null);
+    const labelled = parseEnquiryEmail({ from: "ken@example.com", to: "x@y", subject: "Appraisal", text: "Name: Ken Ho\nPhone: 0411 222 333\nMessage: appraisal please", messageId: null });
+    assert.equal(labelled.phone, "0411 222 333");
   });
 });
 

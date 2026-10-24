@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
 import { dataMode, repository } from "@/lib/data";
+import { emit } from "@/lib/events";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
 import { tick } from "@/lib/jobs/tick";
@@ -114,8 +115,16 @@ await step("bookings: schedule, confirm, remind, auto-complete, follow-up, revie
   await repository.completeAction(auto!.id, "DONE");
   assert.equal((await repository.findBookingById(harbor!.id, booking!.id))?.status, "COMPLETED");
   const queued = await repository.listDueActions(new Date(Date.now() + 3 * 86_400_000));
-  assert.ok(queued.some((a) => a.action === "follow_up" && a.payload.bookingId === booking!.id));
-  assert.ok(queued.some((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id));
+  assert.ok(queued.some((a) => a.action === "follow_up" && a.payload.bookingId === booking!.id && a.payload.uncertain === true), "neutral follow-up after an unconfirmed appointment");
+  assert.ok(!queued.some((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id), "no review ask until a person confirms attendance");
+  await emit(harbor!.id, "booking.completed", { bookingId: booking!.id, leadId: lead!.id, by: "operator" });
+  const afterConfirm = await repository.listDueActions(new Date(Date.now() + 3 * 86_400_000));
+  assert.ok(afterConfirm.some((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id), "review ask queued after explicit completion");
+  // Claim semantics on Postgres: the same row cannot be claimed twice.
+  const claimable = afterConfirm.find((a) => a.typeKey === "review_request" && a.payload.bookingId === booking!.id)!;
+  assert.equal(await repository.claimAction(claimable.id, new Date(), 600_000), true);
+  assert.equal(await repository.claimAction(claimable.id, new Date(), 600_000), false);
+  await repository.completeAction(claimable.id, "CANCELLED");
 });
 
 await step("detectors + missed opportunities: raise once, dedupe, exception, escalation", async () => {

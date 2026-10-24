@@ -26,11 +26,11 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - name: Validate Prisma schema
-        # `prisma validate` requires the datasource env var to be set, even though it never connects.
+        # `prisma validate` requires both datasource env vars to be set, even though it never connects.
         run: npx prisma validate
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+          DATABASE_URL_UNPOOLED: postgresql://ci:ci@localhost:5432/ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -55,7 +55,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/mesquared_os
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/mesquared_os
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@localhost:5432/mesquared_os
       MESSAGING_MODE: log
       DEFAULT_FROM_EMAIL: ci@example.com
       SEED_OPERATOR_PASSWORD: ci-password-not-secret

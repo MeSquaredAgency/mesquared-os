@@ -3,9 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AutoRefresh } from "@/components/shell/auto-refresh";
 import { getPortalContext } from "@/lib/auth/access";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
-import { COPY } from "@/lib/copy";
+import { COPY, outcomeLabel } from "@/lib/copy";
 import { repository } from "@/lib/data";
-import { formatDateTime, humanize } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 export const metadata = { title: "Activity log" };
 
@@ -43,7 +43,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ tenan
                       {AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey} · {formatDateTime(r.createdAt, fmt)}
                     </p>
                   </div>
-                  <Badge variant={r.outcome === "FAILED" ? "red" : r.outcome === "ESCALATED" ? "secondary" : r.outcome === "SKIPPED" ? "outline" : "muted"}>{humanize(r.outcome)}</Badge>
+                  <Badge variant={r.outcome === "FAILED" ? "red" : r.outcome === "ESCALATED" ? "secondary" : r.outcome === "SKIPPED" ? "outline" : "muted"}>{outcomeLabel(r.outcome)}</Badge>
                 </li>
               ))}
             </ul>

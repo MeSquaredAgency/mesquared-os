@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
@@ -11,7 +12,11 @@ export interface ActionResult {
 }
 
 /** Resolves an exception from the operator queue, optionally marking its missed opportunity recovered. */
+const resolutionSchema = z.string().trim().max(500);
+const requestSchema = z.object({ kind: z.string().trim().min(1).max(40), description: z.string().trim().min(1).max(200), dueInDays: z.number().int().min(1).max(60).nullable() });
+
 export async function resolveException(tenantId: string, exceptionId: string, resolution: string, recovered: boolean): Promise<ActionResult> {
+  resolution = resolutionSchema.parse(resolution ?? "");
   const { tenants, user } = await getConsoleContext();
   if (!tenants.some((t) => t.tenant.id === tenantId)) return { ok: false, message: "That workspace isn’t in your portfolio." };
   const ex = await repository.resolveException(tenantId, exceptionId, resolution.trim() || "Resolved");
@@ -23,7 +28,7 @@ export async function resolveException(tenantId: string, exceptionId: string, re
   await repository.recordAutomationRun(tenantId, {
     typeKey: "sla_watch",
     outcome: "COMPLETED",
-    summary: recovered ? `An operator recovered this: ${resolution.trim() || "handled"}.` : `An operator closed this: ${resolution.trim() || "no longer relevant"}.`,
+    summary: recovered ? `Sorted by the Me² team: ${resolution.trim() || "handled"}.` : `Closed by the Me² team: ${resolution.trim() || "no longer relevant"}.`,
     leadId: ex.leadId,
     contactId: ex.contactId,
     missedOpportunityId: ex.missedOpportunityId,
@@ -52,9 +57,10 @@ export async function openRequest(tenantId: string, input: { contactId: string |
   const { tenants } = await getConsoleContext();
   const access = tenants.find((t) => t.tenant.id === tenantId);
   if (!access) return { ok: false, message: "That workspace isn’t in your portfolio." };
-  if (!input.description.trim()) return { ok: false, message: "Say what you are waiting on." };
+  const checked = requestSchema.safeParse({ kind: input.kind, description: input.description, dueInDays: input.dueInDays });
+  if (!checked.success) return { ok: false, message: "Say what you are waiting on (up to 200 characters) and when to start reminding (1–60 days)." };
   const { openInformationRequest } = await import("@/lib/automations/handlers");
-  await openInformationRequest(access.tenant, { contactId: input.contactId, leadId: input.leadId, kind: input.kind, description: input.description.trim(), dueAt: input.dueInDays ? new Date(Date.now() + input.dueInDays * 86_400_000) : null });
+  await openInformationRequest(access.tenant, { contactId: input.contactId, leadId: input.leadId, kind: checked.data.kind, description: checked.data.description, dueAt: checked.data.dueInDays ? new Date(Date.now() + checked.data.dueInDays * 86_400_000) : null });
   revalidatePath("/console");
   return { ok: true, message: "Request opened. Reminders will go out automatically." };
 }
@@ -76,7 +82,7 @@ export async function markReviewReplied(tenantId: string, reviewId: string): Pro
   const review = await repository.markReviewReplied(tenantId, reviewId, null);
   if (!review) return { ok: false, message: "Review not found." };
   const open = await repository.listMissedOpportunities(tenantId, { status: ["DETECTED", "RECOVERING", "ESCALATED"], limit: 500 });
-  for (const m of open.filter((x) => x.type === "UNANSWERED_REVIEW" && x.summary.includes(review.provider))) await repository.resolveMissedOpportunity(tenantId, m.id, "RECOVERED", m.estimatedValueCents);
+  for (const m of open.filter((x) => x.dedupeKey === `UNANSWERED_REVIEW:${review.id}`)) await repository.resolveMissedOpportunity(tenantId, m.id, "RECOVERED", m.estimatedValueCents);
   revalidatePath("/console");
   return { ok: true, message: "Marked replied." }
 }

@@ -44,7 +44,7 @@ export const resendProvider: MessageProvider = {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: `${message.from.name} <${message.from.address}>`, to: [message.to], subject: message.subject ?? "", text: message.body }),
+        body: JSON.stringify({ from: `${message.from.name} <${message.from.address}>`, to: [message.to], subject: message.subject ?? "", text: message.body, ...(message.from.replyTo ? { reply_to: message.from.replyTo } : {}) }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
       if (!res.ok) return { ok: false, providerMessageId: null, error: json.message ?? `Resend HTTP ${res.status}`, simulated: false };
@@ -60,7 +60,8 @@ export const logProvider: MessageProvider = {
   name: "log",
   channels: ["SMS", "WHATSAPP", "EMAIL"],
   async send(message, tenant): Promise<SendResult> {
-    console.info(`[messaging:log] ${tenant.slug} ${message.channel} → ${message.to} from ${message.from.name}: ${message.body.slice(0, 120)}`);
+    const redact = process.env.NODE_ENV === "production";
+    console.info(`[messaging:log] ${tenant.slug} ${message.channel} → ${redact ? message.to.slice(0, 4) + "…" : message.to} from ${message.from.name}: ${redact ? "[body redacted]" : message.body.slice(0, 120)}`);
     return { ok: true, providerMessageId: `log_${Date.now()}`, error: null, simulated: true };
   },
 };
