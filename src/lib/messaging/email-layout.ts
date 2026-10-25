@@ -39,7 +39,7 @@ export function renderEmailHtml(tenant: TenantSummary, text: string): string {
 <body style="margin:0;padding:0;background:#f3f4f6;-webkit-font-smoothing:antialiased">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6"><tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;width:100%">
-<tr><td style="background:${colour};border-radius:12px 12px 0 0;padding:22px 28px">${banner}</td></tr>
+<tr><td style="background:${colour};border-radius:12px 12px 0 0;padding:22px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">${banner}</td></tr>
 <tr><td style="background:#ffffff;padding:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#1f2937">${bodyHtml}</td></tr>
 <tr><td style="background:#ffffff;border-top:1px solid #e5e7eb;border-radius:0 0 12px 12px;padding:16px 28px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#6b7280">${footerParts.join("<br>")}</td></tr>
 </table></td></tr></table></body></html>`;
