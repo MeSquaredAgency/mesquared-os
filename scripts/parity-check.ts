@@ -157,6 +157,34 @@ await step("scheduler tick runs across tenants", async () => {
   assert.equal(result.tenants, tenants.length);
 });
 
+await step("liveness: the database answers and the tick left a heartbeat", async () => {
+  assert.equal(await repository.ping(), true);
+  const beat = await repository.getHeartbeat("tick");
+  assert.ok(beat && Date.now() - beat.getTime() < 60_000, "the tick recorded a fresh heartbeat");
+});
+
+await step("shared rate-limit counters are atomic upserts with a fixed window", async () => {
+  const key = `parity:limit:${stamp}`;
+  const t0 = new Date();
+  const first = await repository.rateLimitHit(key, 60_000, t0);
+  assert.equal(first.count, 1);
+  const results = await Promise.all([repository.rateLimitHit(key, 60_000, t0), repository.rateLimitHit(key, 60_000, t0), repository.rateLimitHit(key, 60_000, t0)]);
+  assert.deepEqual(results.map((r) => r.count).sort(), [2, 3, 4], "three concurrent hits each get their own count");
+  assert.equal(await repository.rateLimitPeek(key, 60_000, t0), 4);
+  const later = new Date(t0.getTime() + 61_000);
+  assert.equal((await repository.rateLimitHit(key, 60_000, later)).count, 1, "the window restarted");
+  await repository.rateLimitClear(key);
+  assert.equal(await repository.rateLimitPeek(key, 60_000, later), 0);
+});
+
+await step("abandoned-form candidates are filtered in SQL to sessions with contact details", async () => {
+  for (let i = 0; i < 3; i++) await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:blank:${stamp}:${i}`, formName: "contact", pageUrl: "/contact", partial: { name: "No details" } });
+  await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:reach:${stamp}`, formName: "contact", pageUrl: "/contact", partial: { name: "Reachable", phone: "+61400000123" } });
+  const found = await repository.listAbandonedFormSessions(harbor!.id, new Date(Date.now() + 1000), 2);
+  assert.ok(found.some((f) => f.sessionKey === `parity:reach:${stamp}`), "the reachable session is returned despite older blank ones");
+  assert.ok(found.every((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string"));
+});
+
 await step("read models: portal home (money gated) and portfolio", async () => {
   const home = await repository.getPortalHome(harbor!.id, { timezone: harbor!.timezone, currency: harbor!.currency, onlyAssigneeId: null, canViewFinances: true });
   assert.ok(home.needsYou.length >= 0 && home.handled.runs.length > 0 && home.money);

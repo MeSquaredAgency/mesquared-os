@@ -111,6 +111,8 @@ interface MemoryStore {
   config: Record<string, MaterializedTemplate>;
   memberships: { userId: string; tenantId: string; roleId: string; title?: string | null; phone?: string | null; photoUrl?: string | null }[];
   operatorAssignments: { userId: string; tenantId: string }[];
+  heartbeats: Record<string, Date>;
+  buckets: Record<string, { count: number; windowStart: Date }>;
 }
 
 /** Keeps demo memory bounded if a long-running dev server receives a lot of traffic. */
@@ -124,6 +126,8 @@ function store(): MemoryStore {
       tenants: [...demoTenants],
       config: { ...demoConfig },
       memberships: [...demoMemberships],
+      heartbeats: {},
+      buckets: {},
       operatorAssignments: [...demoOperatorAssignments],
       users: [...getDemoUsers()],
       contacts: [...demoContacts],
@@ -159,6 +163,8 @@ function store(): MemoryStore {
   // A dev server hot-reloads modules but keeps globalThis: fields added since the store was created start empty.
   g.__msqMemoryStore.config ??= { ...demoConfig };
   g.__msqMemoryStore.memberships ??= [...demoMemberships];
+  g.__msqMemoryStore.heartbeats ??= {};
+  g.__msqMemoryStore.buckets ??= {};
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -1149,6 +1155,39 @@ export const memoryRepository: Repository = {
       u.passwordHash = passwordHash;
       u.sessionVersion += 1;
     }
+  },
+
+  async ping() {
+    return true;
+  },
+
+  async recordHeartbeat(key, at) {
+    store().heartbeats[key] = at;
+  },
+
+  async getHeartbeat(key) {
+    return store().heartbeats[key] ?? null;
+  },
+
+  async rateLimitHit(key, windowMs, now = new Date()) {
+    const buckets = store().buckets;
+    const existing = buckets[key];
+    if (!existing || existing.windowStart.getTime() <= now.getTime() - windowMs) {
+      if (Object.keys(buckets).length >= 10_000) for (const k of Object.keys(buckets).slice(0, 5_000)) delete buckets[k];
+      buckets[key] = { count: 1, windowStart: now };
+      return { count: 1, windowStart: now };
+    }
+    existing.count += 1;
+    return { count: existing.count, windowStart: existing.windowStart };
+  },
+
+  async rateLimitPeek(key, windowMs, now = new Date()) {
+    const b = store().buckets[key];
+    return !b || b.windowStart.getTime() <= now.getTime() - windowMs ? 0 : b.count;
+  },
+
+  async rateLimitClear(key) {
+    delete store().buckets[key];
   },
 
   async upsertMembership(tenantId, userId, roleId, profile) {

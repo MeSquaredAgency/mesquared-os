@@ -683,6 +683,17 @@ export interface Repository {
   /** Replaces the password and bumps sessionVersion so every existing session ends. */
   setUserPassword(userId: string, passwordHash: string): Promise<void>;
   upsertMembership(tenantId: string, userId: string, roleId: string, profile?: MemberProfile): Promise<void>;
+
+  // Platform liveness and counters shared by every instance (not tenant data).
+  /** True when the database answers within a few seconds; demo mode always answers. */
+  ping(): Promise<boolean>;
+  recordHeartbeat(key: string, at: Date): Promise<void>;
+  getHeartbeat(key: string): Promise<Date | null>;
+  /** Counts one hit in a fixed window; the count restarts when the window has passed. Atomic across instances. */
+  rateLimitHit(key: string, windowMs: number, now?: Date): Promise<{ count: number; windowStart: Date }>;
+  /** The current count without adding to it (0 once the window has passed). */
+  rateLimitPeek(key: string, windowMs: number, now?: Date): Promise<number>;
+  rateLimitClear(key: string): Promise<void>;
   removeMembership(tenantId: string, userId: string): Promise<void>;
   assignOperator(tenantId: string, userId: string): Promise<void>;
   listOperators(): Promise<UserRecord[]>;

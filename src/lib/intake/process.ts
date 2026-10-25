@@ -12,7 +12,9 @@ import { redactPayload, splitName, toE164, type IntakeBody } from "./schema";
 export type IntakeOutcome =
   | { outcome: "created"; lead: LeadRecord; qualification: QualificationResult; bookingUrl: string | null }
   | { outcome: "duplicate"; lead: LeadRecord }
-  | { outcome: "dry_run"; qualification: QualificationResult };
+  | { outcome: "dry_run"; qualification: QualificationResult }
+  /** The workspace's daily intake cap was reached: nothing was classified or stored beyond the intake event. */
+  | { outcome: "capped"; retryAfterSeconds: number };
 
 export interface IntakeMeta {
   channel: IntakeChannel;
@@ -69,6 +71,19 @@ export async function processIntake(tenant: TenantSummary, input: IntakeBody, ra
     if (duplicate && isSameEnquiry(duplicate, body)) {
       await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: duplicate.contactId, leadId: duplicate.id, outcome: "DUPLICATE", classifier: null });
       return { outcome: "duplicate", lead: duplicate };
+    }
+  }
+
+  if (!body.dryRun) {
+    // A public key cannot be used to run up classifier spend or flood the queue: one fixed daily cap per workspace,
+    // counted in the database so every instance sees the same number.
+    const cap = Number.parseInt(process.env.INTAKE_DAILY_CAP ?? "500", 10) || 500;
+    const day = 24 * 3_600_000;
+    const { count, windowStart } = await repository.rateLimitHit(`intake:day:${tenant.id}`, day);
+    if (count > cap) {
+      await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: null, leadId: null, outcome: "REJECTED", classifier: null });
+      console.warn(`[intake] daily cap of ${cap} reached for ${tenant.slug}; refusing further enquiries until the window resets`);
+      return { outcome: "capped", retryAfterSeconds: Math.max(60, Math.ceil((windowStart.getTime() + day - Date.now()) / 1000)) };
     }
   }
 

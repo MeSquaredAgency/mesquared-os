@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   registerContentEngine();
   const auth = await resolveTenantFromRequest(req, "content");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const limit = takeIntakeTokens([`content:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([`content:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid payload.", issues: z.flattenError(parsed.error).fieldErrors }, { status: 422 });

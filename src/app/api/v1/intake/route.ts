@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const limit = takeIntakeTokens([auth.tenant.id, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([auth.tenant.id, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many requests for this workspace. Slow down and retry." },
@@ -61,6 +61,9 @@ export async function POST(req: NextRequest) {
 
     if (result.outcome === "dry_run") {
       return NextResponse.json({ outcome: "dry_run", tenant: auth.tenant.slug, qualification: result.qualification });
+    }
+    if (result.outcome === "capped") {
+      return NextResponse.json({ error: "This workspace has reached its daily limit of enquiries." }, { status: 429, headers: { "Retry-After": String(result.retryAfterSeconds) } });
     }
     if (result.outcome === "duplicate") {
       return NextResponse.json({ outcome: "duplicate", tenant: auth.tenant.slug, leadId: result.lead.id, ticketType: result.lead.ticketType });

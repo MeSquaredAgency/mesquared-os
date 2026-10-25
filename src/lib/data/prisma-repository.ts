@@ -1084,6 +1084,52 @@ export const prismaRepository: Repository = {
     await getPrisma().user.update({ where: { id: userId }, data: { passwordHash, sessionVersion: { increment: 1 } } });
   },
 
+  async ping() {
+    const db = getPrisma();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 3000);
+    });
+    const query = db.$queryRaw`SELECT 1`.then(
+      () => true,
+      () => false,
+    );
+    const result = await Promise.race([query, timeout]);
+    if (timer) clearTimeout(timer);
+    return result;
+  },
+
+  async recordHeartbeat(key, at) {
+    await getPrisma().heartbeat.upsert({ where: { key }, update: { at }, create: { key, at } });
+  },
+
+  async getHeartbeat(key) {
+    return (await getPrisma().heartbeat.findUnique({ where: { key } }))?.at ?? null;
+  },
+
+  async rateLimitHit(key, windowMs, now = new Date()) {
+    const expiredBefore = new Date(now.getTime() - windowMs);
+    const rows = await getPrisma().$queryRaw<{ count: number; windowStart: Date }[]>`
+      INSERT INTO "RateLimitBucket" ("key", "count", "windowStart") VALUES (${key}, 1, ${now})
+      ON CONFLICT ("key") DO UPDATE SET
+        "count" = CASE WHEN "RateLimitBucket"."windowStart" <= ${expiredBefore} THEN 1 ELSE "RateLimitBucket"."count" + 1 END,
+        "windowStart" = CASE WHEN "RateLimitBucket"."windowStart" <= ${expiredBefore} THEN ${now} ELSE "RateLimitBucket"."windowStart" END
+      RETURNING "count", "windowStart"`;
+    const row = rows[0];
+    if (!row) throw new Error("rate limit upsert returned no row");
+    return { count: Number(row.count), windowStart: new Date(row.windowStart) };
+  },
+
+  async rateLimitPeek(key, windowMs, now = new Date()) {
+    const row = await getPrisma().rateLimitBucket.findUnique({ where: { key } });
+    if (!row || row.windowStart.getTime() <= now.getTime() - windowMs) return 0;
+    return row.count;
+  },
+
+  async rateLimitClear(key) {
+    await getPrisma().rateLimitBucket.deleteMany({ where: { key } });
+  },
+
   async upsertMembership(tenantId, userId, roleId, profile) {
     const fields = { ...(profile?.title !== undefined ? { title: profile.title } : {}), ...(profile?.phone !== undefined ? { phone: profile.phone } : {}), ...(profile?.photoUrl !== undefined ? { photoUrl: profile.photoUrl } : {}) };
     await getPrisma().membership.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: { roleId, ...fields }, create: { tenantId, userId, roleId, ...fields } });

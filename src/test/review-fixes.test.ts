@@ -6,6 +6,8 @@ import { demoTenants } from "@/lib/data/fixtures";
 import { platformReadiness, tenantReadiness } from "@/lib/launch/readiness";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import { registerPlaybook, runGreenLeadPlaybook } from "@/lib/playbook";
+import { intakeSchema } from "@/lib/intake/schema";
+import { processIntake } from "@/lib/intake/process";
 import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 import { localInputToDate } from "@/lib/utils";
 import type { NextRequest } from "next/server";
@@ -174,5 +176,51 @@ describe("review: the public intake key cannot drive the call and review connect
     assert.equal(webhooks.ok, false);
     assert.equal(webhooks.ok === false && webhooks.status, 403);
     assert.match(webhooks.ok === false ? webhooks.error : "", /webhooks/);
+  });
+});
+
+describe("review: shared counters, heartbeat and the daily intake cap", () => {
+  it("counts hits in a fixed window that restarts once it has passed", async () => {
+    const t0 = new Date("2026-01-15T12:00:00Z");
+    const minute = 60_000;
+    await repository.rateLimitClear("review:bucket");
+    assert.deepEqual(await repository.rateLimitHit("review:bucket", minute, t0), { count: 1, windowStart: t0 });
+    assert.equal((await repository.rateLimitHit("review:bucket", minute, new Date(t0.getTime() + 10_000))).count, 2);
+    assert.equal(await repository.rateLimitPeek("review:bucket", minute, new Date(t0.getTime() + 20_000)), 2, "peek does not count");
+    const later = new Date(t0.getTime() + minute + 1);
+    assert.deepEqual(await repository.rateLimitHit("review:bucket", minute, later), { count: 1, windowStart: later }, "a new window starts at 1");
+    assert.equal(await repository.rateLimitPeek("review:bucket", minute, new Date(later.getTime() + 2 * minute)), 0, "an expired window reads as 0");
+    await repository.rateLimitClear("review:bucket");
+    assert.equal(await repository.rateLimitPeek("review:bucket", minute, later), 0);
+  });
+
+  it("records and reads a heartbeat", async () => {
+    const at = new Date("2026-01-15T12:34:00Z");
+    assert.equal(await repository.getHeartbeat("review:beat"), null);
+    await repository.recordHeartbeat("review:beat", at);
+    assert.equal((await repository.getHeartbeat("review:beat"))?.toISOString(), at.toISOString());
+    assert.equal(await repository.ping(), true);
+  });
+
+  it("refuses enquiries beyond the workspace's daily cap without classifying them", async () => {
+    const summit = demoTenants[1];
+    const prev = process.env.INTAKE_DAILY_CAP;
+    process.env.INTAKE_DAILY_CAP = "2";
+    await repository.rateLimitClear(`intake:day:${summit.id}`);
+    try {
+      const outcomes: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const r = await processIntake(summit, intakeSchema.parse({ email: `cap${i}@example.com`, message: `Membership enquiry ${i}` }), {});
+        outcomes.push(r.outcome);
+      }
+      assert.deepEqual(outcomes, ["created", "created", "capped"]);
+      const capped = await processIntake(summit, intakeSchema.parse({ email: "cap9@example.com", message: "Still capped" }), {});
+      assert.equal(capped.outcome, "capped");
+      assert.ok(capped.outcome === "capped" && capped.retryAfterSeconds >= 60);
+    } finally {
+      if (prev === undefined) delete process.env.INTAKE_DAILY_CAP;
+      else process.env.INTAKE_DAILY_CAP = prev;
+      await repository.rateLimitClear(`intake:day:${summit.id}`);
+    }
   });
 });

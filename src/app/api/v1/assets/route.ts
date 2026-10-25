@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const { tenant } = auth;
   if (!isStorageConfigured()) return NextResponse.json({ error: "Object storage is not configured for this deployment." }, { status: 503 });
 
-  const limit = takeIntakeToken(`assets:${tenant.id}`);
+  const limit = await takeIntakeToken(`assets:${tenant.id}`);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Too many uploads. Try again shortly." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
   }

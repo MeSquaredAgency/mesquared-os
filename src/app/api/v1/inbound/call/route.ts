@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!phone) return NextResponse.json({ error: "Caller number is not usable." }, { status: 422 });
 
   const ip = clientIpFromHeaders((n) => req.headers.get(n));
-  const limit = takeIntakeTokens([`call:${tenant.id}`, `call:${tenant.id}:${phone}`, `ip:${ip}`]);
+  const limit = await takeIntakeTokens([`call:${tenant.id}`, `call:${tenant.id}:${phone}`, `ip:${ip}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
 
   const name = safeName(parsed.data.callerName);

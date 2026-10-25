@@ -75,5 +75,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
       actionsFailed++;
     }
   }
+  // The heartbeat is what the health endpoint and readiness read to know the scheduler is alive.
+  await repository.recordHeartbeat("tick", new Date()).catch((error) => console.error(`[jobs] could not record the tick heartbeat: ${error instanceof Error ? error.message : error}`));
   return { tenants: tenants.length, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated };
 }

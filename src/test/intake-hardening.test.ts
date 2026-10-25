@@ -59,15 +59,15 @@ describe("redactPayload", () => {
 });
 
 describe("intake rate limiter", () => {
-  it("allows a burst up to capacity, then refuses with a retry hint", () => {
+  it("allows a burst up to capacity, then refuses with a retry hint", async () => {
     _resetIntakeLimiter();
     const t0 = 1_000_000;
     let allowed = 0;
-    for (let i = 0; i < 70; i++) if (takeIntakeToken("tenant_x", t0).allowed) allowed++;
+    for (let i = 0; i < 70; i++) if ((await takeIntakeToken("tenant_x", t0)).allowed) allowed++;
     assert.equal(allowed, 60);
-    assert.equal(takeIntakeToken("tenant_x", t0).allowed, false);
-    assert.equal(takeIntakeToken("tenant_y", t0).allowed, true);
-    assert.equal(takeIntakeToken("tenant_x", t0 + 61_000).allowed, true);
+    assert.equal((await takeIntakeToken("tenant_x", t0)).allowed, false);
+    assert.equal((await takeIntakeToken("tenant_y", t0)).allowed, true);
+    assert.equal((await takeIntakeToken("tenant_x", t0 + 61_000)).allowed, true);
   });
 });
 

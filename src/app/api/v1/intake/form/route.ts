@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const ip = clientIpFromHeaders((n) => req.headers.get(n));
-  const limit = takeIntakeTokens([auth.tenant.id, `ip:${ip}`]);
+  const limit = await takeIntakeTokens([auth.tenant.id, `ip:${ip}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
 
   // Redirect only back to the site the form lives on (the page that posted, or the tenant's connected website).
@@ -85,7 +85,8 @@ export async function POST(req: NextRequest) {
   try {
     const result = await processIntake(auth.tenant, parsed.data, Object.fromEntries([...form.entries()].filter(([k]) => k !== "_key").map(([k, v]) => [k, typeof v === "string" ? v : "(file)"])), { channel: "WEB_FORM", provider: fields.utm_source || "website" });
     const session = get("_session");
-    if (session) await repository.updateFormSession(auth.tenant.id, session, { submittedAt: new Date(), ...(result.outcome !== "dry_run" ? { convertedLeadId: result.lead.id } : {}) });
+    if (result.outcome === "capped") return finish(false, { error: "Too many enquiries today. Please try again tomorrow or call us." }, 429);
+    if (session) await repository.updateFormSession(auth.tenant.id, session, { submittedAt: new Date(), ...(result.outcome === "created" || result.outcome === "duplicate" ? { convertedLeadId: result.lead.id } : {}) });
     let path: string | null = null;
     try {
       path = req.headers.get("referer") ? new URL(req.headers.get("referer")!).pathname : null;
