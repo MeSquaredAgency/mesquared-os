@@ -281,7 +281,11 @@ describe("signing as the assigned person", () => {
     assert.match(hostile, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; co/);
     const branded = { ...fresh, branding: { ...fresh.branding, primaryColor: "#8dc600", logoUrl: "https://coastline.example/logo.png", website: "coastline.example", phone: "1300 000 000", addresses: ["Glenelg: 1 Jetty Rd"], social: { facebook: "https://www.facebook.com/coastline" } } };
     const signed = renderEmailHtml(branded, email.body, { cta: email.cta, signature: { name: "Dana Owner", title: "Property Manager", phone: "0400 000 000", email: "owner@coastline.example", photoUrl: "https://coastline.example/dana.png" } });
-    assert.match(signed, /<img src="https:\/\/coastline.example\/logo.png" alt="Coastline Property" height="44"/, "the logo heads the email");
+    assert.match(signed, /<img src="https:\/\/coastline.example\/logo.png" alt="Coastline Property" height="56"/, "the logo heads the email");
+    const listed = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "EMAIL", custom: null, infoUrl: "https://coastline.example/rentals", topic: "rentals", area: "Glenelg", listings: ["1 Jetty Rd, Glenelg SA 5045 · 2 beds"], signedBy: "Dana" });
+    const listedHtml = renderEmailHtml(fresh, listed.body, { cta: listed.cta });
+    assert.match(listedHtml, /<p[^>]*>Dana will confirm availability and inspection times with you\. If your question is about something else, reply here and Dana will pick it up\.<\/p><table/, "only the link sentence becomes the button");
+    assert.doesNotMatch(listedHtml, /here: \./);
     assert.match(signed, /background:#8dc600/);
     assert.match(signed, /<img src="https:\/\/coastline.example\/dana.png" width="72"/, "the signer's photo");
     assert.match(signed, /Dana Owner<\/div><div[^>]*>Property Manager<\/div>/, "name and title");

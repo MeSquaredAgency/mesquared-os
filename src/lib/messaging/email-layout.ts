@@ -31,9 +31,14 @@ export function renderEmailHtml(tenant: TenantSummary, text: string, opts: { cta
     .map((lines, i) => {
       const margin = i === 0 ? 0 : 14;
       if (cta && lines.some((l) => l.includes(cta.url))) {
-        // The sentence that carried the link becomes the button; keep any words before the link as a lead-in.
-        const lead = lines.map((l) => l.replace(cta.url, "").replace(/[:\s]+$/, "")).filter(Boolean).join(" ").trim();
-        return `${lead ? `<p style="margin:${margin}px 0 0;line-height:1.6">${escapeHtml(lead)}.</p>` : ""}${button(cta, colour, onColour)}`;
+        // The sentence that carried the link is replaced by the button; the paragraph's other sentences stay.
+        const rest = lines
+          .join(" ")
+          .split(/(?<=[.!?])\s+/)
+          .filter((sentence) => !sentence.includes(cta.url))
+          .join(" ")
+          .trim();
+        return `${rest ? `<p style="margin:${margin}px 0 0;line-height:1.6">${linkify(escapeHtml(rest))}</p>` : ""}${button(cta, colour, onColour)}`;
       }
       const bullets = lines.every((l) => l.startsWith("• "));
       if (bullets) return `<ul style="margin:${margin}px 0 0;padding-left:20px;line-height:1.6">${lines.map((l) => `<li style="margin:4px 0">${linkify(escapeHtml(l.slice(2)))}</li>`).join("")}</ul>`;
@@ -43,7 +48,7 @@ export function renderEmailHtml(tenant: TenantSummary, text: string, opts: { cta
 
   const logo = brand.logoUrl && /^https:\/\//i.test(brand.logoUrl) ? brand.logoUrl : null;
   const header = logo
-    ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(name)}" height="44" style="display:block;height:44px;width:auto;border:0">`
+    ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(name)}" height="56" style="display:block;height:56px;width:auto;border:0">`
     : `<span style="font-size:20px;font-weight:bold;color:${INK}">${escapeHtml(name)}</span>`;
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light"><title>${escapeHtml(name)}</title></head>

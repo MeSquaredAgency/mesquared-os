@@ -200,7 +200,7 @@ export function generalReply({ tenant, firstName, channel, custom, infoUrl, topi
   else if (listings?.length) {
     lines.push(`thanks for your message to ${tenant.name}${about}. Here is what we have at the moment that may suit:`);
     for (const l of listings) lines.push(`• ${l}`);
-    lines.push(`${person[0].toUpperCase()}${person.slice(1)} confirm availability and inspection times with you${infoUrl ? `, and you can see details and times here: ${infoUrl}` : ""}. If your question is about something else, reply here and ${person} pick it up.`);
+    lines.push(`${person[0].toUpperCase()}${person.slice(1)} confirm availability and inspection times with you.${infoUrl ? ` You can see details and times here: ${infoUrl}.` : ""} If your question is about something else, reply here and ${person} pick it up.`);
   } else if (infoUrl) lines.push(`thanks for your message to ${tenant.name}${about}. The quickest way to get details and times is here: ${infoUrl}. If your question is about something else, reply here and ${person} pick it up.`);
   else lines.push(`thanks for your message to ${tenant.name}${about}. ${person[0].toUpperCase()}${person.slice(1)} come back to you during business hours; if you need anything else in the meantime, just reply here.`);
   return pack(channel, `Thanks for contacting ${tenant.name}`, lines, tenant, signedBy, infoUrl ? { label: "See details and times", url: infoUrl } : null);
