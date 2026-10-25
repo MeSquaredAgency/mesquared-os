@@ -102,3 +102,16 @@ Settings → Business → mark inactive (or `updateTenant({ isActive: false })`)
 Revoke their API keys. Data stays for the retention period and is excluded
 from every list and detector. Deletion is a manual, logged database operation
 after the retention period.
+
+## Signing in with Google
+
+With `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` set on the
+deployment, the sign-in page shows **Continue with Google**. It signs in an
+existing account whose email matches the verified Google email; it never
+creates an account, so inviting someone under Settings → People is still the
+only way in. Passwords keep working alongside it. The OAuth client lives in
+the Me² Google Cloud project (the same one the Google Ads and Business
+Profile connectors use); its authorised redirect URI must be
+`<public URL>/api/auth/google/callback`, and the consent screen must be
+published (External, in production) so people outside the Me² Google
+Workspace, such as a client's staff, can use it.

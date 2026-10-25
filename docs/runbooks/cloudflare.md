@@ -60,7 +60,8 @@ cf:preview` (build and run on `http://localhost:8787`), `npm run cf:deploy`.
    ```
 
    Repeat for `AUTH_SECRET`, `INTEGRATION_ENCRYPTION_KEY`, `JOB_SECRET`,
-   `ANTHROPIC_API_KEY`, Twilio, Resend and the webhook secrets listed in
+   `ANTHROPIC_API_KEY`, Twilio, Resend, `GOOGLE_OAUTH_CLIENT_ID` and
+   `GOOGLE_OAUTH_CLIENT_SECRET` (Google sign-in) and the webhook secrets listed in
    `.env.example`. Plain values such as `NEXT_PUBLIC_APP_URL`,
    `DEFAULT_FROM_EMAIL` and the `*_MODE` switches go under `vars` in
    `wrangler.jsonc` or through the dashboard.

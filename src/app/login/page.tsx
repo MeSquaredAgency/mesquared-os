@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/auth/login-form";
+import { GOOGLE_SIGN_IN_MESSAGES, googleConfig } from "@/lib/auth/google";
 import { dataMode } from "@/lib/data";
 import { DEMO_ACCOUNTS } from "@/lib/data/fixtures";
 
@@ -6,8 +7,10 @@ export const metadata = { title: "Sign in" };
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const { next } = await searchParams;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
+  const { next, error } = await searchParams;
+  const googleEnabled = googleConfig() !== null;
+  const notice = error && error in GOOGLE_SIGN_IN_MESSAGES ? GOOGLE_SIGN_IN_MESSAGES[error as keyof typeof GOOGLE_SIGN_IN_MESSAGES] : undefined;
   const demoHint =
     dataMode === "demo" && process.env.NODE_ENV !== "production"
       ? `Demo mode. Any of these sign in with DEMO_OPERATOR_PASSWORD (default "mesquared-demo"): ${DEMO_ACCOUNTS.map((a) => a.email).join(", ")}.`
@@ -20,10 +23,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">M²</span>
           <div className="leading-tight">
             <p className="text-sm font-semibold">MeSquared OS</p>
-            <p className="text-xs text-muted-foreground">Operator sign-in</p>
+            <p className="text-xs text-muted-foreground">Sign in</p>
           </div>
         </div>
-        <LoginForm next={next} demoHint={demoHint} />
+        <LoginForm next={next} demoHint={demoHint} googleEnabled={googleEnabled} notice={notice} />
       </div>
     </main>
   );

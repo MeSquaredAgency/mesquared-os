@@ -75,3 +75,36 @@ export async function verifySession(token: string | undefined | null, secret: st
     return null;
   }
 }
+
+/** Signs any small JSON payload with an `exp` (unix seconds), same format as a session token. */
+export async function signPayload<T extends { exp: number }>(payload: T, secret: string): Promise<string> {
+  const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
+  const key = await importKey(secret, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
+  return `${body}.${toBase64Url(sig)}`;
+}
+
+/** The payload when the signature is valid and `exp` has not passed, else null. */
+export async function verifyPayload<T extends { exp: number }>(token: string | undefined | null, secret: string, now = Date.now()): Promise<T | null> {
+  if (!token) return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  const body = token.slice(0, dot);
+  const sigRaw = token.slice(dot + 1);
+  if (!sigRaw) return null;
+  let sig: Uint8Array<ArrayBuffer>;
+  try {
+    sig = fromBase64Url(sigRaw);
+  } catch {
+    return null;
+  }
+  const key = await importKey(secret, ["verify"]);
+  if (!(await crypto.subtle.verify("HMAC", key, sig, encoder.encode(body)))) return null;
+  try {
+    const payload = JSON.parse(decoder.decode(fromBase64Url(body))) as Partial<T>;
+    if (typeof payload.exp !== "number" || payload.exp * 1000 <= now) return null;
+    return payload as T;
+  } catch {
+    return null;
+  }
+}
