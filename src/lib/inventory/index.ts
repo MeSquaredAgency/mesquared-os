@@ -154,19 +154,49 @@ export async function findListingsMatching(tenantId: string, want: { suburb?: st
   if (!want.suburb && !want.bedrooms) return [];
   const items = await repository.listInventory(tenantId, { type: "LISTING", status: ["ACTIVE"], limit: 500 });
   const suburb = want.suburb?.toLowerCase() ?? null;
-  const inSuburb = suburb ? items.filter((i) => (typeof i.attributes.suburb === "string" && i.attributes.suburb.toLowerCase() === suburb) || i.name.toLowerCase().includes(suburb)) : items;
+  // The suburb attribute decides; the name is only consulted for listings that never had one parsed, so a street
+  // called "Darlington Rd" in another suburb is not offered as Darlington.
+  const inSuburb = suburb ? items.filter((i) => (typeof i.attributes.suburb === "string" ? i.attributes.suburb.toLowerCase() === suburb : i.name.toLowerCase().includes(suburb))) : items;
   const beds = want.bedrooms ?? null;
   const exact = beds ? inSuburb.filter((i) => i.attributes.bedrooms === beds) : inSuburb;
   const pool = exact.length ? exact : beds ? inSuburb.filter((i) => typeof i.attributes.bedrooms === "number" && i.attributes.bedrooms > beds) : inSuburb;
   return (suburb ? pool : pool).slice(0, want.limit ?? 3);
 }
 
-/** A listing whose name or address the enquiry mentions, for the automatic reply. */
+const STREET_WORDS: Record<string, string> = { street: "st", road: "rd", avenue: "ave", av: "ave", terrace: "tce", drive: "dr", court: "ct", place: "pl", crescent: "cres", parade: "pde", boulevard: "bvd", highway: "hwy", lane: "ln", close: "cl", circuit: "cct", esplanade: "esp", grove: "gr", square: "sq", way: "way" };
+
+/**
+ * "12 Smith Street, Darlington SA 5047" and "12 smith st darlington" read as the
+ * same thing: lower case, street words abbreviated, state and postcode and
+ * punctuation dropped, spaces collapsed.
+ */
+export function normaliseAddress(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(act|nsw|nt|qld|sa|tas|vic|wa)\b/g, " ")
+    .replace(/\b\d{4}\b/g, " ")
+    .replace(/[^a-z0-9/]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => STREET_WORDS[w] ?? w)
+    .join(" ");
+}
+
+/** The part of a listing name that identifies it: the street address before the first comma, normalised. */
+function streetKey(name: string): string {
+  return normaliseAddress(name.split(",")[0] ?? name);
+}
+
+/** A listing whose street address the enquiry mentions, however it was spelt, for the automatic reply. */
 export async function findListingMentioned(tenantId: string, text: string | null | undefined): Promise<InventoryItemRecord | null> {
   if (!text) return null;
-  const hay = text.toLowerCase();
+  const hay = ` ${normaliseAddress(text)} `;
   const items = await repository.listInventory(tenantId, { type: "LISTING", status: ["ACTIVE", "LOW"], limit: 500 });
-  return items.find((i) => i.name.length >= 6 && hay.includes(i.name.toLowerCase())) ?? items.find((i) => typeof i.attributes.address === "string" && (i.attributes.address as string).length >= 6 && hay.includes((i.attributes.address as string).toLowerCase())) ?? null;
+  const mentions = (value: string) => {
+    const key = streetKey(value);
+    return key.length >= 6 && /\d/.test(key) && hay.includes(` ${key} `);
+  };
+  return items.find((i) => mentions(i.name)) ?? items.find((i) => typeof i.attributes.address === "string" && mentions(i.attributes.address as string)) ?? null;
 }
 
 export function describeListing(item: InventoryItemRecord, locale: string, currency: string): string {

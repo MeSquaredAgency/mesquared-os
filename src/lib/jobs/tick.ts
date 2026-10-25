@@ -7,6 +7,7 @@ import { registerInventory } from "@/lib/inventory";
 import { quietHoursEnd } from "@/lib/messaging";
 import { publishDuePosts } from "@/lib/social/publish";
 import { localKey } from "@/lib/content/calendar";
+import { startOfDayInZone } from "@/lib/utils";
 
 export interface TickResult {
   tenants: number;
@@ -36,10 +37,12 @@ export async function tick(now = new Date()): Promise<TickResult> {
     }
     // Recurring per-tenant work rides the same queue: one content batch a day (after quiet hours end), one social sync an hour.
     const day = localKey(tenant.timezone, now);
-    await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)) > now ? now : quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)), payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
-    // Daily money and website jobs, early morning local time (after the content batch).
-    const morning = quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000));
-    const dailyAt = morning > now ? now : new Date(morning.getTime() + 30 * 60_000);
+    // Today's morning in the tenant's zone: the moment quiet hours end. Before it, the jobs wait for it; after it, they run now.
+    const morning = quietHoursEnd(tenant, startOfDayInZone(tenant.timezone, now));
+    const batchAt = morning > now ? morning : now;
+    await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: batchAt, payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
+    // Daily money and website jobs, half an hour after the content batch.
+    const dailyAt = new Date(batchAt.getTime() + 30 * 60_000);
     for (const [typeKey, action] of [["ads_sync", "run"], ["finance_sync", "run"], ["website_analytics", "rollup"], ["inventory_sync", "run"]] as const) {
       await repository.scheduleAction(tenant.id, { typeKey, action, runAt: dailyAt, payload: {}, dedupeKey: `${typeKey}:${day}` }).catch(() => {});
     }
