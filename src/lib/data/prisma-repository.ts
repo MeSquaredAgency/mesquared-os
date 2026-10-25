@@ -184,6 +184,9 @@ const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.te
 const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, parentId: a.parentId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, tags: a.tags, scheduledFor: a.scheduledFor, generation: obj(a.generation) as ContentAssetRecord["generation"], rejectionNote: a.rejectionNote, approvedAt: a.approvedAt, createdAt: a.createdAt });
 const toPost = (p: SocialPost): SocialPostRecord => ({ id: p.id, tenantId: p.tenantId, channelId: p.channelId, contentAssetId: p.contentAssetId, platform: p.platform, caption: p.caption, mediaUrls: p.mediaUrls, tags: p.tags, status: p.status, scheduledFor: p.scheduledFor, publishedAt: p.publishedAt, externalPostId: p.externalPostId, permalink: p.permalink, errorMessage: p.errorMessage, attempts: p.attempts, metrics: obj(p.metrics) as Record<string, number>, batchId: p.batchId, createdAt: p.createdAt });
 
+/** How far back the SLA detectors and the portfolio look for breaches. */
+const SLA_WINDOW_MS = 30 * 86_400_000;
+
 const OPEN_MISSED: MissedOpportunity["status"][] = ["DETECTED", "RECOVERING", "ESCALATED"];
 
 async function assertLeadInTenant(tenantId: string, leadId: string | null | undefined) {
@@ -371,11 +374,23 @@ export const prismaRepository: Repository = {
 
   async listLeadsPastSla(tenantId, now) {
     const db = getPrisma();
+    // A breach older than the window has long been raised (or expired) as a missed opportunity; never scan all history.
+    const since = new Date(now.getTime() - SLA_WINDOW_MS);
     const [respond, book] = await Promise.all([
-      db.lead.findMany({ where: { tenantId, ticketType: "GREEN", respondBy: { lt: now }, firstResponseAt: null, status: { notIn: ["LOST", "ARCHIVED"] } } }),
-      db.lead.findMany({ where: { tenantId, ticketType: "GREEN", bookBy: { lt: now }, bookedAt: null, status: { in: ["QUALIFIED", "BOOKING_SENT"] } } }),
+      db.lead.findMany({ where: { tenantId, ticketType: "GREEN", respondBy: { lt: now, gte: since }, firstResponseAt: null, status: { notIn: ["LOST", "ARCHIVED"] } }, take: 500 }),
+      db.lead.findMany({ where: { tenantId, ticketType: "GREEN", bookBy: { lt: now, gte: since }, bookedAt: null, status: { in: ["QUALIFIED", "BOOKING_SENT"] } }, take: 500 }),
     ]);
     return { respond: respond.map(toLead), book: book.map(toLead) };
+  },
+
+  async countLeadsPastSla(tenantId, now) {
+    const db = getPrisma();
+    const since = new Date(now.getTime() - SLA_WINDOW_MS);
+    const [respond, book] = await Promise.all([
+      db.lead.count({ where: { tenantId, ticketType: "GREEN", respondBy: { lt: now, gte: since }, firstResponseAt: null, status: { notIn: ["LOST", "ARCHIVED"] } } }),
+      db.lead.count({ where: { tenantId, ticketType: "GREEN", bookBy: { lt: now, gte: since }, bookedAt: null, status: { in: ["QUALIFIED", "BOOKING_SENT"] } } }),
+    ]);
+    return respond + book;
   },
 
   async findLeadById(tenantId, leadId) {
@@ -393,7 +408,9 @@ export const prismaRepository: Repository = {
       data: {
         bookedAt: lead.bookedAt ?? at,
         lastActivityAt: at,
-        status: ["NEW", "QUALIFIED", "BOOKING_SENT"].includes(lead.status) ? "BOOKED" : lead.status,
+        status: next?.isWon ? "WON" : next?.isLost ? "LOST" : ["NEW", "QUALIFIED", "BOOKING_SENT"].includes(lead.status) ? "BOOKED" : lead.status,
+        ...(next?.isWon ? { wonAt: lead.wonAt ?? at } : {}),
+        ...(next?.isLost ? { lostAt: lead.lostAt ?? at } : {}),
         ...(next && next.id !== lead.stageId ? { stageId: next.id, stageEnteredAt: at } : {}),
       },
     });
@@ -802,7 +819,7 @@ export const prismaRepository: Repository = {
     const [assets, sources, posts, channels] = await Promise.all([
       db.contentAsset.findMany({ where: { tenantId, kind: { notIn: SOURCE_KINDS_DB } }, orderBy: { createdAt: "desc" }, take: 100 }),
       db.contentAsset.findMany({ where: { tenantId, kind: { in: SOURCE_KINDS_DB } }, orderBy: { createdAt: "desc" }, take: 50 }),
-      db.socialPost.findMany({ where: { tenantId }, orderBy: [{ scheduledFor: "desc" }, { createdAt: "desc" }], take: 100 }),
+      db.socialPost.findMany({ where: { tenantId }, orderBy: [{ scheduledFor: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: 100 }),
       db.channel.findMany({ where: { tenantId, isActive: true } }),
     ]);
     const ch = channels.map(toChannel);
@@ -880,7 +897,7 @@ export const prismaRepository: Repository = {
   async listSocialPosts(tenantId, opts = {}) {
     const rows = await getPrisma().socialPost.findMany({
       where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.from || opts.to ? { scheduledFor: { ...(opts.from ? { gte: opts.from } : {}), ...(opts.to ? { lt: opts.to } : {}) } } : {}) },
-      orderBy: { scheduledFor: "asc" },
+      orderBy: { scheduledFor: { sort: "asc", nulls: "last" } },
       take: opts.limit ?? 200,
     });
     return rows.map(toPost);
@@ -931,7 +948,7 @@ export const prismaRepository: Repository = {
   },
 
   async listInboxConversations(tenantId, opts = {}) {
-    const rows = await getPrisma().conversation.findMany({ where: { tenantId, channel: { in: ["SOCIAL_DM", "SOCIAL_COMMENT"] }, ...(opts.awaitingOnly ? { awaitingReply: true } : {}) }, orderBy: { lastMessageAt: "desc" }, take: opts.limit ?? 100 });
+    const rows = await getPrisma().conversation.findMany({ where: { tenantId, channel: { in: ["SOCIAL_DM", "SOCIAL_COMMENT"] }, ...(opts.awaitingOnly ? { awaitingReply: true } : {}) }, orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } }, take: opts.limit ?? 100 });
     return rows.map(toConversation);
   },
 
@@ -1004,34 +1021,36 @@ export const prismaRepository: Repository = {
   },
 
   async applyTemplate(tenantId, template) {
-    const db = getPrisma();
-    for (const role of template.roles) {
-      await db.tenantRole.upsert({ where: { tenantId_name: { tenantId, name: role.name } }, update: { permissions: role.permissions as Permission[], templateKey: role.key }, create: { tenantId, name: role.name, templateKey: role.key, permissions: role.permissions as Permission[] } });
-    }
-    for (const p of template.pipelines) {
-      const pipeline = await db.pipeline.upsert({ where: { tenantId_key: { tenantId, key: p.key } }, update: { name: p.name, isDefault: Boolean(p.isDefault) }, create: { tenantId, key: p.key, name: p.name, isDefault: Boolean(p.isDefault) } });
-      for (const [order, st] of p.stages.entries()) {
-        const data = { name: st.name, order, advanceOn: (st.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(st.isWon), isLost: Boolean(st.isLost), quietAfterDays: st.quietAfterDays ?? null };
-        await db.pipelineStage.upsert({ where: { pipelineId_key: { pipelineId: pipeline.id, key: st.key } }, update: data, create: { tenantId, pipelineId: pipeline.id, key: st.key, ...data } });
+    // Everything or nothing: a failure part way must not leave roles without pipelines or modules.
+    await getPrisma().$transaction(async (tx) => {
+      for (const role of template.roles) {
+        await tx.tenantRole.upsert({ where: { tenantId_name: { tenantId, name: role.name } }, update: { permissions: role.permissions as Permission[], templateKey: role.key }, create: { tenantId, name: role.name, templateKey: role.key, permissions: role.permissions as Permission[] } });
       }
-    }
-    const { MODULES } = await import("@/lib/modules/registry");
-    const { AUTOMATIONS } = await import("@/lib/automations/registry");
-    const enabledModules = new Map(template.modules.map((m) => [m.key, m.settings ?? {}]));
-    for (const m of MODULES) {
-      const settings = json(enabledModules.get(m.key) ?? {});
-      await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId, moduleKey: m.key } }, update: { enabled: enabledModules.has(m.key), settings }, create: { tenantId, moduleKey: m.key, enabled: enabledModules.has(m.key), settings } });
-    }
-    const enabledAutomations = new Map(template.automations.map((a) => [a.key, a.settings ?? {}]));
-    for (const a of AUTOMATIONS) {
-      const settings = json(enabledAutomations.get(a.key) ?? {});
-      await db.tenantAutomation.upsert({ where: { tenantId_typeKey: { tenantId, typeKey: a.key } }, update: { enabled: enabledAutomations.has(a.key), settings }, create: { tenantId, typeKey: a.key, enabled: enabledAutomations.has(a.key), settings } });
-    }
-    const existingBrand = await db.brandProfile.findUnique({ where: { tenantId } });
-    const footer = (obj(existingBrand?.complianceBlock ?? {}) as { requiredFooter?: string }).requiredFooter;
-    const complianceBlock = { ...template.brand.complianceBlock, ...(footer ? { requiredFooter: footer } : {}) };
-    await db.brandProfile.upsert({ where: { tenantId }, update: { voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) }, create: { tenantId, voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) } });
-    await db.tenant.update({ where: { id: tenantId }, data: { templateKey: template.key, industry: template.industry } });
+      for (const p of template.pipelines) {
+        const pipeline = await tx.pipeline.upsert({ where: { tenantId_key: { tenantId, key: p.key } }, update: { name: p.name, isDefault: Boolean(p.isDefault) }, create: { tenantId, key: p.key, name: p.name, isDefault: Boolean(p.isDefault) } });
+        for (const [order, st] of p.stages.entries()) {
+          const data = { name: st.name, order, advanceOn: (st.advanceOn ?? "MANUAL") as StageAdvanceTrigger, isWon: Boolean(st.isWon), isLost: Boolean(st.isLost), quietAfterDays: st.quietAfterDays ?? null };
+          await tx.pipelineStage.upsert({ where: { pipelineId_key: { pipelineId: pipeline.id, key: st.key } }, update: data, create: { tenantId, pipelineId: pipeline.id, key: st.key, ...data } });
+        }
+      }
+      const { MODULES } = await import("@/lib/modules/registry");
+      const { AUTOMATIONS } = await import("@/lib/automations/registry");
+      const enabledModules = new Map(template.modules.map((m) => [m.key, m.settings ?? {}]));
+      for (const m of MODULES) {
+        const settings = json(enabledModules.get(m.key) ?? {});
+        await tx.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId, moduleKey: m.key } }, update: { enabled: enabledModules.has(m.key), settings }, create: { tenantId, moduleKey: m.key, enabled: enabledModules.has(m.key), settings } });
+      }
+      const enabledAutomations = new Map(template.automations.map((a) => [a.key, a.settings ?? {}]));
+      for (const a of AUTOMATIONS) {
+        const settings = json(enabledAutomations.get(a.key) ?? {});
+        await tx.tenantAutomation.upsert({ where: { tenantId_typeKey: { tenantId, typeKey: a.key } }, update: { enabled: enabledAutomations.has(a.key), settings }, create: { tenantId, typeKey: a.key, enabled: enabledAutomations.has(a.key), settings } });
+      }
+      const existingBrand = await tx.brandProfile.findUnique({ where: { tenantId } });
+      const footer = (obj(existingBrand?.complianceBlock ?? {}) as { requiredFooter?: string }).requiredFooter;
+      const complianceBlock = { ...template.brand.complianceBlock, ...(footer ? { requiredFooter: footer } : {}) };
+      await tx.brandProfile.upsert({ where: { tenantId }, update: { voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) }, create: { tenantId, voice: template.brand.voice, bannedPhrases: template.brand.bannedPhrases, complianceBlock: json(complianceBlock) } });
+      await tx.tenant.update({ where: { id: tenantId }, data: { templateKey: template.key, industry: template.industry } });
+    });
   },
 
   async setModule(tenantId, moduleKey, patch) {
@@ -1224,8 +1243,11 @@ export const prismaRepository: Repository = {
     return rows.map(toAdSpend);
   },
 
-  async sumAdSpend(tenantId, from, to) {
-    const agg = await getPrisma().adSpendSnapshot.aggregate({ where: { tenantId, date: { gte: from, ...(to ? { lt: to } : {}) } }, _sum: { spendCents: true } });
+  async sumAdSpend(tenantId, from, to, currency) {
+    const db = getPrisma();
+    const accounts = currency ? (await db.adAccount.findMany({ where: { tenantId, currency: currency.toUpperCase() }, select: { id: true } })).map((a) => a.id) : null;
+    if (accounts && accounts.length === 0) return 0;
+    const agg = await db.adSpendSnapshot.aggregate({ where: { tenantId, date: { gte: from, ...(to ? { lt: to } : {}) }, ...(accounts ? { adAccountId: { in: accounts } } : {}) }, _sum: { spendCents: true } });
     return agg._sum.spendCents ?? 0;
   },
 
@@ -1273,7 +1295,7 @@ export const prismaRepository: Repository = {
   },
 
   async listInvoices(tenantId, opts = {}) {
-    const rows = await getPrisma().invoice.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.dueBefore ? { dueAt: { lt: opts.dueBefore } } : {}) }, orderBy: { dueAt: "asc" }, take: opts.limit ?? 200 });
+    const rows = await getPrisma().invoice.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.dueBefore ? { dueAt: { lt: opts.dueBefore } } : {}) }, orderBy: { dueAt: { sort: "asc", nulls: "last" } }, take: opts.limit ?? 200 });
     return rows.map(toInvoice);
   },
 
@@ -1342,7 +1364,7 @@ export const prismaRepository: Repository = {
       db.automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: 6 }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
-      this.sumAdSpend(tenantId, monthStart),
+      this.sumAdSpend(tenantId, monthStart, undefined, opts.currency),
       db.transaction.aggregate({ where: { tenantId, kind: "EXPENSE", status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.invoice.findMany({ where: { tenantId, status: { in: ["SENT", "OVERDUE"] } }, select: { amountDueCents: true, status: true, dueAt: true } }),
     ]);
@@ -1377,21 +1399,21 @@ export const prismaRepository: Repository = {
     for (const tenant of tenants) {
       const dayStart = startOfDayInZone(tenant.timezone, now);
       const monthStart = startOfMonthInZone(tenant.timezone, now);
-      const [{ respond, book }, open, exceptionsOpen, contentDue, integrations, leadsToday, budget, spentCents] = await Promise.all([
-        this.listLeadsPastSla(tenant.id, now),
+      const [slaBreaches, open, exceptionsOpen, contentDue, integrations, leadsToday, budget, spentCents] = await Promise.all([
+        this.countLeadsPastSla(tenant.id, now),
         db.missedOpportunity.findMany({ where: { tenantId: tenant.id, status: { in: OPEN_MISSED } }, select: { estimatedValueCents: true } }),
         db.exceptionItem.count({ where: { tenantId: tenant.id, status: { not: "RESOLVED" } } }),
         db.contentAsset.count({ where: { tenantId: tenant.id, status: "IN_REVIEW" } }),
         db.integration.findMany({ where: { tenantId: tenant.id }, select: { provider: true, status: true, lastError: true } }),
         db.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: dayStart } } }),
         db.adAccount.aggregate({ where: { tenantId: tenant.id, isActive: true }, _sum: { monthlyBudgetCents: true } }),
-        this.sumAdSpend(tenant.id, monthStart),
+        this.sumAdSpend(tenant.id, monthStart, undefined, tenant.currency),
       ]);
       const budgetCents = budget._sum.monthlyBudgetCents ?? 0;
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const base = {
         tenant,
-        slaBreaches: respond.length + book.length,
+        slaBreaches,
         missedOpen: open.length,
         missedAtRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0),
         exceptionsOpen,

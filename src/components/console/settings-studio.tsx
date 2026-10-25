@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Check, Copy, KeyRound, Trash2, UserPlus, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,9 @@ interface Props {
 }
 
 type Run = (fn: () => Promise<{ ok: boolean; message: string }>) => void;
+
+/** A second look before something that cannot be undone. */
+const confirmed = (question: string) => typeof window === "undefined" || window.confirm(question);
 
 const OPPORTUNITY_TYPES = ["UNANSWERED_ENQUIRY", "MISSED_CALL", "ABANDONED_FORM", "NOT_BOOKED", "NO_SHOW", "QUIET_QUOTE", "UNREPLIED_DM", "UNREPLIED_COMMENT", "UNANSWERED_REVIEW", "LAPSED_CUSTOMER"] as const;
 
@@ -274,6 +277,12 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
 function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }: Props & { pending: boolean; run: Run }) {
   const [invite, setInvite] = useState({ email: "", name: "", roleId: roles[0]?.id ?? "" });
   const [reveal, setReveal] = useState<{ email: string; password: string } | null>(null);
+  // A one-time password must not sit on a shared screen: it clears itself.
+  useEffect(() => {
+    if (!reveal) return;
+    const timer = setTimeout(() => setReveal(null), 120_000);
+    return () => clearTimeout(timer);
+  }, [reveal]);
   const [operatorId, setOperatorId] = useState(operators[0]?.id ?? "");
   const [editing, setEditing] = useState<string | null>(null);
   const [profile, setProfile] = useState({ title: "", phone: "", photoUrl: "" });
@@ -307,10 +316,10 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => { setEditing(editing === p.userId ? null : p.userId); setProfile({ title: p.title ?? "", phone: p.phone ?? "", photoUrl: p.photoUrl ?? "" }); }}>
                         Signature
                       </Button>
-                      <Button size="sm" variant="outline" disabled={pending} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, { email: p.email, roleId: p.roleId ?? roles[0]?.id ?? "", resetPassword: true }); if (r.ok && r.temporaryPassword) setReveal({ email: p.email, password: r.temporaryPassword }); return r; })}>
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => confirmed(`Reset the password for ${p.name ?? p.email}? They are signed out everywhere and you hand them the new one-time password.`) && run(async () => { const r = await inviteMemberAction(tenant.id, { email: p.email, roleId: p.roleId ?? roles[0]?.id ?? "", resetPassword: true }); if (r.ok && r.temporaryPassword) setReveal({ email: p.email, password: r.temporaryPassword }); return r; })}>
                         <KeyRound /> Reset password
                       </Button>
-                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => removeMemberAction(tenant.id, p.userId))}>
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => confirmed(`Remove ${p.name ?? p.email} from ${tenant.name}? They lose access immediately.`) && run(() => removeMemberAction(tenant.id, p.userId))}>
                         <Trash2 /> Remove
                       </Button>
                     </div>
@@ -362,10 +371,18 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {reveal && (
-            <div className="rounded-md border bg-muted p-3 text-sm">
+            <div className="rounded-md border bg-muted p-3 text-sm" role="status">
               <p className="font-medium">{reveal.email}</p>
               <p className="font-mono text-base">{reveal.password}</p>
-              <p className="text-xs text-muted-foreground">Shown once. Ask them to change it after signing in.</p>
+              <p className="text-xs text-muted-foreground">Shown once and cleared from this screen after two minutes. Hand it over privately and ask them to sign in with Google or change it.</p>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => navigator.clipboard?.writeText(reveal.password).catch(() => {})}>
+                  <Copy /> Copy
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setReveal(null)}>
+                  Dismiss
+                </Button>
+              </div>
             </div>
           )}
           <Input type="email" placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} aria-label="Email" />
@@ -416,7 +433,7 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
                   {k.revokedAt ? (
                     <Badge variant="muted">Revoked</Badge>
                   ) : (
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => revokeApiKeyAction(tenant.id, k.id))}>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => confirmed(`Revoke "${k.label}"? Any form or connector using it stops working immediately.`) && run(() => revokeApiKeyAction(tenant.id, k.id))}>
                       <Trash2 /> Revoke
                     </Button>
                   )}

@@ -267,7 +267,7 @@ function QueuePanel({ tenantId, queue, published, pending, run, fmt }: { tenantI
                     <Button size="sm" variant="green" disabled={pending || !p.channelId} onClick={() => run(() => publishNowAction(tenantId, p.id))}>
                       <Send /> Publish now
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => cancelPostAction(tenantId, p.id))}>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => (typeof window === "undefined" || window.confirm("Take this post off the calendar? It goes back to approved and will not publish.")) && run(() => cancelPostAction(tenantId, p.id))}>
                       <Trash2 /> Take off
                     </Button>
                   </div>

@@ -27,7 +27,16 @@ import { connectInventoryVendor, loadInventoryConnection, runInventorySync } fro
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
 
-process.env.MESSAGING_MODE ??= "log";
+if (process.env.NODE_ENV === "production" && process.env.PARITY_ALLOW_PRODUCTION !== "1") {
+  console.error("parity-check writes rehearsal rows (tenants, leads, invoices); refusing to run with NODE_ENV=production. Set PARITY_ALLOW_PRODUCTION=1 to override.");
+  process.exit(2);
+}
+// Nothing this script creates may reach a real person, whatever the environment says.
+process.env.MESSAGING_MODE = "log";
+process.env.SOCIAL_MODE ??= "log";
+process.env.ADS_MODE ??= "log";
+process.env.FINANCE_MODE ??= "log";
+process.env.INVENTORY_MODE ??= "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
 registerPlaybook();
 registerAutomations();

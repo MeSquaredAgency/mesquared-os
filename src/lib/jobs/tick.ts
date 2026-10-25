@@ -9,6 +9,9 @@ import { publishDuePosts } from "@/lib/social/publish";
 import { localKey } from "@/lib/content/calendar";
 import { startOfDayInZone } from "@/lib/utils";
 
+/** Wall-clock budget for one tick's action loop; the cron runs every minute. */
+const TICK_BUDGET_MS = Number.parseInt(process.env.TICK_BUDGET_MS ?? "50000", 10) || 50_000;
+
 export interface TickResult {
   tenants: number;
   detected: number;
@@ -57,7 +60,13 @@ export async function tick(now = new Date()): Promise<TickResult> {
 
   let actionsRun = 0;
   let actionsFailed = 0;
+  // A tick that cannot finish inside its minute stops taking on new actions; what is left is still due next minute.
+  const deadline = Date.now() + TICK_BUDGET_MS;
   for (const action of await repository.listDueActions(now)) {
+    if (Date.now() > deadline) {
+      console.warn(`[jobs] tick budget spent; leaving remaining due actions for the next tick`);
+      break;
+    }
     // Claim first so two overlapping ticks (or two instances) never run the same action.
     if (!(await repository.claimAction(action.id, now, ACTION_LEASE_MS))) continue;
     try {

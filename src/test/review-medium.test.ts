@@ -113,3 +113,16 @@ describe("medium: daily jobs run after quiet hours end today", () => {
     assert.ok(batch.runAt.getTime() > now.getTime(), "not before the morning");
   });
 });
+
+describe("medium: money and SLA scans", () => {
+  it("counts ad spend only in the panel's currency", async () => {
+    const accounts = await repository.listAdAccounts(harbor.id);
+    assert.ok(accounts.length > 0, "demo tenant has ad accounts");
+    const all = await repository.sumAdSpend(harbor.id, new Date(0));
+    const aud = await repository.sumAdSpend(harbor.id, new Date(0), undefined, "AUD");
+    const chf = await repository.sumAdSpend(harbor.id, new Date(0), undefined, "CHF");
+    assert.ok(aud <= all);
+    assert.equal(chf, 0, "a currency no account is billed in contributes nothing");
+    assert.equal(await repository.countLeadsPastSla(harbor.id, new Date()), (await repository.listLeadsPastSla(harbor.id, new Date())).respond.length + (await repository.listLeadsPastSla(harbor.id, new Date())).book.length);
+  });
+});

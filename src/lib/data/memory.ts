@@ -378,12 +378,18 @@ export const memoryRepository: Repository = {
   },
 
   async listLeadsPastSla(tenantId, now) {
+    const since = new Date(now.getTime() - 30 * 86_400_000);
     const leads = store().leads.filter((l) => l.tenantId === tenantId && l.ticketType === "GREEN");
     return {
-      respond: leads.filter((l) => l.respondBy && l.respondBy < now && !l.firstResponseAt && l.status !== "LOST" && l.status !== "ARCHIVED"),
-      book: leads.filter((l) => l.bookBy && l.bookBy < now && !l.bookedAt && (l.status === "QUALIFIED" || l.status === "BOOKING_SENT")),
+      respond: leads.filter((l) => l.respondBy && l.respondBy < now && l.respondBy >= since && !l.firstResponseAt && l.status !== "LOST" && l.status !== "ARCHIVED"),
+      book: leads.filter((l) => l.bookBy && l.bookBy < now && l.bookBy >= since && !l.bookedAt && (l.status === "QUALIFIED" || l.status === "BOOKING_SENT")),
     };
   },
+  async countLeadsPastSla(tenantId, now) {
+    const { respond, book } = await this.listLeadsPastSla(tenantId, now);
+    return respond.length + book.length;
+  },
+
 
   async findLeadById(tenantId, leadId) {
     return store().leads.find((l) => l.id === leadId && l.tenantId === tenantId) ?? null;
@@ -948,7 +954,7 @@ export const memoryRepository: Repository = {
     const statuses = opts.status ? new Set(opts.status) : null;
     return store()
       .posts.filter((p) => p.tenantId === tenantId && (!statuses || statuses.has(p.status)) && (!opts.from || (p.scheduledFor && p.scheduledFor >= opts.from)) && (!opts.to || (p.scheduledFor && p.scheduledFor < opts.to)))
-      .sort((a, b) => (a.scheduledFor?.getTime() ?? 0) - (b.scheduledFor?.getTime() ?? 0))
+      .sort((a, b) => (a.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY) - (b.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY))
       .slice(0, opts.limit ?? 200);
   },
 
@@ -1298,8 +1304,11 @@ export const memoryRepository: Repository = {
       .sort((a, b) => a.date.getTime() - b.date.getTime());
   },
 
-  async sumAdSpend(tenantId, from, to) {
-    return store().adSpend.filter((x) => x.tenantId === tenantId && x.date >= from && (!to || x.date < to)).reduce((sum, x) => sum + x.spendCents, 0);
+  async sumAdSpend(tenantId, from, to, currency) {
+    const accounts = currency ? new Set(store().adAccounts.filter((a) => a.tenantId === tenantId && a.currency.toUpperCase() === currency.toUpperCase()).map((a) => a.id)) : null;
+    return store()
+      .adSpend.filter((x) => x.tenantId === tenantId && x.date >= from && (!to || x.date < to) && (!accounts || accounts.has(x.adAccountId)))
+      .reduce((sum, x) => sum + x.spendCents, 0);
   },
 
   async listLeadsBetween(tenantId, from, to, limit = 2000) {
@@ -1355,7 +1364,7 @@ export const memoryRepository: Repository = {
     const statuses = opts.status ? new Set(opts.status) : null;
     return store()
       .invoices.filter((i) => i.tenantId === tenantId && (!statuses || statuses.has(i.status)) && (!opts.dueBefore || (i.dueAt && i.dueAt < opts.dueBefore)))
-      .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
+      .sort((a, b) => (a.dueAt?.getTime() ?? Number.POSITIVE_INFINITY) - (b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY))
       .slice(0, opts.limit ?? 200);
   },
 
@@ -1429,7 +1438,7 @@ export const memoryRepository: Repository = {
     const revenueMonthCents = s.transactions
       .filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.currency === opts.currency && t.occurredAt.getTime() >= monthStart)
       .reduce((sum, t) => sum + t.amountCents, 0);
-    const adSpendMonthCents = await this.sumAdSpend(tenantId, new Date(monthStart));
+    const adSpendMonthCents = await this.sumAdSpend(tenantId, new Date(monthStart), undefined, opts.currency);
     const expensesMonthCents = s.transactions.filter((t) => t.tenantId === tenantId && t.kind === "EXPENSE" && t.status === "COMPLETED" && t.occurredAt.getTime() >= monthStart).reduce((sum, t) => sum + t.amountCents, 0);
     const openInvoices = s.invoices.filter((i) => i.tenantId === tenantId && (i.status === "SENT" || i.status === "OVERDUE"));
     const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
