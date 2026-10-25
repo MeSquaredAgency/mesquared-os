@@ -147,6 +147,17 @@ describe("scheduled actions are claimed, retried, then surfaced", () => {
     // A stale lease is reclaimable.
     assert.equal(await repository.claimAction(record.id, new Date(now.getTime() + 700_000), 600_000), true);
     await repository.completeAction(record.id, "DONE");
+    // The same key requested again (every tick re-requests the daily jobs) must not re-arm a finished action.
+    const again = await repository.scheduleAction(harbor.id, { typeKey: "booking_lifecycle", action: "reminder", runAt: new Date(Date.now() - 1000), payload: {}, dedupeKey: "test:claim-once" });
+    assert.equal(again.created, false);
+    assert.equal(again.record.status, "DONE", "a DONE key stays done");
+    assert.equal(await repository.claimAction(again.record.id, new Date(), 600_000), false, "and cannot be claimed again");
+    // A cancelled key (a reminder cancelled by a reschedule) is re-armed.
+    await repository.completeAction(record.id, "CANCELLED");
+    const rearmed = await repository.scheduleAction(harbor.id, { typeKey: "booking_lifecycle", action: "reminder", runAt: new Date(Date.now() - 1000), payload: {}, dedupeKey: "test:claim-once" });
+    assert.equal(rearmed.created, true);
+    assert.equal(rearmed.record.status, "PENDING");
+    await repository.completeAction(record.id, "DONE");
   });
 
   it("backs off, then fails after three attempts with an exception an operator can see", async () => {

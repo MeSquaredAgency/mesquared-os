@@ -525,7 +525,9 @@ export const prismaRepository: Repository = {
   async scheduleAction(tenantId, data) {
     const db = getPrisma();
     const existing = await db.scheduledAction.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
-    if (existing?.status === "PENDING") return { record: toAction(existing), created: false };
+    // A key that already ran (DONE/FAILED) or is running stays as it is: the daily and hourly jobs are re-requested
+    // by every tick and must not run again. Only a CANCELLED key (a reminder cancelled by a reschedule) is re-armed.
+    if (existing && existing.status !== "CANCELLED") return { record: toAction(existing), created: false };
     if (existing) {
       const reset = await db.scheduledAction.update({ where: { id: existing.id }, data: { typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), status: "PENDING", attempts: 0, lastError: null, ranAt: null } });
       return { record: toAction(reset), created: true };

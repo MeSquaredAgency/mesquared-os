@@ -514,8 +514,12 @@ export const memoryRepository: Repository = {
   },
 
   async scheduleAction(tenantId, data) {
-    const existing = store().actions.find((a) => a.tenantId === tenantId && a.dedupeKey === data.dedupeKey && a.status === "PENDING");
-    if (existing) return { record: existing, created: false };
+    const existing = store().actions.find((a) => a.tenantId === tenantId && a.dedupeKey === data.dedupeKey);
+    if (existing && existing.status !== "CANCELLED") return { record: existing, created: false };
+    if (existing) {
+      Object.assign(existing, { typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: data.payload ?? {}, status: "PENDING", attempts: 0, lastError: null, ranAt: null, lockedAt: null });
+      return { record: existing, created: true };
+    }
     const record: ScheduledActionRecord = { id: id("act"), tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: data.payload ?? {}, dedupeKey: data.dedupeKey, status: "PENDING", attempts: 0 };
     pushBounded(store().actions, record, false);
     return { record, created: true };
