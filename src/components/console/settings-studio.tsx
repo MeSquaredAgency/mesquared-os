@@ -207,7 +207,7 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
           </label>
           {area("Brand voice", "voice", "Local, knowledgeable and calm. Plain English.")}
           {field("Banned phrases (comma separated)", "bannedPhrases")}
-          {field("Line every asset must carry", "requiredFooter", { placeholder: "Business Name | Licence 000000" })}
+          {field("Line every email and asset must carry", "requiredFooter", { placeholder: "Business Name | Licence 000000" })}
           {field("Claims policy", "claimsPolicy", { placeholder: "Only state prices and figures from a record on file." })}
           <Button
             variant="green"

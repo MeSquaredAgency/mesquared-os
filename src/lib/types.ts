@@ -56,6 +56,8 @@ export interface TenantBranding {
   replyTo?: string;
   /** Sign automated messages as the person assigned to the lead (their first name, replies to their email); the business otherwise. */
   signAsAssignee?: boolean;
+  /** Line under every email signature (licence number, address); mirrors the brand profile's required footer. */
+  footer?: string;
 }
 
 /** Tenant-configured rules consumed by the qualification engine. */

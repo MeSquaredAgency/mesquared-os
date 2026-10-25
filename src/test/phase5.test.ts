@@ -258,6 +258,25 @@ describe("signing as the assigned person", () => {
     assert.match(sms, /automated reply from Dana at Coastline Property Group/);
     const unsigned = templates.bookingConfirmation({ tenant: fresh, firstName: "Sam", when: null, channel: "EMAIL" });
     assert.doesNotMatch(unsigned.body, /Dana/);
+    assert.match(unsigned.body, /Kind regards,\nCoastline Property\nCoastline Property Co \| RLA 000001\n/, "the required footer sits under every email signature");
+  });
+
+  it("renders every email as a branded banner layout with the text intact", async () => {
+    const { templates } = await import("@/lib/messaging");
+    const { renderEmailHtml } = await import("@/lib/messaging/email-layout");
+    const email = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "EMAIL", custom: null, infoUrl: "https://coastline.example/rentals?a=1&b=2" });
+    assert.match(email.body, /^Hi Sam,\n\nThanks for your message/, "email greetings get a paragraph break and a capital");
+    const html = renderEmailHtml(fresh, email.body);
+    assert.match(html, /<td style="background:#0f4c81[^"]*">.*Coastline Property<\/span>/s, "banner in the brand colour carries the sender name");
+    assert.match(html, /<a href="https:\/\/coastline.example\/rentals\?a=1&amp;b=2"/, "links are clickable and escaped");
+    assert.match(html, /Coastline Property Co \| RLA 000001<br>This is an automated message/, "licence line and note live in the footer");
+    assert.equal((html.match(/RLA 000001/g) ?? []).length, 1, "the footer line is not repeated in the body");
+    const hostile = renderEmailHtml(fresh, "Hi,\n<script>alert(1)</script> & co\n\nKind regards,\nX");
+    assert.doesNotMatch(hostile, /<script>/);
+    assert.match(hostile, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; co/);
+    const lime = renderEmailHtml({ ...fresh, branding: { ...fresh.branding, primaryColor: "#8dc600", logoUrl: "https://coastline.example/logo.png" } }, email.body);
+    assert.match(lime, /background:#8dc600/);
+    assert.match(lime, /<img src="https:\/\/coastline.example\/logo.png"/, "a logo replaces the name in the banner");
     assert.equal(templates.acknowledgementSms({ tenant: fresh, firstName: null, bookingUrl: "https://x/y", topic: null, signedBy: "http://evil" }).includes("evil"), false, "a bad name is dropped, not sent");
   });
 

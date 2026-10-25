@@ -1,3 +1,4 @@
+import { renderEmailHtml } from "./email-layout";
 import type { MessageProvider, OutboundMessage, SendResult } from "./types";
 
 /**
@@ -37,14 +38,14 @@ export const twilioProvider: MessageProvider = {
 export const resendProvider: MessageProvider = {
   name: "resend",
   channels: ["EMAIL"],
-  async send(message): Promise<SendResult> {
+  async send(message, tenant): Promise<SendResult> {
     const key = process.env.RESEND_API_KEY;
     if (!key) return { ok: false, providerMessageId: null, error: "Resend is not configured (RESEND_API_KEY).", simulated: true };
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: `${message.from.name} <${message.from.address}>`, to: [message.to], subject: message.subject ?? "", text: message.body, ...(message.from.replyTo ? { reply_to: message.from.replyTo } : {}) }),
+        body: JSON.stringify({ from: `${message.from.name} <${message.from.address}>`, to: [message.to], subject: message.subject ?? "", text: message.body, html: renderEmailHtml(tenant, message.body), ...(message.from.replyTo ? { reply_to: message.from.replyTo } : {}) }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
       if (!res.ok) return { ok: false, providerMessageId: null, error: json.message ?? `Resend HTTP ${res.status}`, simulated: false };

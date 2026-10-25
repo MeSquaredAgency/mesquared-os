@@ -104,7 +104,7 @@ export async function saveTenantSettingsAction(tenantId: string, input: z.input<
     const parsed = settingsSchema.safeParse(input);
     if (!parsed.success) return { ok: false, message: "Some values are out of range; check the numbers and the email address." };
     const d = parsed.data;
-    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}) };
+    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}), ...(d.requiredFooter !== undefined ? { footer: d.requiredFooter.trim() || undefined } : {}) };
     const sla = { ...tenant.sla, ...(d.firstResponseMinutes ? { firstResponseMinutes: d.firstResponseMinutes } : {}), ...(d.bookingWindowHours ? { bookingWindowHours: d.bookingWindowHours } : {}), ...(d.quietStart !== undefined && d.quietEnd !== undefined ? { quietHours: { start: d.quietStart, end: d.quietEnd } } : {}) };
     const q = { ...tenant.qualificationRules };
     const areas = list(d.serviceAreas);

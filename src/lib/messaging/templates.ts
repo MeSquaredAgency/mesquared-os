@@ -122,7 +122,13 @@ const auto = (tenant: TenantSummary, signedBy?: string | null) => `This is an au
 
 function pack(channel: Channel, subject: string, lines: string[], tenant: TenantSummary, signedBy?: string | null): { subject?: string; body: string } {
   const who = safeName(signedBy);
-  if (channel === "EMAIL") return { subject, body: [...lines, "", "Kind regards,", signoff(tenant, who), "", auto(tenant, who)].join("\n") };
+  if (channel === "EMAIL") {
+    const [first, ...rest] = lines;
+    const greeting = typeof first === "string" && /^Hi\b.*,$/.test(first);
+    const paragraphs = greeting ? [first, "", ...rest.map((l, i) => (i === 0 && l ? l.charAt(0).toUpperCase() + l.slice(1) : l))] : lines;
+    const footer = tenant.branding.footer?.trim();
+    return { subject, body: [...paragraphs, "", "Kind regards,", signoff(tenant, who), ...(footer ? [footer] : []), "", auto(tenant, who)].join("\n") };
+  }
   return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant, who)}` };
 }
 

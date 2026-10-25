@@ -48,7 +48,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
     timezone: input.timezone,
     locale: input.locale,
     currency: input.currency.toUpperCase(),
-    branding: { ...(input.fromName ? { fromName: input.fromName } : {}), ...(input.replyTo ? { replyTo: input.replyTo } : {}), ...(input.primaryColor ? { primaryColor: input.primaryColor } : {}) },
+    branding: { ...(input.fromName ? { fromName: input.fromName } : {}), ...(input.replyTo ? { replyTo: input.replyTo } : {}), ...(input.primaryColor ? { primaryColor: input.primaryColor } : {}), ...(input.requiredFooter?.trim() ? { footer: input.requiredFooter.trim() } : {}) },
     qualificationRules: { ...template.qualificationRules, ...(input.serviceAreas?.length ? { serviceAreas: input.serviceAreas } : {}) },
     sla: template.sla,
     opportunityValues: template.opportunityValues,

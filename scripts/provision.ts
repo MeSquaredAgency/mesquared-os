@@ -85,7 +85,7 @@ tenant =
     timezone: def.timezone,
     locale: def.locale,
     currency: def.currency.toUpperCase(),
-    branding: { ...tenant.branding, ...(def.fromName ? { fromName: def.fromName } : {}), ...(def.replyTo ? { replyTo: def.replyTo } : {}), ...(def.primaryColor ? { primaryColor: def.primaryColor } : {}), ...(def.signAsAssignee !== undefined ? { signAsAssignee: def.signAsAssignee } : {}) },
+    branding: { ...tenant.branding, ...(def.fromName ? { fromName: def.fromName } : {}), ...(def.replyTo ? { replyTo: def.replyTo } : {}), ...(def.primaryColor ? { primaryColor: def.primaryColor } : {}), ...(def.signAsAssignee !== undefined ? { signAsAssignee: def.signAsAssignee } : {}), ...(def.requiredFooter ? { footer: def.requiredFooter } : {}) },
     qualificationRules: { ...tenant.qualificationRules, ...(def.serviceAreas?.length ? { serviceAreas: def.serviceAreas } : {}) },
   })) ?? tenant;
 if (def.requiredFooter) await repository.updateBrandProfile(tenant.id, { complianceBlock: { requiredFooter: def.requiredFooter } });
