@@ -190,8 +190,10 @@ await step("shared rate-limit counters are atomic upserts with a fixed window", 
 await step("abandoned-form candidates are filtered in SQL to sessions with contact details", async () => {
   for (let i = 0; i < 3; i++) await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:blank:${stamp}:${i}`, formName: "contact", pageUrl: "/contact", partial: { name: "No details" } });
   await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:reach:${stamp}`, formName: "contact", pageUrl: "/contact", partial: { name: "Reachable", phone: "+61400000123" } });
-  const found = await repository.listAbandonedFormSessions(harbor!.id, new Date(Date.now() + 1000), 2);
+  // A database that has seen earlier runs holds older reachable sessions too; the point is that the blank ones never crowd them out.
+  const found = await repository.listAbandonedFormSessions(harbor!.id, new Date(Date.now() + 1000), 500);
   assert.ok(found.some((f) => f.sessionKey === `parity:reach:${stamp}`), "the reachable session is returned despite older blank ones");
+  assert.ok(!found.some((f) => f.sessionKey.startsWith(`parity:blank:${stamp}`)), "blank sessions are filtered out in SQL");
   assert.ok(found.every((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string"));
 });
 
