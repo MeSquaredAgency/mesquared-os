@@ -136,7 +136,9 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
   const since = new Date(Date.now() - 24 * 3_600_000);
   const [tenantCount, recipientCount] = await Promise.all([repository.countOutboundMessages(tenant.id, { since }), repository.countOutboundMessages(tenant.id, { since, to: opts.to })]);
   if (tenantCount >= DAILY_TENANT_CAP) return refuse(`This workspace has reached its daily limit of ${DAILY_TENANT_CAP} automated messages.`);
-  if (recipientCount >= DAILY_RECIPIENT_CAP) return refuse(`Already sent ${recipientCount} automated messages to this recipient today; holding back.`);
+  // The per-recipient cap protects customers from being pelted (and public forms from SMS pumping). Internal sends to
+  // the tenant's own people (lead alerts, escalations; contactId null) are not customer traffic and are never capped.
+  if (opts.contactId !== null && recipientCount >= DAILY_RECIPIENT_CAP) return refuse(`Already sent ${recipientCount} automated messages to this recipient today; holding back.`);
 
   const from = await senderFor(tenant, opts.channel, opts.replyTo);
   if (!from) return refuse(`No sender identity configured for ${opts.channel} on this workspace.`, true);

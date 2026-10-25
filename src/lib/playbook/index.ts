@@ -71,8 +71,19 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
     const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
     const mail = templates.leadAlertEmail({ tenant, leadName: name, summary: lead.message ?? "(no message)", score: lead.intentScore ?? 0, reason: lead.qualificationReason ?? "", phone: lead.phone, email: lead.email, portalUrl, acknowledged });
     const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Told ${recipients.length === 1 ? recipients[0].name ?? recipients[0].email : `${recipients.length} people`} about ${name}.`, leadId: lead.id, contactId: lead.contactId, details: { recipients: recipients.map((r) => r.userId) } });
+    const reached: string[] = [];
+    const failed: string[] = [];
     for (const r of recipients) {
-      await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+      const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+      (sent.ok ? reached : failed).push(r.name ?? r.email);
+      if (!sent.ok && !sent.simulated) console.error(`[playbook] alert to ${r.email.slice(0, 3)}… for ${tenant.slug} failed: ${sent.error}`);
+    }
+    if (reached.length === 0) {
+      // The log must say nobody was told, and a person must be found another way.
+      await repository.updateAutomationRun(tenant.id, run.id, { outcome: "FAILED", summary: `Couldn't tell anyone about ${name}: ${failed.length} alert${failed.length === 1 ? "" : "s"} failed to send.` });
+      await repository.createException(tenant.id, { reason: `Nobody was alerted about ${name}; the lead alert could not be sent.`, suggestedAction: "Call them, then check the email provider and the people who receive lead alerts.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
+    } else if (failed.length) {
+      await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SENT", summary: `Told ${reached.join(", ")} about ${name}; could not reach ${failed.join(", ")}.` });
     }
     await emit(tenant.id, "alert.sent", { leadId: lead.id, recipients: recipients.map((r) => r.userId) }, run.id);
   }

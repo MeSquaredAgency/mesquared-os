@@ -128,6 +128,13 @@ describe("destination and consent policy inside sendMessage", () => {
       if (!r.ok) refused++;
     }
     assert.ok(refused >= 2, `the fifth and sixth sends are held back (${refused} refused)`);
+    // Internal alerts to the tenant's own people are not customer traffic: the sixth lead of the day still reaches them.
+    let internalRefused = 0;
+    for (let i = 0; i < 6; i++) {
+      const r = await sendMessage({ tenant: harbor, contactId: null, channel: "EMAIL", to: "director@harbor.example", body: `lead alert ${i}`, subject: "New lead", transactional: true });
+      if (!r.ok) internalRefused++;
+    }
+    assert.equal(internalRefused, 0, "lead alerts are never held back by the per-recipient cap");
   });
 
   it("texts a missed caller once a day however many times they ring", async () => {
