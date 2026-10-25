@@ -20,7 +20,7 @@ export async function tenantReadiness(tenant: TenantSummary): Promise<ReadinessC
   add("alerts", "Someone receives lead alerts", "required", alertPeople.length > 0, alertPeople.length ? alertPeople.map((p) => p.name ?? p.email).join(", ") : "Invite a member whose role includes lead alerts");
   add("operator", "An operator is assigned", "required", people.some((p) => p.via === "operator"), people.some((p) => p.via === "operator") ? people.filter((p) => p.via === "operator").map((p) => p.name ?? p.email).join(", ") : "Assign a Me² operator so exceptions reach a person");
   const intakeKeys = keys.filter((k) => !k.revokedAt && k.scopes.includes("intake"));
-  add("api-key", "An intake API key is issued", "required", intakeKeys.length > 0, intakeKeys.length ? `${intakeKeys.length} active key${intakeKeys.length === 1 ? "" : "s"} (website forms, call tracking, reviews)` : "Issue a key and put it in the website form");
+  add("api-key", "An intake API key is issued", "required", intakeKeys.length > 0, intakeKeys.length ? `${intakeKeys.length} active key${intakeKeys.length === 1 ? "" : "s"} (website forms and page beacon)` : "Issue a key and put it in the website form");
   // Only the workspace's own number counts: STOP replies and inbound texts are matched to the workspace by that number,
   // so texts sent from a shared platform number would leave opt-outs unrecorded.
   const smsSender = Boolean(twilio?.settings.fromNumber);

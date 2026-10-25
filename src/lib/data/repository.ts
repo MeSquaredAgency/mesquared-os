@@ -222,7 +222,8 @@ export interface NewReview {
   receivedAt: Date;
 }
 
-export type ApiKeyScope = "intake" | "content";
+/** intake: public web forms and the page beacon. webhooks: call-tracking and review connectors (private). content: uploads and the library (private). */
+export type ApiKeyScope = "intake" | "content" | "webhooks";
 
 // --- Phase 4 inputs ---------------------------------------------------------------
 

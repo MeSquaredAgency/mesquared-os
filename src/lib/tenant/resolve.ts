@@ -15,8 +15,9 @@ export type TenantResolution =
  * hashed and matched against TenantApiKey rows; the raw key is never stored.
  *
  * Keys carry scopes. "intake" keys are pasted into public web forms by
- * design, so anything beyond receiving enquiries (uploading files, reading
- * the content library) needs a key with the "content" scope.
+ * design, so anything beyond receiving enquiries needs a private key: the
+ * "webhooks" scope for call-tracking and review connectors (which can raise
+ * missed calls and text people back) and "content" for uploads and the library.
  */
 export async function resolveTenantFromRequest(req: NextRequest, scope: ApiKeyScope = "intake"): Promise<TenantResolution> {
   const auth = req.headers.get("authorization");

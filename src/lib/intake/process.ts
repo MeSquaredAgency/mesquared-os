@@ -40,6 +40,17 @@ const CHANNEL_FOR_SOURCE: Partial<Record<IntakeBody["source"], IntakeChannel>> =
  * booking link ready for the messaging adapter; RED items are logged as
  * handled. Everything emits events for the activity log and detectors.
  */
+
+/** Same upstream id, or the same words (and the same property, when one was named) from the same person. */
+function isSameEnquiry(existing: LeadRecord, body: IntakeBody): boolean {
+  if (body.externalId && existing.externalId === body.externalId) return true;
+  const norm = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().toLowerCase() : "");
+  const sameProperty = norm(existing.attributes.property) === norm(body.fields?.property);
+  const message = norm(body.message);
+  if (!message) return sameProperty;
+  return message === norm(existing.message) && sameProperty;
+}
+
 export async function processIntake(tenant: TenantSummary, input: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
   registerPlaybook();
   registerAutomations();
@@ -53,7 +64,9 @@ export async function processIntake(tenant: TenantSummary, input: IntakeBody, ra
 
   if (!body.dryRun) {
     const duplicate = await repository.findDuplicateLead(tenant.id, { externalId: body.externalId, email: body.email, phone: body.phone });
-    if (duplicate) {
+    // The same submission again (same upstream id, or the same words from the same person within a day) is a
+    // duplicate. A different message from a known person is a new enquiry and gets its own lead, reply and alert.
+    if (duplicate && isSameEnquiry(duplicate, body)) {
       await repository.recordIntakeEvent(tenant.id, { ...eventBase, contactId: duplicate.contactId, leadId: duplicate.id, outcome: "DUPLICATE", classifier: null });
       return { outcome: "duplicate", lead: duplicate };
     }

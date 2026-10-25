@@ -6,7 +6,9 @@ import { demoTenants } from "@/lib/data/fixtures";
 import { platformReadiness, tenantReadiness } from "@/lib/launch/readiness";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import { registerPlaybook, runGreenLeadPlaybook } from "@/lib/playbook";
+import { resolveTenantFromRequest } from "@/lib/tenant/resolve";
 import { localInputToDate } from "@/lib/utils";
+import type { NextRequest } from "next/server";
 
 /**
  * Regression tests for the high-priority findings of the pre-launch review
@@ -160,5 +162,17 @@ describe("review: abandoned-form detection only looks at sessions with a way to 
     const found = await repository.listAbandonedFormSessions(harbor.id, new Date(Date.now() + 1000), 3);
     assert.ok(found.some((f) => f.sessionKey === "review:email"), "the reachable session is found even when older blank ones exist");
     assert.ok(found.every((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string"));
+  });
+});
+
+describe("review: the public intake key cannot drive the call and review connectors", () => {
+  it("refuses an intake-only key for the webhooks scope", async () => {
+    const req = { headers: new Headers({ "x-api-key": "msq_live_demo_one_0000000000000000" }) } as unknown as NextRequest;
+    const intake = await resolveTenantFromRequest(req, "intake");
+    assert.equal(intake.ok, true);
+    const webhooks = await resolveTenantFromRequest(req, "webhooks");
+    assert.equal(webhooks.ok, false);
+    assert.equal(webhooks.ok === false && webhooks.status, 403);
+    assert.match(webhooks.ok === false ? webhooks.error : "", /webhooks/);
   });
 });

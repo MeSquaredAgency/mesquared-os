@@ -62,10 +62,12 @@ currency. The values drive the money figures the client sees.
 
 ## 4. Channels in
 
-- Settings → **API keys**: issue an *intake* key for the website forms, call
-  tracking and review feeds. Put it in the form as a hidden field or the
-  `x-api-key` header. Issue a separate *content* key only if an integration
-  uploads material; keep that one private.
+- Settings → **API keys**: issue an *intake* key for the website forms and the
+  page beacon. Put it in the form as a hidden `_key` field or the `x-api-key`
+  header; it is public by nature. Call-tracking and review connectors get
+  their own *webhooks* key (they can raise missed calls and text people back,
+  so that key stays private), and an integration that uploads material gets a
+  *content* key.
 - Connect the integrations the client uses (Meta lead forms, Cal.com, Twilio
   number, Google Business Profile, Facebook and Instagram pages, ad accounts,
   finance provider). Credentials are encrypted per integration row.

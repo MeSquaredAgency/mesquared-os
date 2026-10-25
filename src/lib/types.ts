@@ -773,7 +773,7 @@ export interface ApiKeyRecord {
   tenantId: string;
   label: string;
   keyPrefix: string;
-  scopes: ("intake" | "content")[];
+  scopes: ("intake" | "content" | "webhooks")[];
   lastUsedAt: Date | null;
   revokedAt: Date | null;
   createdAt: Date;

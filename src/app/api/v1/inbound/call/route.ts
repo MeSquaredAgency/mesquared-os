@@ -34,7 +34,7 @@ const callSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   registerAutomations();
-  const auth = await resolveTenantFromRequest(req);
+  const auth = await resolveTenantFromRequest(req, "webhooks");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const tenant = auth.tenant;
 
