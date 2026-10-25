@@ -74,8 +74,10 @@ currency. The values drive the money figures the client sees.
 - Real estate: switch **Inventory** on (it is, by template) and either import
   the listings or rent roll from CSV under Settings → **Inventory**, or connect
   the property management software (PropertyMe: an OAuth token with the
-  `property:read` and `offline_access` scopes, stored with
-  `connectInventoryVendor` in `src/lib/inventory/sync.ts`). The daily sync
+  `property:read` and `offline_access` scopes). Store it with
+  `PROPERTYME_TOKEN=... npm run tenant:connect-inventory -- <slug> propertyme PROPERTYME_TOKEN`
+  (the token is read from the environment, never typed on the command line);
+  it is encrypted on the integration row. The daily sync
   then keeps the rent roll current. New active listings become content
   material and enquiries that name one get its link in the automatic reply.
 - If the client wants messages signed by the agent looking after each lead,

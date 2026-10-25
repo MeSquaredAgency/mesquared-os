@@ -10,15 +10,16 @@ Everything time-based runs from one entry point, `POST /api/jobs/tick`
 3. runs the daily and hourly jobs when they fall due (content batch, social
    sync, ads and finance sync, website roll-up, invoice reminders).
 
-The caller is the Neon `ops` Function on a `* * * * *` trigger, authenticated
-with `JOB_SECRET`. Anything that can POST with that header once a minute works
-as a replacement (a host cron, GitHub Actions on a schedule, an uptime
-monitor with a POST check).
+The caller is the Cloudflare worker's own cron (`* * * * *` in
+`wrangler.jsonc`, handled in `cloudflare/worker.ts`), which calls the tick with
+`JOB_SECRET` and waits for it. The Neon `ops` Function in `neon.ts` can do the
+same as a fallback. Anything that can POST with that header once a minute works
+as a replacement.
 
 ## Is it healthy?
 
-- Console → a workspace → **Settings → Launch readiness**: "JOB_SECRET set
-  and the tick runs every minute" must be green on the deployment list.
+- Console → a workspace → **Settings → Launch readiness**: "The scheduler
+  ticked in the last five minutes" must be green on the deployment list.
 - The activity log of any busy workspace shows automation runs within the last
   few minutes.
 - `npm run neon:check` exercises the Function and reports the last trigger.

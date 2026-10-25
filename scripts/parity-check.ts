@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
 import { dataMode, repository } from "@/lib/data";
+import { TenantMismatchError } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
@@ -114,8 +115,8 @@ await step("intake: duplicate externalId and contact dedupe; red lead handled", 
 });
 
 await step("tenant isolation: no cross-tenant writes", async () => {
-  await assert.rejects(repository.createBooking(summit!.id, { leadId: greenLeadId, bookingUrl: "x", sent: false }));
-  await assert.rejects(repository.recordAutomationRun(summit!.id, { typeKey: "x", outcome: "SENT", summary: "x", leadId: greenLeadId }));
+  await assert.rejects(repository.createBooking(summit!.id, { leadId: greenLeadId, bookingUrl: "x", sent: false }), TenantMismatchError);
+  await assert.rejects(repository.recordAutomationRun(summit!.id, { typeKey: "x", outcome: "SENT", summary: "x", leadId: greenLeadId }), TenantMismatchError);
 });
 
 await step("bookings: schedule, confirm, remind, auto-complete, follow-up, review request", async () => {

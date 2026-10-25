@@ -119,8 +119,7 @@ describe("content engine", () => {
   it("the daily batch flags a thin calendar for an operator", async () => {
     const result = await runContentBatch(summit);
     const exceptions = await repository.listExceptions([summit.id]);
-    if (result.gap > 0) assert.ok(exceptions.some((e) => /scheduled for the next 7 days/.test(e.reason)), "gap exception raised");
-    else assert.ok(true, "calendar already meets cadence");
+    assert.equal(exceptions.some((e) => /scheduled for the next 7 days/.test(e.reason)), result.gap > 0, "a gap exception exists exactly when the batch found a gap");
   });
 });
 

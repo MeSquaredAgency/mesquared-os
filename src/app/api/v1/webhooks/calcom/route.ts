@@ -1,8 +1,8 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { registerAutomations } from "@/lib/automations/handlers";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { verifyCalcomSignature } from "@/lib/intake/channels/calcom";
 import { leadDisplayName } from "@/lib/leads";
 
 export const runtime = "nodejs";
@@ -25,9 +25,7 @@ export async function POST(req: NextRequest) {
   const raw = await req.text();
   const secret = process.env.CALCOM_WEBHOOK_SECRET;
   if (secret) {
-    const sig = req.headers.get("x-cal-signature-256") ?? "";
-    const expected = createHmac("sha256", secret).update(raw).digest("hex");
-    if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return NextResponse.json({ error: "Bad signature." }, { status: 401 });
+    if (!verifyCalcomSignature(raw, req.headers.get("x-cal-signature-256"), secret)) return NextResponse.json({ error: "Bad signature." }, { status: 401 });
   } else if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "CALCOM_WEBHOOK_SECRET is not configured." }, { status: 503 });
   }

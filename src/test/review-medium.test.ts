@@ -7,7 +7,11 @@ import { csvToInventory, findListingMentioned, findListingsMatching, importInven
 import { tick } from "@/lib/jobs/tick";
 import { quietHoursEnd, sendMessage, templates } from "@/lib/messaging";
 import { safeAreas } from "@/lib/messaging/templates";
+import { processFinanceWebhook } from "@/lib/finance/webhook-core";
+import { verifyCalcomSignature } from "@/lib/intake/channels/calcom";
+import { verifyTwilioSignature } from "@/lib/intake/channels/twilio";
 import { provisionTenant } from "@/lib/tenants/provision";
+import { createHmac } from "node:crypto";
 import type { TenantSummary } from "@/lib/types";
 import { startOfDayInZone } from "@/lib/utils";
 
@@ -124,5 +128,34 @@ describe("medium: money and SLA scans", () => {
     assert.ok(aud <= all);
     assert.equal(chf, 0, "a currency no account is billed in contributes nothing");
     assert.equal(await repository.countLeadsPastSla(harbor.id, new Date()), (await repository.listLeadsPastSla(harbor.id, new Date())).respond.length + (await repository.listLeadsPastSla(harbor.id, new Date())).book.length);
+  });
+});
+
+describe("medium: webhook verifiers are tested where they live", () => {
+  it("accepts Twilio's signature over the exact URL and sorted params, and nothing else", () => {
+    const url = "https://os.example.com/api/v1/inbound/sms";
+    const params = { To: "+61485056720", From: "+61400000000", Body: "Hi" };
+    const data = url + ["Body", "From", "To"].map((k) => k + params[k as keyof typeof params]).join("");
+    const good = createHmac("sha1", "tok").update(data).digest("base64");
+    assert.equal(verifyTwilioSignature(url, params, good, "tok"), true);
+    assert.equal(verifyTwilioSignature(url, params, good, "other"), false, "wrong auth token");
+    assert.equal(verifyTwilioSignature("https://other.example.com/api/v1/inbound/sms", params, good, "tok"), false, "a different host (the custom-domain mistake)");
+    assert.equal(verifyTwilioSignature(url, { ...params, Body: "Hi!" }, good, "tok"), false, "tampered body");
+    assert.equal(verifyTwilioSignature(url, params, null, "tok"), false);
+    assert.equal(verifyTwilioSignature(url, params, "", "tok"), false);
+  });
+
+  it("accepts Cal.com's hex HMAC over the raw body only", () => {
+    const raw = '{"triggerEvent":"BOOKING_CREATED"}';
+    const good = createHmac("sha256", "s3cret").update(raw).digest("hex");
+    assert.equal(verifyCalcomSignature(raw, good, "s3cret"), true);
+    assert.equal(verifyCalcomSignature(raw + " ", good, "s3cret"), false);
+    assert.equal(verifyCalcomSignature(raw, good.slice(0, -1) + "0", "s3cret"), false);
+    assert.equal(verifyCalcomSignature(raw, null, "s3cret"), false);
+  });
+
+  it("refuses a finance webhook for an unknown endpoint before reading the body", async () => {
+    const decision = await processFinanceWebhook({ raw: "{not json", headers: {}, url: "https://os.example.com/api/v1/webhooks/stripe/nope", provider: "STRIPE", integrationId: "nope" });
+    assert.deepEqual(decision, { status: 404, body: { error: "Unknown webhook endpoint." } });
   });
 });

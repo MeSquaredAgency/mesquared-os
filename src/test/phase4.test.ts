@@ -157,6 +157,6 @@ describe("website numbers", () => {
     await tick(new Date());
     const due = await repository.listDueActions(new Date(Date.now() + 2 * 86_400_000));
     const keys = new Set(due.map((a) => a.typeKey));
-    assert.ok(keys.has("ads_sync") || keys.has("finance_sync") || keys.has("website_analytics") || true, "daily jobs queued or already run");
+    for (const key of ["ads_sync", "finance_sync", "website_analytics", "inventory_sync", "content_engine"]) assert.ok(keys.has(key), `the tick queues the daily ${key} job`);
   });
 });

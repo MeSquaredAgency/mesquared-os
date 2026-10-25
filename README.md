@@ -71,7 +71,7 @@ curl -s -X POST http://localhost:3000/api/v1/intake \
 
 A GREEN result creates a booking link and an urgent follow-up task; a RED
 result queues a nurture task. Add `"dryRun": true` to classify without storing.
-Open `/feed` to watch leads arrive.
+Open `/console` to watch leads arrive.
 
 ## Layout
 
@@ -102,9 +102,11 @@ src/components/{shell,console,portal}   UI for the two surfaces
   signs the user out everywhere. Sign-in is rate limited per IP and per
   (IP, email), with a growing delay per email so an attacker cannot lock an
   operator out just by knowing their address.
-- **Roles** (`Membership.role`: OWNER, ADMIN, OPERATOR, MARKETING, VIEWER) gate
-  mutations. Marketing can draft; operators and above approve. Platform admins
-  act as OWNER everywhere.
+- **Roles** are per-workspace `TenantRole` rows with explicit permissions
+  (view finances, approve content, receive lead alerts, manage users, view all
+  records), created from the industry template and gated with
+  `requirePermission` in the portal. Me² operators act with every permission
+  inside the workspaces assigned to them; platform admins everywhere.
 - **Intake** is authenticated by hashed tenant API keys, rate limited per
   workspace, capped at 64 KB, bounded to 30 scalar `fields`, and deduped before
   the classifier runs so retries never cost a model call. Raw payloads are
@@ -191,7 +193,10 @@ runner with type stripping (Node 22.12+; `.nvmrc` pins 24). `src/test/setup.mjs`
 resolves the `@/` alias so pipeline modules can be tested unbundled: the suite
 covers the classifier, intake schema and phone normalisation, the full intake
 pipeline against the in-memory repository (including cross-tenant isolation),
-password hashing, session tokens and the sign-in rate limiter.
+password hashing, session tokens and the sign-in rate limiter, plus one file
+per later phase (bookings and automations, content and social, money,
+provisioning and inventory, Google sign-in, and the regression tests for the
+October 2026 review in `review-fixes.test.ts` and `review-medium.test.ts`).
 
 ## Intake channels and the playbook
 

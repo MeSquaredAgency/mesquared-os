@@ -24,18 +24,17 @@ Then deployed for real (24 Oct 2026) to the Me² Cloudflare account:
 `postgres`, API-key lookups and the login query run through Hyperdrive, the
 tick rejects calls without `JOB_SECRET`, and the minute cron is registered.
 
-**Plan:** the account is on the Workers Free plan. That caps CPU at 10 ms per
-request and refuses the `limits.cpu_ms` setting, so the setting is commented
-out in `wrangler.jsonc`. Sign-in (scrypt) and the tick need more than 10 ms;
-upgrade to Workers Paid ($5 a month) in the dashboard under Workers & Pages →
-Plans, then uncomment `limits` and redeploy. Do this before any client uses
-the site.
+**Plan:** the account has been on Workers Paid since 24 October 2026, so
+`limits.cpu_ms` (300 s) and Smart Placement in `wrangler.jsonc` are active.
+Sign-in (scrypt) and the tick need far more than the Free plan's 10 ms.
 
-**Credentials on this machine:** `.env.cloudflare.local` (ignored by git)
-holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; deploy with
-`set -a; . ./.env.cloudflare.local; set +a; npm run cf:deploy`. The token
-was once committed to GitHub by mistake; after it is removed from the
-repository history, rotate it in the dashboard and replace the local file.
+**Credentials:** deploys run from GitHub Actions with the `CLOUDFLARE_API_TOKEN`
+repository secret (see "Deploys from GitHub" below); no token is needed on a
+laptop. For an emergency deploy by hand, `.env.cloudflare.local` (ignored by
+git) can hold `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; deploy with
+`set -a; . ./.env.cloudflare.local; set +a; npm run cf:deploy`. A token was
+once committed to GitHub by mistake (commit `5c9a638`); it was rolled on
+25 October 2026, so the value in history is dead.
 
 ## Pieces
 

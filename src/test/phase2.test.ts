@@ -45,7 +45,7 @@ describe("detectors", () => {
     assert.ok(exceptions.some((e) => e.reason.includes("silent for")));
   });
 
-  it("no-show bookings become missed opportunities and resolve when rebooked", async () => {
+  it("no-show bookings become missed opportunities", async () => {
     const booking = await repository.updateBooking(harbor.id, "bk_fixture_1", { status: "NO_SHOW" });
     assert.ok(booking);
     const r = await detectForTenant(harbor);
@@ -60,8 +60,8 @@ describe("detectors", () => {
     assert.ok(r.detected.some((d) => d.type === "ABANDONED_FORM"));
     const again = await detectForTenant(summit, new Date(Date.now() + 60 * 60_000));
     assert.equal(again.detected.filter((d) => d.type === "ABANDONED_FORM").length, 0);
-    const contacts = await repository.listLapsedCandidates(summit.id, new Date(0)); // not lapsed; just prove upsert path works
-    void contacts;
+    const contacts = await repository.listLapsedCandidates(summit.id, new Date(0));
+    assert.ok(Array.isArray(contacts) && contacts.every((c) => typeof c.id === "string"), "lapsed candidates come back as contacts");
   });
 
   it("unreplied social messages are raised after the threshold", async () => {

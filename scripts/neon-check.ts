@@ -69,7 +69,9 @@ if (!services.postgres) {
     return `${tenants.length} tenant(s): ${tenants.map((t) => t.slug).join(", ")}`;
   });
 }
-const tenant = services.postgres ? ((await repository.listAllTenants().catch(() => []))[0] ?? null) : null;
+// Rehearsal writes go to a demo workspace, never to whichever client happens to be first: --tenant <slug> (default harbor-realty).
+const tenantSlug = args.find((a, i) => args[i - 1] === "--tenant") ?? "harbor-realty";
+const tenant = services.postgres ? ((await repository.listAllTenants().catch(() => [])).find((t) => t.slug === tenantSlug) ?? null) : null;
 
 // --- AI Gateway ----------------------------------------------------------------------------
 if (!services.aiGateway) {
