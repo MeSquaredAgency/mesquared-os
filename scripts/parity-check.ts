@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
 import { dataMode, repository } from "@/lib/data";
+import { TenantMismatchError } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
@@ -27,7 +28,16 @@ import { connectInventoryVendor, loadInventoryConnection, runInventorySync } fro
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
 
-process.env.MESSAGING_MODE ??= "log";
+if (process.env.NODE_ENV === "production" && process.env.PARITY_ALLOW_PRODUCTION !== "1") {
+  console.error("parity-check writes rehearsal rows (tenants, leads, invoices); refusing to run with NODE_ENV=production. Set PARITY_ALLOW_PRODUCTION=1 to override.");
+  process.exit(2);
+}
+// Nothing this script creates may reach a real person, whatever the environment says.
+process.env.MESSAGING_MODE = "log";
+process.env.SOCIAL_MODE ??= "log";
+process.env.ADS_MODE ??= "log";
+process.env.FINANCE_MODE ??= "log";
+process.env.INVENTORY_MODE ??= "log";
 process.env.DEFAULT_FROM_EMAIL ??= "hello@example.com";
 registerPlaybook();
 registerAutomations();
@@ -105,8 +115,8 @@ await step("intake: duplicate externalId and contact dedupe; red lead handled", 
 });
 
 await step("tenant isolation: no cross-tenant writes", async () => {
-  await assert.rejects(repository.createBooking(summit!.id, { leadId: greenLeadId, bookingUrl: "x", sent: false }));
-  await assert.rejects(repository.recordAutomationRun(summit!.id, { typeKey: "x", outcome: "SENT", summary: "x", leadId: greenLeadId }));
+  await assert.rejects(repository.createBooking(summit!.id, { leadId: greenLeadId, bookingUrl: "x", sent: false }), TenantMismatchError);
+  await assert.rejects(repository.recordAutomationRun(summit!.id, { typeKey: "x", outcome: "SENT", summary: "x", leadId: greenLeadId }), TenantMismatchError);
 });
 
 await step("bookings: schedule, confirm, remind, auto-complete, follow-up, review request", async () => {
@@ -180,8 +190,10 @@ await step("shared rate-limit counters are atomic upserts with a fixed window", 
 await step("abandoned-form candidates are filtered in SQL to sessions with contact details", async () => {
   for (let i = 0; i < 3; i++) await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:blank:${stamp}:${i}`, formName: "contact", pageUrl: "/contact", partial: { name: "No details" } });
   await repository.upsertFormSession(harbor!.id, { sessionKey: `parity:reach:${stamp}`, formName: "contact", pageUrl: "/contact", partial: { name: "Reachable", phone: "+61400000123" } });
-  const found = await repository.listAbandonedFormSessions(harbor!.id, new Date(Date.now() + 1000), 2);
+  // A database that has seen earlier runs holds older reachable sessions too; the point is that the blank ones never crowd them out.
+  const found = await repository.listAbandonedFormSessions(harbor!.id, new Date(Date.now() + 1000), 500);
   assert.ok(found.some((f) => f.sessionKey === `parity:reach:${stamp}`), "the reachable session is returned despite older blank ones");
+  assert.ok(!found.some((f) => f.sessionKey.startsWith(`parity:blank:${stamp}`)), "blank sessions are filtered out in SQL");
   assert.ok(found.every((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string"));
 });
 

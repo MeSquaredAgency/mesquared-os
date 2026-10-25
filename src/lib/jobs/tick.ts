@@ -7,6 +7,10 @@ import { registerInventory } from "@/lib/inventory";
 import { quietHoursEnd } from "@/lib/messaging";
 import { publishDuePosts } from "@/lib/social/publish";
 import { localKey } from "@/lib/content/calendar";
+import { startOfDayInZone } from "@/lib/utils";
+
+/** Wall-clock budget for one tick's action loop; the cron runs every minute. */
+const TICK_BUDGET_MS = Number.parseInt(process.env.TICK_BUDGET_MS ?? "50000", 10) || 50_000;
 
 export interface TickResult {
   tenants: number;
@@ -36,10 +40,12 @@ export async function tick(now = new Date()): Promise<TickResult> {
     }
     // Recurring per-tenant work rides the same queue: one content batch a day (after quiet hours end), one social sync an hour.
     const day = localKey(tenant.timezone, now);
-    await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)) > now ? now : quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000)), payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
-    // Daily money and website jobs, early morning local time (after the content batch).
-    const morning = quietHoursEnd(tenant, new Date(now.getTime() - 86_400_000));
-    const dailyAt = morning > now ? now : new Date(morning.getTime() + 30 * 60_000);
+    // Today's morning in the tenant's zone: the moment quiet hours end. Before it, the jobs wait for it; after it, they run now.
+    const morning = quietHoursEnd(tenant, startOfDayInZone(tenant.timezone, now));
+    const batchAt = morning > now ? morning : now;
+    await repository.scheduleAction(tenant.id, { typeKey: "content_engine", action: "batch", runAt: batchAt, payload: {}, dedupeKey: `content:batch:${day}` }).catch(() => {});
+    // Daily money and website jobs, half an hour after the content batch.
+    const dailyAt = new Date(batchAt.getTime() + 30 * 60_000);
     for (const [typeKey, action] of [["ads_sync", "run"], ["finance_sync", "run"], ["website_analytics", "rollup"], ["inventory_sync", "run"]] as const) {
       await repository.scheduleAction(tenant.id, { typeKey, action, runAt: dailyAt, payload: {}, dedupeKey: `${typeKey}:${day}` }).catch(() => {});
     }
@@ -54,7 +60,13 @@ export async function tick(now = new Date()): Promise<TickResult> {
 
   let actionsRun = 0;
   let actionsFailed = 0;
+  // A tick that cannot finish inside its minute stops taking on new actions; what is left is still due next minute.
+  const deadline = Date.now() + TICK_BUDGET_MS;
   for (const action of await repository.listDueActions(now)) {
+    if (Date.now() > deadline) {
+      console.warn(`[jobs] tick budget spent; leaving remaining due actions for the next tick`);
+      break;
+    }
     // Claim first so two overlapping ticks (or two instances) never run the same action.
     if (!(await repository.claimAction(action.id, now, ACTION_LEASE_MS))) continue;
     try {

@@ -25,9 +25,14 @@ export function safeName(value: string | null | undefined): string | null {
 
 /** Only a place the tenant itself lists as a service area may be echoed back in a message. */
 export function safeArea(text: string | null | undefined, areas: string[] | undefined): string | null {
-  if (!text || !areas?.length) return null;
+  return safeAreas(text, areas)[0] ?? null;
+}
+
+/** Every tenant-listed service area the text mentions, in the tenant's order. */
+export function safeAreas(text: string | null | undefined, areas: string[] | undefined): string[] {
+  if (!text || !areas?.length) return [];
   const hay = text.toLowerCase();
-  return areas.find((a) => a.trim().length >= 3 && new RegExp(`(^|[^a-z])${a.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`).test(hay))?.trim() ?? null;
+  return areas.filter((a) => a.trim().length >= 3 && new RegExp(`(^|[^a-z])${a.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`).test(hay)).map((a) => a.trim());
 }
 
 /** Only a topic the tenant itself lists as a service may be echoed back in a message. */
@@ -140,7 +145,9 @@ function pack(channel: Channel, subject: string, lines: string[], tenant: Tenant
     const footer = tenant.branding.footer?.trim();
     return { subject, body: [...(greeting ? [first] : []), ...paragraphs, `Kind regards,\n${signoff(tenant, who)}${footer ? `\n${footer}` : ""}`, auto(tenant, who)].join("\n\n"), cta: cta ?? null };
   }
-  return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant, who)}`, cta: cta ?? null };
+  // SMS: plain punctuation keeps the message in the cheap GSM character set (a single "•" or "·" would double the segment cost).
+  const plain = lines.filter(Boolean).map((l) => l.replace(/^• /, "- ").replace(/ · /g, ", "));
+  return { body: `${plain.join(" ")} ${auto(tenant, who)}`, cta: cta ?? null };
 }
 
 /** "on Wednesday 4 November at 10:00 am" in the tenant's locale and timezone. */
@@ -199,7 +206,8 @@ export function generalReply({ tenant, firstName, channel, custom, infoUrl, topi
   if (custom) lines.push(custom);
   else if (listings?.length) {
     lines.push(`thanks for your message to ${tenant.name}${about}. Here is what we have at the moment that may suit:`);
-    for (const l of listings) lines.push(`• ${l}`);
+    // Two on a text keeps it to a couple of segments; email has room for all of them.
+    for (const l of channel === "EMAIL" ? listings : listings.slice(0, 2)) lines.push(`• ${l}`);
     lines.push(`${person[0].toUpperCase()}${person.slice(1)} confirm availability and inspection times with you.${infoUrl ? ` You can see details and times here: ${infoUrl}.` : ""} If your question is about something else, reply here and ${person} pick it up.`);
   } else if (infoUrl) lines.push(`thanks for your message to ${tenant.name}${about}. The quickest way to get details and times is here: ${infoUrl}. If your question is about something else, reply here and ${person} pick it up.`);
   else lines.push(`thanks for your message to ${tenant.name}${about}. ${person[0].toUpperCase()}${person.slice(1)} come back to you during business hours; if you need anything else in the meantime, just reply here.`);

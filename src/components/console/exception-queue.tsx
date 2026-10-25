@@ -74,7 +74,7 @@ export function ExceptionQueue({ items, tenants }: Props) {
                   <Button size="sm" variant="green" onClick={() => resolve(item, true)} disabled={pending}>
                     <Check /> Recovered
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => resolve(item, false)} disabled={pending}>
+                  <Button size="sm" variant="outline" onClick={() => (typeof window === "undefined" || window.confirm("Close this without recovering it? The missed opportunity is written off.")) && resolve(item, false)} disabled={pending}>
                     <X /> Close
                   </Button>
                 </div>

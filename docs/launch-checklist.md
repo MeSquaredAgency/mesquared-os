@@ -19,7 +19,8 @@ readiness**; this page is the human version and the order to do them in.
       Claude, not the stub.
 - [ ] Webhook secrets set: Meta, Cal.com, inbound email, Twilio.
 - [ ] CI green on `main`; parity check passes against the production schema.
-- [ ] Demo tenants are not visible to real users (seeded only in demo mode).
+- [ ] Demo tenants (Harbor Realty, Summit) exist on production only as
+      rehearsal workspaces for operators; no real user is a member of them.
 - [ ] Runbooks read by whoever is on duty in the first week.
 
 ## For the anchor client

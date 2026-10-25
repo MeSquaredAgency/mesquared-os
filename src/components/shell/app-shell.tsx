@@ -38,10 +38,12 @@ export function AppShell({ user, nav, context, footer, children }: Props) {
         <div className="mt-auto flex flex-col gap-3">
           <UserMenu user={user} />
           <div className="flex flex-col gap-2 px-1 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between">
-              <span>Data source</span>
-              <Badge variant={dataMode === "postgres" ? "muted" : "secondary"}>{dataMode === "postgres" ? "PostgreSQL" : "Demo"}</Badge>
-            </div>
+            {(user.isOperator || user.isPlatformAdmin) && (
+              <div className="flex items-center justify-between">
+                <span>Data source</span>
+                <Badge variant={dataMode === "postgres" ? "muted" : "secondary"}>{dataMode === "postgres" ? "PostgreSQL" : "Demo"}</Badge>
+              </div>
+            )}
             {footer}
           </div>
         </div>

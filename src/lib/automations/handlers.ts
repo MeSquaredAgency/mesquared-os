@@ -2,8 +2,8 @@ import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, clampOutOfQuietHours, destinationAllowed, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta } from "@/lib/messaging";
-import { safeArea, whenPhrase } from "@/lib/messaging/templates";
+import { channelFor, clampOutOfQuietHours, destinationAllowed, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta, type MessageSignature } from "@/lib/messaging";
+import { safeAreas, whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
 import { runAdsSync } from "@/lib/ads/sync";
@@ -238,16 +238,20 @@ export async function onRedEnquiry(tenant: TenantSummary, lead: LeadRecord) {
   // A known listing answers its own enquiry: its link (and a one-line description) beats a generic page.
   const text = `${lead.message ?? ""} ${typeof lead.attributes.property === "string" ? lead.attributes.property : ""}`;
   const listing = await findListingMentioned(tenant.id, text);
-  const area = safeArea(text, tenant.qualificationRules.serviceAreas);
+  // One mentioned area narrows the search; two or more ("I live in X and want a place in Y") means a generic reply.
+  const areas = safeAreas(text, tenant.qualificationRules.serviceAreas);
+  const area = areas.length === 1 ? areas[0]! : null;
   const needs = listingNeeds(text);
   const topic = needs.inspection ? "an inspection" : needs.rental ? "rentals" : null;
   // No single listing named, but a suburb or a bedroom count: offer what is available that fits.
   const matches = listing ? [] : await findListingsMatching(tenant.id, { suburb: area, bedrooms: needs.bedrooms, limit: 3 });
   const infoUrl = (listing && typeof listing.attributes.url === "string" ? listing.attributes.url : null) ?? (typeof settings.renterReplyUrl === "string" ? settings.renterReplyUrl : null);
-  // The property's own manager answers, when the rent roll names one and the lead has nobody yet.
-  const manager = typeof (listing ?? matches[0])?.attributes.manager === "string" ? ((listing ?? matches[0])!.attributes.manager as string) : null;
-  if (manager && !lead.assigneeId && tenant.branding.signAsAssignee) {
-    const person = (await repository.listTenantPeople(tenant.id)).find((p) => p.via === "member" && p.name?.trim().toLowerCase() === manager.trim().toLowerCase());
+  // The property's own manager takes the lead when the rent roll is unambiguous: the listing was named, or every
+  // matching property has the same manager. Assignment is a fact about the lead; how messages are signed is separate.
+  const managers = new Set((listing ? [listing] : matches).map((m) => (typeof m.attributes.manager === "string" ? m.attributes.manager.trim().toLowerCase() : null)).filter((m): m is string => Boolean(m)));
+  const manager = managers.size === 1 ? [...managers][0]! : null;
+  if (manager && !lead.assigneeId) {
+    const person = (await repository.listTenantPeople(tenant.id)).find((p) => p.via === "member" && p.name?.trim().toLowerCase() === manager);
     if (person) {
       await repository.assignLead(tenant.id, lead.id, person.userId);
       lead = { ...lead, assigneeId: person.userId };
@@ -299,7 +303,9 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       const p = action.payload;
       const channel = p.channel as OutboundChannel;
       const contactId = typeof p.contactId === "string" ? p.contactId : null;
-      const result = await sendMessage({ tenant, contactId, channel, to: String(p.to), body: String(p.body), subject: typeof p.subject === "string" ? p.subject : undefined, automationRunId: typeof p.automationRunId === "string" ? p.automationRunId : null, transactional: false });
+      const cta = p.cta && typeof p.cta === "object" && typeof (p.cta as { url?: unknown }).url === "string" ? (p.cta as MessageCta) : null;
+      const signature = p.signature && typeof p.signature === "object" && typeof (p.signature as { name?: unknown }).name === "string" ? (p.signature as MessageSignature) : null;
+      const result = await sendMessage({ tenant, contactId, channel, to: String(p.to), body: String(p.body), subject: typeof p.subject === "string" ? p.subject : undefined, automationRunId: typeof p.automationRunId === "string" ? p.automationRunId : null, transactional: false, replyTo: typeof p.replyTo === "string" ? p.replyTo : null, cta, signature });
       const contact = contactId ? await repository.findContactById(tenant.id, contactId) : null;
       const who = contact ? leadDisplayName(contact) : "a contact";
       if (result.ok) await repository.recordAutomationRun(tenant.id, { typeKey: "messaging", outcome: "SENT", summary: `Sent ${who} the message held overnight.`, contactId });

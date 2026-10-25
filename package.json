@@ -23,7 +23,8 @@
     "tenant:provision": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/provision.ts",
     "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts",
     "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts",
-    "inventory:import": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/import-inventory.ts"
+    "inventory:import": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/import-inventory.ts",
+    "tenant:connect-inventory": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/connect-inventory.ts"
   },
   "engines": {
     "node": ">=22.12.0"

@@ -125,8 +125,9 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
         typeKey: "messaging",
         action: "release",
         runAt: releaseAt,
-        payload: { contactId: opts.contactId, channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject ?? null, automationRunId: opts.automationRunId ?? null },
-        dedupeKey: `release:${opts.to}:${createHash("sha1").update(opts.body).digest("hex").slice(0, 12)}`,
+        payload: { contactId: opts.contactId, channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject ?? null, automationRunId: opts.automationRunId ?? null, replyTo: opts.replyTo ?? null, cta: opts.cta ?? null, signature: opts.signature ?? null },
+        // Keyed by release time too, so a message held again at release (quiet hours moved) queues afresh instead of colliding with the row that is running.
+        dedupeKey: `release:${opts.to}:${createHash("sha1").update(opts.body).digest("hex").slice(0, 12)}:${releaseAt.getTime()}`,
       });
       const when = releaseAt.toLocaleString(tenant.locale, { timeZone: tenant.timezone, hour: "numeric", minute: "2-digit" });
       return { ok: false, providerMessageId: null, error: `Held until ${when} (quiet hours).`, simulated: false, held: true, messageId: null };

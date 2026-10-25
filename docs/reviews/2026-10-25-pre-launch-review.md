@@ -110,6 +110,11 @@ steps in `scripts/parity-check.ts`.
 
 ## Medium: before the second client
 
+Done on the `review-medium-fixes` branch (26 October 2026) with tests in
+`src/test/review-medium.test.ts`: everything in this list except the two
+larger refactors noted inline, the PropertyMe adapter tests, and the finance
+webhook ingestion test (its refusals are covered).
+
 - "Assign to the property's manager" picks an arbitrary listing's manager
   when several match, and is gated on a signature preference. Assign only
   when one listing is named or all matches share a manager.
@@ -118,7 +123,7 @@ steps in `scripts/parity-check.ts`.
   mentioned, or when a street name contains a suburb. Match on the suburb
   attribute, and send the generic reply when more than one area appears.
 - Listing mention never matches portal enquiries ("12 Smith Street" vs
-  "12 Smith St, Suburb SA 5000"); normalise both sides.
+  "12 Smith St, Suburb SA 5000"); normalise both sides. Done.
 - SMS cost: the prefilled Cal.com link makes the acknowledgement three
   segments, and the "•"/"·" characters force UCS-2. Use the short tracked
   link and plain punctuation for SMS.
@@ -142,6 +147,7 @@ steps in `scripts/parity-check.ts`.
   until navigation.
 - `SettingsStudio` and `MoneyStudio` receive more than the client needs
   (full `TenantSummary`, the operator roster, encrypted ad credentials).
+  Still open: a DTO refactor of the settings studio.
 - Deploy applies migrations before the worker is built, and CI never builds
   the worker, so a bundling failure is first seen after the schema moved.
   Reorder to build, migrate, upload; add `cf:build` to CI. Manual deploys

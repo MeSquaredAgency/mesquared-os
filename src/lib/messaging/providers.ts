@@ -20,6 +20,7 @@ export const twilioProvider: MessageProvider = {
     try {
       const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
         body,
       });
@@ -44,6 +45,7 @@ export const resendProvider: MessageProvider = {
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
+        signal: AbortSignal.timeout(15_000),
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({ from: `${message.from.name} <${message.from.address}>`, to: [message.to], subject: message.subject ?? "", text: message.body, html: renderEmailHtml(tenant, message.body, { cta: message.cta ?? null, signature: message.signature ?? null }), ...(message.from.replyTo ? { reply_to: message.from.replyTo } : {}) }),
       });

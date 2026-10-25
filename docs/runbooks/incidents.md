@@ -27,7 +27,8 @@ or shown the truth. Severity is about client impact, not code.
   `SKIPPED` with the reason when a sender is not configured.
 - **A client's leads missing**: is their intake key still active (console →
   settings → API keys)? Did the form host change domain? The intake endpoint
-  returns `401` for revoked keys and is rate limited per key.
+  returns `403` for revoked or wrong-scope keys (`401` only when no key is
+  sent) and is rate limited per workspace and per IP.
 - **Duplicate messages**: scheduled actions are claim-once with a lease; a
   duplicate almost always means two schedulers are running (an old host cron
   plus the Neon trigger). Turn one off.

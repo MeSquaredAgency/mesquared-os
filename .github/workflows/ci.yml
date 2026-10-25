@@ -35,6 +35,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The worker bundle too, so an OpenNext incompatibility fails here and not in the deploy.
+      - run: npm run cf:build
 
   parity:
     name: Postgres parity (migrate, seed, real flows)

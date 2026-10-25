@@ -548,6 +548,8 @@ export interface Repository {
   listNeedsYou(tenantId: string, opts: { onlyAssigneeId: string | null; limit: number }): Promise<LeadRecord[]>;
   /** Leads whose response or booking deadline has passed without the matching event. */
   listLeadsPastSla(tenantId: string, now: Date): Promise<{ respond: LeadRecord[]; book: LeadRecord[] }>;
+  /** The same two breaches counted, for the portfolio. */
+  countLeadsPastSla(tenantId: string, now: Date): Promise<number>;
   findLeadById(tenantId: string, leadId: string): Promise<LeadRecord | null>;
   markLeadResponded(tenantId: string, leadId: string, at: Date): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
@@ -712,7 +714,8 @@ export interface Repository {
   recordAdSpend(tenantId: string, rows: NewAdSpend[]): Promise<number>;
   listAdSpend(tenantId: string, opts: { from: Date; to?: Date; adAccountId?: string }): Promise<AdSpendSnapshotRecord[]>;
   /** Total spend in cents between the dates (inclusive of from, exclusive of to). */
-  sumAdSpend(tenantId: string, from: Date, to?: Date): Promise<number>;
+  /** Spend in cents; with `currency`, only snapshots of ad accounts billed in that currency, so the money panel never mixes currencies. */
+  sumAdSpend(tenantId: string, from: Date, to?: Date, currency?: string): Promise<number>;
   /** Leads created in the window, with attribution, for the attribution report (capped). */
   listLeadsBetween(tenantId: string, from: Date, to?: Date, limit?: number): Promise<LeadRecord[]>;
   /** Upserts on (provider, providerId); links a contact by customerEmail when none is given. Returns how many were new. */

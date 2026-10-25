@@ -1,7 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { verifyTwilioSignature } from "@/lib/intake/channels/twilio";
 import { normalizePhone } from "@/lib/intake/schema";
 
 export const runtime = "nodejs";
@@ -10,16 +10,6 @@ export const dynamic = "force-dynamic";
 const STOP_WORDS = /^\s*(stop|stopall|unsubscribe|cancel|end|quit)\b/i;
 const START_WORDS = /^\s*(start|unstop|yes)\b/i;
 
-/**
- * Twilio signs each webhook: base64(HMAC-SHA1(authToken, url + sorted POST params concatenated as key+value)).
- * The URL must be exactly what Twilio called, so set TWILIO_WEBHOOK_URL when behind a proxy.
- */
-function verifyTwilio(url: string, params: Record<string, string>, signature: string | null, authToken: string): boolean {
-  if (!signature) return false;
-  const data = url + Object.keys(params).sort().map((k) => k + params[k]).join("");
-  const expected = createHmac("sha1", authToken).update(data).digest("base64");
-  return expected.length === signature.length && timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
-}
 
 /**
  * POST /api/v1/inbound/sms — replies to the tenant's number. STOP/UNSUBSCRIBE
@@ -35,7 +25,7 @@ export async function POST(req: NextRequest) {
 
   if (authToken) {
     const url = process.env.TWILIO_WEBHOOK_URL ?? req.url;
-    if (!verifyTwilio(url, params, req.headers.get("x-twilio-signature"), authToken)) return NextResponse.json({ error: "Bad signature." }, { status: 401 });
+    if (!verifyTwilioSignature(url, params, req.headers.get("x-twilio-signature"), authToken)) return NextResponse.json({ error: "Bad signature." }, { status: 401 });
   } else if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "TWILIO_AUTH_TOKEN is not configured." }, { status: 503 });
   }
