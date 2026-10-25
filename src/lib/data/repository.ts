@@ -379,6 +379,13 @@ export interface NewInventoryItem {
   source?: string | null;
 }
 
+/** Signature details kept on a membership; undefined leaves a field as it is, null clears it. */
+export interface MemberProfile {
+  title?: string | null;
+  phone?: string | null;
+  photoUrl?: string | null;
+}
+
 export interface IntegrationUpsert {
   provider: import("@/lib/types").IntegrationProvider;
   externalAccountId: string;
@@ -673,7 +680,7 @@ export interface Repository {
   createUser(data: NewUser): Promise<UserRecord>;
   /** Replaces the password and bumps sessionVersion so every existing session ends. */
   setUserPassword(userId: string, passwordHash: string): Promise<void>;
-  upsertMembership(tenantId: string, userId: string, roleId: string): Promise<void>;
+  upsertMembership(tenantId: string, userId: string, roleId: string, profile?: MemberProfile): Promise<void>;
   removeMembership(tenantId: string, userId: string): Promise<void>;
   assignOperator(tenantId: string, userId: string): Promise<void>;
   listOperators(): Promise<UserRecord[]>;

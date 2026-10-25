@@ -44,7 +44,7 @@ describe("messaging policy", () => {
     assert.match(sms, /https:\/\/x\/y/);
     const mail = templates.acknowledgementEmail({ tenant: harbor, firstName: null, bookingUrl: "https://x/y", topic: null });
     assert.match(mail.subject, /Harbor Realty Group/);
-    assert.match(mail.body, /automated reply/);
+    assert.match(mail.body, /automated (reply|message)/);
     assert.doesNotMatch(sms + mail.body, /MeSquared|Me²/);
   });
 });

@@ -1,9 +1,11 @@
 name: Deploy
 
 # Deploys the worker to Cloudflare after CI passes on main (or by hand from
-# the Actions tab). Needs the repository secret CLOUDFLARE_API_TOKEN (Workers
-# Scripts: Edit) and the repository variable CLOUDFLARE_ACCOUNT_ID. The local
-# `npm run cf:deploy` remains for emergencies.
+# the Actions tab). Needs the repository secrets CLOUDFLARE_API_TOKEN (Workers
+# Scripts: Edit) and DATABASE_URL (the direct, non-pooled Neon connection
+# string, used only to apply pending migrations before the code that needs
+# them goes live), plus the repository variable CLOUDFLARE_ACCOUNT_ID. The
+# local `npm run cf:deploy` remains for emergencies.
 on:
   workflow_run:
     workflows: [CI]
@@ -30,6 +32,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set; refusing to deploy code ahead of its migrations."
+            exit 1
+          fi
+          npx prisma migrate deploy
       - run: npm run cf:build
       - run: npx opennextjs-cloudflare deploy
         env:

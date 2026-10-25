@@ -87,6 +87,9 @@ export function csvToInventory(text: string, defaultType: InventoryType = "LISTI
   const iAvail = col("available", "available_from", "availability");
   const iId = col("id", "reference", "external_id", "ref");
   const iQty = col("quantity", "qty", "stock");
+  const iManager = col("manager", "property_manager", "agent");
+  const iKind = col("property_type", "category", "kind");
+  const iCar = col("car", "car_spaces", "parking", "garage");
   const items: NewInventoryItem[] = [];
   let skipped = 0;
   for (const r of rows.slice(1)) {
@@ -108,6 +111,13 @@ export function csvToInventory(text: string, defaultType: InventoryType = "LISTI
     if (iSuburb >= 0 && r[iSuburb]) attributes.suburb = r[iSuburb];
     if (iUrl >= 0 && /^https?:\/\//i.test(r[iUrl] ?? "")) attributes.url = r[iUrl];
     if (iAvail >= 0 && r[iAvail]) attributes.availableFrom = r[iAvail];
+    if (iManager >= 0 && r[iManager]) attributes.manager = r[iManager];
+    if (iKind >= 0 && r[iKind]) attributes.propertyType = r[iKind];
+    if (iCar >= 0 && r[iCar] && Number(r[iCar]) > 0) attributes.carSpaces = Number(r[iCar]);
+    if (type === "LISTING" && !attributes.suburb) {
+      const suburb = suburbFromAddress(name);
+      if (suburb) attributes.suburb = suburb;
+    }
     items.push({ type, name: name.slice(0, 200), externalId: iId >= 0 && r[iId] ? r[iId].slice(0, 100) : null, status: STATUS_WORDS[statusWord] ?? "ACTIVE", quantity: iQty >= 0 && r[iQty] ? Number(r[iQty]) || null : null, valueCents: priceCents ?? rentCents ?? null, attributes, source: "csv" });
   }
   return { items, skipped };
@@ -121,6 +131,36 @@ export async function importInventory(tenant: TenantSummary, items: NewInventory
   return { created: result.created.length, updated: result.updated };
 }
 
+/** "6B East Way, Darlington SA 5047" → "Darlington"; null when the address carries no suburb. */
+export function suburbFromAddress(address: string): string | null {
+  const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const tail = parts.slice(1).join(" ");
+  const cleaned = tail.replace(/\b(ACT|NSW|NT|QLD|SA|TAS|VIC|WA)\b/gi, " ").replace(/\b\d{4}\b/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || null;
+}
+
+/** What an enquiry asks for, read with fixed patterns only: bedrooms as a number, nothing echoed from the text. */
+export function listingNeeds(text: string | null | undefined): { bedrooms: number | null; rental: boolean; inspection: boolean } {
+  const t = (text ?? "").toLowerCase();
+  const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+  const m = /\b(\d|one|two|three|four|five|six)\s*(?:-|\s)?\s*(?:bed(?:room)?s?|br\b)/.exec(t);
+  const bedrooms = m ? (Number(m[1]) || words[m[1]] || null) : null;
+  return { bedrooms, rental: /\b(rent|rental|rentals|lease|leasing|let)\b/.test(t), inspection: /\binspect/.test(t) };
+}
+
+/** Available listings that fit a suburb and bedroom count, best matches first, for a reply with real options in it. */
+export async function findListingsMatching(tenantId: string, want: { suburb?: string | null; bedrooms?: number | null; limit?: number }): Promise<InventoryItemRecord[]> {
+  if (!want.suburb && !want.bedrooms) return [];
+  const items = await repository.listInventory(tenantId, { type: "LISTING", status: ["ACTIVE"], limit: 500 });
+  const suburb = want.suburb?.toLowerCase() ?? null;
+  const inSuburb = suburb ? items.filter((i) => (typeof i.attributes.suburb === "string" && i.attributes.suburb.toLowerCase() === suburb) || i.name.toLowerCase().includes(suburb)) : items;
+  const beds = want.bedrooms ?? null;
+  const exact = beds ? inSuburb.filter((i) => i.attributes.bedrooms === beds) : inSuburb;
+  const pool = exact.length ? exact : beds ? inSuburb.filter((i) => typeof i.attributes.bedrooms === "number" && i.attributes.bedrooms > beds) : inSuburb;
+  return (suburb ? pool : pool).slice(0, want.limit ?? 3);
+}
+
 /** A listing whose name or address the enquiry mentions, for the automatic reply. */
 export async function findListingMentioned(tenantId: string, text: string | null | undefined): Promise<InventoryItemRecord | null> {
   if (!text) return null;
@@ -132,7 +172,7 @@ export async function findListingMentioned(tenantId: string, text: string | null
 export function describeListing(item: InventoryItemRecord, locale: string, currency: string): string {
   const a = item.attributes;
   const parts: string[] = [item.name];
-  if (typeof a.suburb === "string") parts.push(a.suburb);
+  if (typeof a.suburb === "string" && !item.name.toLowerCase().includes(a.suburb.toLowerCase())) parts.push(a.suburb);
   if (typeof a.bedrooms === "number") parts.push(`${a.bedrooms} bed${a.bedrooms === 1 ? "" : "s"}`);
   if (typeof a.rentPerWeekCents === "number") parts.push(`${(a.rentPerWeekCents / 100).toLocaleString(locale, { style: "currency", currency, maximumFractionDigits: 0 })} per week`);
   else if (typeof a.priceCents === "number") parts.push((a.priceCents / 100).toLocaleString(locale, { style: "currency", currency, maximumFractionDigits: 0 }));

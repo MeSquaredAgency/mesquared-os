@@ -80,6 +80,14 @@ const settingsSchema = z.object({
   replyTo: z.string().trim().email().or(z.literal("")).optional(),
   primaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).or(z.literal("")).optional(),
   signAsAssignee: z.boolean().optional(),
+  logoUrl: z.string().trim().url().or(z.literal("")).optional(),
+  website: z.string().trim().max(120).optional(),
+  phone: z.string().trim().max(30).optional(),
+  addresses: z.string().max(500).optional(),
+  facebook: z.string().trim().url().or(z.literal("")).optional(),
+  instagram: z.string().trim().url().or(z.literal("")).optional(),
+  youtube: z.string().trim().url().or(z.literal("")).optional(),
+  linkedin: z.string().trim().url().or(z.literal("")).optional(),
   firstResponseMinutes: z.number().int().min(1).max(1440).optional(),
   bookingWindowHours: z.number().int().min(1).max(720).optional(),
   quietStart: z.number().int().min(0).max(23).optional(),
@@ -104,7 +112,7 @@ export async function saveTenantSettingsAction(tenantId: string, input: z.input<
     const parsed = settingsSchema.safeParse(input);
     if (!parsed.success) return { ok: false, message: "Some values are out of range; check the numbers and the email address." };
     const d = parsed.data;
-    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}), ...(d.requiredFooter !== undefined ? { footer: d.requiredFooter.trim() || undefined } : {}) };
+    const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}), ...(d.requiredFooter !== undefined ? { footer: d.requiredFooter.trim() || undefined } : {}), ...(d.logoUrl !== undefined ? { logoUrl: d.logoUrl || undefined } : {}), ...(d.website !== undefined ? { website: d.website.replace(/^https?:\/\//i, "").replace(/\/$/, "") || undefined } : {}), ...(d.phone !== undefined ? { phone: d.phone || undefined } : {}), ...(d.addresses !== undefined ? { addresses: d.addresses.split(/\n/).map((a) => a.trim()).filter(Boolean) } : {}), ...(d.facebook !== undefined || d.instagram !== undefined || d.youtube !== undefined || d.linkedin !== undefined ? { social: { ...tenant.branding.social, ...(d.facebook !== undefined ? { facebook: d.facebook || undefined } : {}), ...(d.instagram !== undefined ? { instagram: d.instagram || undefined } : {}), ...(d.youtube !== undefined ? { youtube: d.youtube || undefined } : {}), ...(d.linkedin !== undefined ? { linkedin: d.linkedin || undefined } : {}) } } : {}) };
     const sla = { ...tenant.sla, ...(d.firstResponseMinutes ? { firstResponseMinutes: d.firstResponseMinutes } : {}), ...(d.bookingWindowHours ? { bookingWindowHours: d.bookingWindowHours } : {}), ...(d.quietStart !== undefined && d.quietEnd !== undefined ? { quietHours: { start: d.quietStart, end: d.quietEnd } } : {}) };
     const q = { ...tenant.qualificationRules };
     const areas = list(d.serviceAreas);
@@ -175,6 +183,25 @@ export async function saveOpportunityValuesAction(tenantId: string, values: Reco
     return { ok: true, message: "Values saved." };
   } catch (error) {
     return fail(error);
+  }
+}
+
+const profileSchema = z.object({ title: z.string().trim().max(80).optional(), phone: z.string().trim().max(30).optional(), photoUrl: z.string().trim().url().or(z.literal("")).optional() });
+
+/** Signature details for one member: job title, mobile and a hosted photo, used when messages are signed as them. */
+export async function updateMemberProfileAction(tenantId: string, userId: string, input: z.input<typeof profileSchema>): Promise<ActionResult> {
+  try {
+    const { tenant } = await operatorTenant(tenantId);
+    const parsed = profileSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, message: "The photo must be a full https:// address; title and mobile are short text." };
+    const person = (await repository.listTenantPeople(tenantId)).find((p) => p.userId === userId && p.via === "member");
+    if (!person?.roleId) return { ok: false, message: "That person is not a member of this workspace." };
+    const d = parsed.data;
+    await repository.upsertMembership(tenantId, userId, person.roleId, { ...(d.title !== undefined ? { title: d.title || null } : {}), ...(d.phone !== undefined ? { phone: d.phone || null } : {}), ...(d.photoUrl !== undefined ? { photoUrl: d.photoUrl || null } : {}) });
+    refresh(tenant);
+    return { ok: true, message: `Signature details saved for ${person.name ?? person.email}.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Could not save." };
   }
 }
 

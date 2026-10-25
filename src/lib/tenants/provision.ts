@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { hashPassword } from "@/lib/auth/password";
 import { hashApiKey } from "@/lib/crypto";
 import { repository } from "@/lib/data";
+import type { MemberProfile } from "@/lib/data/repository";
 import type { ApiKeyScope } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
@@ -86,7 +87,7 @@ export interface InviteResult {
 }
 
 /** Adds a person to a workspace with a role. New accounts get a one-time password to hand over; existing ones keep theirs. */
-export async function inviteMember(tenantId: string, input: { email: string; name: string | null; roleId: string; resetPassword?: boolean }): Promise<InviteResult> {
+export async function inviteMember(tenantId: string, input: { email: string; name: string | null; roleId: string; resetPassword?: boolean; profile?: MemberProfile }): Promise<InviteResult> {
   const email = input.email.trim().toLowerCase();
   const existing = await repository.findUserByEmail(email);
   let user = existing?.user ?? null;
@@ -100,7 +101,7 @@ export async function inviteMember(tenantId: string, input: { email: string; nam
     temp = temporaryPassword();
     await repository.setUserPassword(user.id, await hashPassword(temp));
   }
-  await repository.upsertMembership(tenantId, user.id, input.roleId);
+  await repository.upsertMembership(tenantId, user.id, input.roleId, input.profile);
   return { user, temporaryPassword: temp, created };
 }
 

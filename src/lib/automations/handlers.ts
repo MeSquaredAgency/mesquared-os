@@ -2,14 +2,14 @@ import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity } from "@/lib/messaging";
-import { whenPhrase } from "@/lib/messaging/templates";
+import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta } from "@/lib/messaging";
+import { safeArea, whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
 import { runAdsSync } from "@/lib/ads/sync";
 import { runFinanceSync } from "@/lib/finance/sync";
 import { rollupSite } from "@/lib/website/rollup";
-import { describeListing, findListingMentioned } from "@/lib/inventory";
+import { describeListing, findListingMentioned, findListingsMatching, listingNeeds } from "@/lib/inventory";
 import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
@@ -52,7 +52,7 @@ interface SendAndLogInput {
   /** Who the message goes to; the channel order comes from the region (phone first) with the other as fallback. */
   recipient: { email: string | null; phone: string | null };
   /** Builds the message for whichever channel ends up being used. */
-  compose: (channel: OutboundChannel, signedBy: string | null) => { body: string; subject?: string };
+  compose: (channel: OutboundChannel, signedBy: string | null) => { body: string; subject?: string; cta?: MessageCta | null };
   /** Who signs it; resolved from the lead's assignee by callers that have one. Defaults to the business. */
   identity?: SenderIdentity;
   /** Restrict to these channels (e.g. a missed-call reply is never an email). */
@@ -97,7 +97,7 @@ export async function sendAndLog(input: SendAndLogInput) {
   for (const candidate of candidates) {
     channel = candidate;
     const msg = input.compose(channel, input.identity?.signedBy ?? null);
-    result = await sendMessage({ tenant, contactId: input.contactId, channel, to: addressFor(channel, input.recipient), body: msg.body, subject: msg.subject, automationRunId: run.id, transactional: input.transactional, replyTo: input.identity?.replyTo ?? null });
+    result = await sendMessage({ tenant, contactId: input.contactId, channel, to: addressFor(channel, input.recipient), body: msg.body, subject: msg.subject, automationRunId: run.id, transactional: input.transactional, replyTo: input.identity?.replyTo ?? null, cta: msg.cta ?? null, signature: input.identity?.signature ?? null });
     if (result.ok || !result.simulated) break;
     notConnected.push(channelName(channel));
   }
@@ -234,10 +234,26 @@ export async function onRedEnquiry(tenant: TenantSummary, lead: LeadRecord) {
     return;
   }
   // A known listing answers its own enquiry: its link (and a one-line description) beats a generic page.
-  const listing = await findListingMentioned(tenant.id, `${lead.message ?? ""} ${typeof lead.attributes.property === "string" ? lead.attributes.property : ""}`);
+  const text = `${lead.message ?? ""} ${typeof lead.attributes.property === "string" ? lead.attributes.property : ""}`;
+  const listing = await findListingMentioned(tenant.id, text);
+  const area = safeArea(text, tenant.qualificationRules.serviceAreas);
+  const needs = listingNeeds(text);
+  const topic = needs.inspection ? "an inspection" : needs.rental ? "rentals" : null;
+  // No single listing named, but a suburb or a bedroom count: offer what is available that fits.
+  const matches = listing ? [] : await findListingsMatching(tenant.id, { suburb: area, bedrooms: needs.bedrooms, limit: 3 });
   const infoUrl = (listing && typeof listing.attributes.url === "string" ? listing.attributes.url : null) ?? (typeof settings.renterReplyUrl === "string" ? settings.renterReplyUrl : null);
+  // The property's own manager answers, when the rent roll names one and the lead has nobody yet.
+  const manager = typeof (listing ?? matches[0])?.attributes.manager === "string" ? ((listing ?? matches[0])!.attributes.manager as string) : null;
+  if (manager && !lead.assigneeId && tenant.branding.signAsAssignee) {
+    const person = (await repository.listTenantPeople(tenant.id)).find((p) => p.via === "member" && p.name?.trim().toLowerCase() === manager.trim().toLowerCase());
+    if (person) {
+      await repository.assignLead(tenant.id, lead.id, person.userId);
+      lead = { ...lead, assigneeId: person.userId };
+    }
+  }
   const custom = typeof settings.redReplyText === "string" ? settings.redReplyText : listing ? `thanks for your message to ${tenant.name} about ${describeListing(listing, tenant.locale, tenant.currency)}.${infoUrl ? ` Details and inspection times are here: ${infoUrl}.` : ""} If your question is about something else, reply here and a person will pick it up.` : null;
-  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel, signedBy) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom, infoUrl, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically${listing ? ` with the details for ${listing.name}` : ""}. Nothing needed from you.`, who: name, verb: "reply to" });
+  const listings = matches.map((m) => describeListing(m, tenant.locale, tenant.currency));
+  const result = await sendAndLog({ tenant, typeKey: "enquiry_auto_reply", recipient: lead, compose: (channel, signedBy) => templates.generalReply({ tenant, firstName: lead.firstName, channel, custom, infoUrl, topic, area, listings, signedBy }), identity: await senderIdentity(tenant, lead.assigneeId), contactId: lead.contactId, leadId: lead.id, transactional: true, sent: `Answered ${name}'s ${kind} automatically${listing ? ` with the details for ${listing.name}` : matches.length ? ` with ${matches.length} matching ${matches.length === 1 ? "property" : "properties"}${area ? ` in ${area}` : ""}` : ""}. Nothing needed from you.`, who: name, verb: "reply to" });
   if (result.ok) await repository.markLeadResponded(tenant.id, lead.id, new Date());
 }
 

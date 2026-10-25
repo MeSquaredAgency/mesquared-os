@@ -1048,8 +1048,8 @@ export const prismaRepository: Repository = {
     const db = getPrisma();
     const [members, operators] = await Promise.all([db.membership.findMany({ where: { tenantId }, include: { user: true, role: true } }), db.operatorAssignment.findMany({ where: { tenantId }, include: { user: true } })]);
     return [
-      ...members.map((m): TenantPersonRecord => ({ userId: m.userId, email: m.user.email, name: m.user.name, via: "member", roleId: m.roleId, roleName: m.role.name, permissions: m.role.permissions })),
-      ...operators.map((o): TenantPersonRecord => ({ userId: o.userId, email: o.user.email, name: o.user.name, via: "operator", roleId: null, roleName: null, permissions: [] })),
+      ...members.map((m): TenantPersonRecord => ({ userId: m.userId, email: m.user.email, name: m.user.name, via: "member", roleId: m.roleId, roleName: m.role.name, permissions: m.role.permissions, title: m.title, phone: m.phone, photoUrl: m.photoUrl })),
+      ...operators.map((o): TenantPersonRecord => ({ userId: o.userId, email: o.user.email, name: o.user.name, via: "operator", roleId: null, roleName: null, permissions: [], title: null, phone: null, photoUrl: null })),
     ];
   },
 
@@ -1069,8 +1069,9 @@ export const prismaRepository: Repository = {
     await getPrisma().user.update({ where: { id: userId }, data: { passwordHash, sessionVersion: { increment: 1 } } });
   },
 
-  async upsertMembership(tenantId, userId, roleId) {
-    await getPrisma().membership.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: { roleId }, create: { tenantId, userId, roleId } });
+  async upsertMembership(tenantId, userId, roleId, profile) {
+    const fields = { ...(profile?.title !== undefined ? { title: profile.title } : {}), ...(profile?.phone !== undefined ? { phone: profile.phone } : {}), ...(profile?.photoUrl !== undefined ? { photoUrl: profile.photoUrl } : {}) };
+    await getPrisma().membership.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: { roleId, ...fields }, create: { tenantId, userId, roleId, ...fields } });
   },
 
   async removeMembership(tenantId, userId) {

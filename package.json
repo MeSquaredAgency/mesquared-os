@@ -2,7 +2,7 @@
   "name": "mesquared-os",
   "version": "0.1.0",
   "private": true,
-  "description": "MeSquared OS — multi-tenant B2B operations, social marketing and revenue platform.",
+  "description": "MeSquared OS \u2014 multi-tenant B2B operations, social marketing and revenue platform.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -22,7 +22,8 @@
     "db:local:stop": "node scripts/local-postgres.mjs stop",
     "tenant:provision": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/provision.ts",
     "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts",
-    "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts"
+    "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts",
+    "inventory:import": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/import-inventory.ts"
   },
   "engines": {
     "node": ">=22.12.0"

@@ -1,4 +1,5 @@
 import type { TenantSummary } from "@/lib/types";
+import type { MessageCta } from "./types";
 
 /**
  * Automated message copy. Plain, warm, short; written for an older audience;
@@ -22,6 +23,13 @@ export function safeName(value: string | null | undefined): string | null {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+/** Only a place the tenant itself lists as a service area may be echoed back in a message. */
+export function safeArea(text: string | null | undefined, areas: string[] | undefined): string | null {
+  if (!text || !areas?.length) return null;
+  const hay = text.toLowerCase();
+  return areas.find((a) => a.trim().length >= 3 && new RegExp(`(^|[^a-z])${a.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`).test(hay))?.trim() ?? null;
+}
+
 /** Only a topic the tenant itself lists as a service may be echoed back in a message. */
 export function safeTopic(value: string | null | undefined, allowed: string[] | undefined): string | null {
   if (!value || !allowed?.length) return null;
@@ -35,6 +43,8 @@ export interface AcknowledgementInput {
   bookingUrl: string;
   /** What they asked about, in a few words, e.g. "an appraisal". */
   topic: string | null;
+  /** The service area they mentioned, when it is one the tenant lists. */
+  area?: string | null;
   /** First name of the person the lead is assigned to, when the tenant signs messages as that person. */
   signedBy?: string | null;
 }
@@ -42,35 +52,30 @@ export interface AcknowledgementInput {
 /** "from Marissa at Harbor Realty Group" when signed by a person, "from Harbor Realty Group" otherwise. */
 const fromWho = (tenant: TenantSummary, signedBy?: string | null) => (signedBy ? `${signedBy} at ${tenant.name}` : tenant.name);
 
-export function acknowledgementSms({ tenant, firstName, bookingUrl, topic, signedBy }: AcknowledgementInput): string {
+export function acknowledgementSms({ tenant, firstName, bookingUrl, topic, area, signedBy }: AcknowledgementInput): string {
   const safe = safeName(firstName);
   const name = safe ? `Hi ${safe}, ` : "Hi, ";
-  const about = topic ? ` about ${topic}` : "";
+  const about = aboutPhrase(topic, area);
   const who = safeName(signedBy);
   return `${name}thanks for contacting ${tenant.name}${about}. Book a time here: ${bookingUrl} or reply and ${who ? `${who} will` : "a person will"} get back to you during business hours. This is an automated reply from ${fromWho(tenant, who)}.`;
 }
 
-export function acknowledgementEmail(input: AcknowledgementInput): { subject: string; body: string } {
-  const { tenant, firstName, bookingUrl, topic } = input;
-  const about = topic ? ` about ${topic}` : "";
+/** "an appraisal" stays; a bare service like "appraisal" becomes "your appraisal". */
+const aboutPhrase = (topic: string | null | undefined, area: string | null | undefined) => `${topic ? ` about ${/^(a|an|the|your)\s/i.test(topic) ? topic : `your ${topic}`}` : ""}${area ? ` in ${area}` : ""}`;
+
+export function acknowledgementEmail(input: AcknowledgementInput): { subject: string; body: string; cta: MessageCta } {
+  const { tenant, firstName, bookingUrl, topic, area } = input;
+  const about = aboutPhrase(topic, area);
   const who = safeName(input.signedBy);
-  return {
-    subject: `Thanks for contacting ${tenant.name}`,
-    body: [
-      safeName(firstName) ? `Hi ${safeName(firstName)},` : "Hi,",
-      "",
-      `Thank you for getting in touch with ${tenant.name}${about}. We've received your message and ${who ? `${who} will be in contact soon` : "someone will be in contact soon"}.`,
-      "",
-      `If you'd like to choose a time now, you can book here: ${bookingUrl}`,
-      "",
-      "If you'd rather talk first, just reply to this email.",
-      "",
-      `Kind regards,`,
-      signoff(tenant, who),
-      "",
-      `This is an automated reply from ${fromWho(tenant, who)}.`,
-    ].join("\n"),
-  };
+  const packed = pack(
+    "EMAIL",
+    `Thanks for contacting ${tenant.name}`,
+    [hi(firstName), `thank you for getting in touch with ${tenant.name}${about}. We've received your message and ${who ? `${who} will be in contact soon` : "someone will be in contact soon"}.`, `If you'd like to choose a time now, you can book here: ${bookingUrl}`, "If you'd rather talk first, just reply to this email."],
+    tenant,
+    who,
+    { label: "Book a time", url: bookingUrl },
+  );
+  return { subject: packed.subject ?? `Thanks for contacting ${tenant.name}`, body: packed.body, cta: packed.cta! };
 }
 
 /** Text written by a stranger, shown to staff: URLs removed, length capped, so an alert can't carry a phishing link. */
@@ -120,16 +125,22 @@ const hi = (firstName: string | null) => {
 const signoff = (tenant: TenantSummary, signedBy?: string | null) => (signedBy ? `${signedBy}, ${tenant.branding.fromName ?? tenant.name}` : (tenant.branding.fromName ?? tenant.name));
 const auto = (tenant: TenantSummary, signedBy?: string | null) => `This is an automated message from ${fromWho(tenant, signedBy)}.`;
 
-function pack(channel: Channel, subject: string, lines: string[], tenant: TenantSummary, signedBy?: string | null): { subject?: string; body: string } {
+function pack(channel: Channel, subject: string, lines: string[], tenant: TenantSummary, signedBy?: string | null, cta?: MessageCta | null): { subject?: string; body: string; cta?: MessageCta | null } {
   const who = safeName(signedBy);
   if (channel === "EMAIL") {
-    const [first, ...rest] = lines;
+    // Email reads as paragraphs: the greeting on its own, each sentence group on its own, bullet lines kept together.
+    const [first, ...rest] = lines.filter((l) => l !== "");
     const greeting = typeof first === "string" && /^Hi\b.*,$/.test(first);
-    const paragraphs = greeting ? [first, "", ...rest.map((l, i) => (i === 0 && l ? l.charAt(0).toUpperCase() + l.slice(1) : l))] : lines;
+    const body = (greeting ? rest : lines.filter((l) => l !== "")).map((l, i) => (greeting && i === 0 ? l.charAt(0).toUpperCase() + l.slice(1) : l));
+    const paragraphs: string[] = [];
+    for (const l of body) {
+      if (l.startsWith("• ") && paragraphs.length && paragraphs[paragraphs.length - 1].startsWith("• ")) paragraphs[paragraphs.length - 1] += `\n${l}`;
+      else paragraphs.push(l);
+    }
     const footer = tenant.branding.footer?.trim();
-    return { subject, body: [...paragraphs, "", "Kind regards,", signoff(tenant, who), ...(footer ? [footer] : []), "", auto(tenant, who)].join("\n") };
+    return { subject, body: [...(greeting ? [first] : []), ...paragraphs, `Kind regards,\n${signoff(tenant, who)}${footer ? `\n${footer}` : ""}`, auto(tenant, who)].join("\n\n"), cta: cta ?? null };
   }
-  return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant, who)}` };
+  return { body: `${lines.filter(Boolean).join(" ")} ${auto(tenant, who)}`, cta: cta ?? null };
 }
 
 /** "on Wednesday 4 November at 10:00 am" in the tenant's locale and timezone. */
@@ -180,9 +191,19 @@ export function chase({ tenant, firstName, what, channel, signedBy }: Base & { w
  * question). The default is true on its own: it points at where the details
  * live and offers a human path, promising no follow-up.
  */
-export function generalReply({ tenant, firstName, channel, custom, infoUrl, signedBy }: Base & { custom: string | null; infoUrl?: string | null }) {
-  const body = custom ?? (infoUrl ? `thanks for your message to ${tenant.name}. The quickest way to get details and times is here: ${infoUrl}. If your question is about something else, reply here and a person will pick it up.` : `thanks for your message to ${tenant.name}. If you need anything else, reply here and a person will pick it up during business hours.`);
-  return pack(channel, `Thanks for contacting ${tenant.name}`, [hi(firstName), body], tenant, signedBy);
+export function generalReply({ tenant, firstName, channel, custom, infoUrl, topic, area, listings, signedBy }: Base & { custom: string | null; infoUrl?: string | null; topic?: string | null; area?: string | null; listings?: string[] | null }) {
+  const who = safeName(signedBy);
+  const about = `${topic ? ` about ${topic}` : ""}${area ? ` in ${area}` : ""}`;
+  const person = who ? `${who} will` : "a person will";
+  const lines: string[] = [hi(firstName)];
+  if (custom) lines.push(custom);
+  else if (listings?.length) {
+    lines.push(`thanks for your message to ${tenant.name}${about}. Here is what we have at the moment that may suit:`);
+    for (const l of listings) lines.push(`• ${l}`);
+    lines.push(`${person[0].toUpperCase()}${person.slice(1)} confirm availability and inspection times with you${infoUrl ? `, and you can see details and times here: ${infoUrl}` : ""}. If your question is about something else, reply here and ${person} pick it up.`);
+  } else if (infoUrl) lines.push(`thanks for your message to ${tenant.name}${about}. The quickest way to get details and times is here: ${infoUrl}. If your question is about something else, reply here and ${person} pick it up.`);
+  else lines.push(`thanks for your message to ${tenant.name}${about}. ${person[0].toUpperCase()}${person.slice(1)} come back to you during business hours; if you need anything else in the meantime, just reply here.`);
+  return pack(channel, `Thanks for contacting ${tenant.name}`, lines, tenant, signedBy, infoUrl ? { label: "See details and times", url: infoUrl } : null);
 }
 
 export function invoiceReminder({ tenant, firstName, channel, number, amount, dueText, url, overdue }: Base & { number: string | null; amount: string; dueText: string; url: string | null; overdue: boolean }) {

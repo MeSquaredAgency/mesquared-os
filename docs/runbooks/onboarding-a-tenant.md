@@ -18,7 +18,13 @@ It creates or refreshes the workspace, applies the template, invites the
 people with their roles, assigns operators, confirms platform admins, attaches
 the workspace's SMS number (`"smsNumber": "+614..."`: texts go out from it and
 replies to it come back to this workspace; the Twilio account itself lives in
-the deployment's secrets) and prints the readiness score. Passwords are never printed: reset each person's
+the deployment's secrets), the email signature details (`logoUrl`, `website`,
+`phone`, `addresses`, `social`, and per person `title`, `mobile`, `photo`, all
+editable later under Settings → Business and Settings → People → Signature)
+and prints the readiness score. Listings or a rent roll go in with
+`npm run inventory:import -- <slug> file.csv [source]` (same columns as the
+Settings → Inventory upload; a `manager` column lets rental enquiries be
+answered by the property's own manager). Passwords are never printed: reset each person's
 from Settings → People and hand the one-time password over privately. Steps
 1 to 3 below are what the file does for you; 4 to 6 still happen in the
 console.

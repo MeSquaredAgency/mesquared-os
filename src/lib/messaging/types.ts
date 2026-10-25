@@ -2,6 +2,21 @@ import type { TenantSummary } from "@/lib/types";
 
 export type OutboundChannel = "SMS" | "WHATSAPP" | "EMAIL";
 
+/** The one thing the message asks the reader to do; the text version carries the URL, the HTML version a button. */
+export interface MessageCta {
+  label: string;
+  url: string;
+}
+
+/** The person a message is signed by, for the email signature block. */
+export interface MessageSignature {
+  name: string;
+  title: string | null;
+  phone: string | null;
+  email: string | null;
+  photoUrl: string | null;
+}
+
 export interface OutboundMessage {
   channel: OutboundChannel;
   /** E.164 phone or email address. */
@@ -11,6 +26,8 @@ export interface OutboundMessage {
   subject?: string;
   /** Display identity the message is sent under: the tenant's own, never Me²'s. */
   from: { name: string; address: string; replyTo?: string | null };
+  cta?: MessageCta | null;
+  signature?: MessageSignature | null;
 }
 
 export interface SendResult {

@@ -14,7 +14,9 @@
  *   "region": "AU", "timezone": "Australia/Adelaide", "locale": "en-AU", "currency": "AUD",
  *   "fromName": "...", "replyTo": "...", "primaryColor": "#rrggbb", "serviceAreas": ["..."],
  *   "requiredFooter": "...", "signAsAssignee": true, "smsNumber": "+614...",
- *   "people": [{ "email": "...", "name": "...", "role": "owner" }],
+ *   "logoUrl": "https://...", "website": "example.com.au", "phone": "1300 ...",
+ *   "addresses": ["Adelaide: ..."], "social": { "facebook": "https://...", "instagram": "https://..." },
+ *   "people": [{ "email": "...", "name": "...", "role": "owner", "title": "Director", "mobile": "04..", "photo": "https://..." }],
  *   "operators": ["ops@..."],
  *   "admins": [{ "email": "ops@...", "name": "..." }]
  * }
@@ -43,7 +45,12 @@ interface Definition {
   requiredFooter?: string;
   signAsAssignee?: boolean;
   smsNumber?: string;
-  people?: { email: string; name: string; role: string }[];
+  logoUrl?: string;
+  website?: string;
+  phone?: string;
+  addresses?: string[];
+  social?: { facebook?: string; instagram?: string; youtube?: string; linkedin?: string };
+  people?: { email: string; name: string; role: string; title?: string; mobile?: string; photo?: string }[];
   operators?: string[];
   admins?: { email: string; name: string }[];
 }
@@ -85,7 +92,7 @@ tenant =
     timezone: def.timezone,
     locale: def.locale,
     currency: def.currency.toUpperCase(),
-    branding: { ...tenant.branding, ...(def.fromName ? { fromName: def.fromName } : {}), ...(def.replyTo ? { replyTo: def.replyTo } : {}), ...(def.primaryColor ? { primaryColor: def.primaryColor } : {}), ...(def.signAsAssignee !== undefined ? { signAsAssignee: def.signAsAssignee } : {}), ...(def.requiredFooter ? { footer: def.requiredFooter } : {}) },
+    branding: { ...tenant.branding, ...(def.fromName ? { fromName: def.fromName } : {}), ...(def.replyTo ? { replyTo: def.replyTo } : {}), ...(def.primaryColor ? { primaryColor: def.primaryColor } : {}), ...(def.signAsAssignee !== undefined ? { signAsAssignee: def.signAsAssignee } : {}), ...(def.requiredFooter ? { footer: def.requiredFooter } : {}), ...(def.logoUrl ? { logoUrl: def.logoUrl } : {}), ...(def.website ? { website: def.website } : {}), ...(def.phone ? { phone: def.phone } : {}), ...(def.addresses ? { addresses: def.addresses } : {}), ...(def.social ? { social: def.social } : {}) },
     qualificationRules: { ...tenant.qualificationRules, ...(def.serviceAreas?.length ? { serviceAreas: def.serviceAreas } : {}) },
   })) ?? tenant;
 if (def.requiredFooter) await repository.updateBrandProfile(tenant.id, { complianceBlock: { requiredFooter: def.requiredFooter } });
@@ -106,7 +113,7 @@ for (const person of def.people ?? []) {
   assert.ok(roleDef, `role "${person.role}" is not in the ${template.name} template`);
   const role = config.roles.find((r) => r.name === roleDef.name);
   assert.ok(role, `role "${roleDef.name}" missing on the tenant; re-apply the template`);
-  const result = await inviteMember(tenant.id, { email: person.email, name: person.name, roleId: role.id });
+  const result = await inviteMember(tenant.id, { email: person.email, name: person.name, roleId: role.id, profile: { title: person.title ?? null, phone: person.mobile ?? null, photoUrl: person.photo ?? null } });
   console.log(`  person   ${person.email} → ${role.name}${result.created ? " (created; reset the password from Settings → People to hand it over)" : ""}`);
 }
 

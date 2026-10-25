@@ -108,3 +108,14 @@ serves the production build on port 8787. For demo mode add
 
 `npx wrangler rollback` returns to the previous deployment. Database
 migrations are forward-only, as in [deploy.md](deploy.md).
+
+## Deploys from GitHub
+
+Since 25 October 2026 every push to `main` that passes CI deploys itself
+through `.github/workflows/deploy.yml`: it applies pending Prisma migrations
+against the production database first (`DATABASE_URL` repository secret, the
+direct Neon connection string) and then builds and uploads the worker
+(`CLOUDFLARE_API_TOKEN` secret, `CLOUDFLARE_ACCOUNT_ID` variable). Without the
+database secret the run fails before touching the worker, on purpose. Re-run a
+failed deploy from the Actions tab once the secret is in place. Rolling the
+Cloudflare token means updating that one secret and nothing else.

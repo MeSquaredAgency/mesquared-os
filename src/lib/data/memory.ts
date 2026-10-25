@@ -109,7 +109,7 @@ interface MemoryStore {
   inventory: InventoryItemRecord[];
   /** Per-tenant materialised template. Lives on the global store so every module instance (page and action bundles in dev) sees the same config. */
   config: Record<string, MaterializedTemplate>;
-  memberships: { userId: string; tenantId: string; roleId: string }[];
+  memberships: { userId: string; tenantId: string; roleId: string; title?: string | null; phone?: string | null; photoUrl?: string | null }[];
   operatorAssignments: { userId: string; tenantId: string }[];
 }
 
@@ -1104,11 +1104,11 @@ export const memoryRepository: Repository = {
     for (const m of store().memberships.filter((x) => x.tenantId === tenantId)) {
       const u = s.users.find((x) => x.id === m.userId);
       const role = store().config[tenantId]?.roles.find((r) => r.id === m.roleId);
-      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "member", roleId: role?.id ?? null, roleName: role?.name ?? null, permissions: role?.permissions ?? [] });
+      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "member", roleId: role?.id ?? null, roleName: role?.name ?? null, permissions: role?.permissions ?? [], title: m.title ?? null, phone: m.phone ?? null, photoUrl: m.photoUrl ?? null });
     }
     for (const a of store().operatorAssignments.filter((x) => x.tenantId === tenantId)) {
       const u = s.users.find((x) => x.id === a.userId);
-      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "operator", roleId: null, roleName: null, permissions: [] });
+      if (u) out.push({ userId: u.id, email: u.email, name: u.name, via: "operator", roleId: null, roleName: null, permissions: [], title: null, phone: null, photoUrl: null });
     }
     return out;
   },
@@ -1137,10 +1137,14 @@ export const memoryRepository: Repository = {
     }
   },
 
-  async upsertMembership(tenantId, userId, roleId) {
+  async upsertMembership(tenantId, userId, roleId, profile) {
     const existing = store().memberships.find((m) => m.tenantId === tenantId && m.userId === userId);
-    if (existing) existing.roleId = roleId;
-    else store().memberships.push({ tenantId, userId, roleId });
+    const row = existing ?? { tenantId, userId, roleId };
+    row.roleId = roleId;
+    if (profile?.title !== undefined) row.title = profile.title;
+    if (profile?.phone !== undefined) row.phone = profile.phone;
+    if (profile?.photoUrl !== undefined) row.photoUrl = profile.photoUrl;
+    if (!existing) store().memberships.push(row);
   },
 
   async removeMembership(tenantId, userId) {

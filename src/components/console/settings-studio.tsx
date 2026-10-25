@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
-import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setModuleAction } from "@/lib/tenants/actions";
+import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setModuleAction, updateMemberProfileAction } from "@/lib/tenants/actions";
 import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord, TenantSummary, UserRecord } from "@/lib/types";
 import { cn, formatDateTime, humanize, type FormatContext } from "@/lib/utils";
 
@@ -143,6 +143,14 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
     replyTo: tenant.branding.replyTo ?? "",
     primaryColor: tenant.branding.primaryColor ?? "",
     signAsAssignee: Boolean(tenant.branding.signAsAssignee),
+    logoUrl: tenant.branding.logoUrl ?? "",
+    website: tenant.branding.website ?? "",
+    phone: tenant.branding.phone ?? "",
+    addresses: (tenant.branding.addresses ?? []).join("\n"),
+    facebook: tenant.branding.social?.facebook ?? "",
+    instagram: tenant.branding.social?.instagram ?? "",
+    youtube: tenant.branding.social?.youtube ?? "",
+    linkedin: tenant.branding.social?.linkedin ?? "",
     firstResponseMinutes: String(tenant.sla.firstResponseMinutes),
     bookingWindowHours: String(tenant.sla.bookingWindowHours),
     quietStart: String(tenant.sla.quietHours?.start ?? 21),
@@ -191,6 +199,16 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" checked={f.signAsAssignee} onChange={(e) => setF({ ...f, signAsAssignee: e.target.checked })} /> Sign messages as the person assigned to the lead (replies go to them; the business name and number stay the same)
           </label>
+          <p className="pt-2 text-xs font-medium text-muted-foreground">Email signature: logo, contact details and offices shown under every email</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {field("Logo image address (https)", "logoUrl", { placeholder: "https://example.com.au/logo.png" })}
+            {field("Website", "website", { placeholder: "example.com.au" })}
+            {field("Office phone", "phone", { placeholder: "1300 000 000" })}
+            {field("Facebook page", "facebook", { placeholder: "https://www.facebook.com/…" })}
+            {field("Instagram profile", "instagram", { placeholder: "https://instagram.com/…" })}
+            {field("YouTube channel", "youtube", { placeholder: "https://www.youtube.com/@…" })}
+          </div>
+          {area("Offices (one per line)", "addresses", "Adelaide: Level 1 / 1 Example Rd, Suburb\nMount Gambier: 1 Example St")}
         </CardContent>
       </Card>
       <Card>
@@ -220,6 +238,14 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
                   replyTo: f.replyTo,
                   primaryColor: f.primaryColor,
                   signAsAssignee: f.signAsAssignee,
+                  logoUrl: f.logoUrl,
+                  website: f.website,
+                  phone: f.phone,
+                  addresses: f.addresses,
+                  facebook: f.facebook,
+                  instagram: f.instagram,
+                  youtube: f.youtube,
+                  linkedin: f.linkedin,
                   firstResponseMinutes: Number(f.firstResponseMinutes),
                   bookingWindowHours: Number(f.bookingWindowHours),
                   quietStart: Number(f.quietStart),
@@ -249,6 +275,8 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
   const [invite, setInvite] = useState({ email: "", name: "", roleId: roles[0]?.id ?? "" });
   const [reveal, setReveal] = useState<{ email: string; password: string } | null>(null);
   const [operatorId, setOperatorId] = useState(operators[0]?.id ?? "");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [profile, setProfile] = useState({ title: "", phone: "", photoUrl: "" });
   const members = people.filter((p) => p.via === "member");
   const assigned = people.filter((p) => p.via === "operator");
   return (
@@ -264,21 +292,40 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           ) : (
             <ul className="divide-y">
               {members.map((p) => (
-                <li key={p.userId} className="flex items-center justify-between gap-2 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{p.name ?? p.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {p.email} · {p.roleName} · {p.permissions.map((x) => humanize(x).toLowerCase()).join(", ") || "no permissions"}
-                    </p>
+                <li key={p.userId} className="py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {p.name ?? p.email}
+                        {p.title && <span className="font-normal text-muted-foreground"> · {p.title}</span>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {p.email} · {p.roleName} · {p.permissions.map((x) => humanize(x).toLowerCase()).join(", ") || "no permissions"}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => { setEditing(editing === p.userId ? null : p.userId); setProfile({ title: p.title ?? "", phone: p.phone ?? "", photoUrl: p.photoUrl ?? "" }); }}>
+                        Signature
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={pending} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, { email: p.email, roleId: p.roleId ?? roles[0]?.id ?? "", resetPassword: true }); if (r.ok && r.temporaryPassword) setReveal({ email: p.email, password: r.temporaryPassword }); return r; })}>
+                        <KeyRound /> Reset password
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => removeMemberAction(tenant.id, p.userId))}>
+                        <Trash2 /> Remove
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, { email: p.email, roleId: p.roleId ?? roles[0]?.id ?? "", resetPassword: true }); if (r.ok && r.temporaryPassword) setReveal({ email: p.email, password: r.temporaryPassword }); return r; })}>
-                      <KeyRound /> Reset password
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => removeMemberAction(tenant.id, p.userId))}>
-                      <Trash2 /> Remove
-                    </Button>
-                  </div>
+                  {editing === p.userId && (
+                    <div className="mt-2 grid gap-2 rounded-md border bg-muted/30 p-3 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+                      <Input placeholder="Job title" value={profile.title} onChange={(e) => setProfile({ ...profile, title: e.target.value })} aria-label="Job title" />
+                      <Input placeholder="Mobile" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} aria-label="Mobile" />
+                      <Input placeholder="Photo address (https, round PNG)" value={profile.photoUrl} onChange={(e) => setProfile({ ...profile, photoUrl: e.target.value })} aria-label="Photo address" />
+                      <Button size="sm" variant="green" disabled={pending} onClick={() => run(async () => { const r = await updateMemberProfileAction(tenant.id, p.userId, profile); if (r.ok) setEditing(null); return r; })}>
+                        Save
+                      </Button>
+                      <p className="text-xs text-muted-foreground sm:col-span-4">Shown in the email signature when messages are signed as {p.name?.split(" ")[0] ?? "this person"}.</p>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

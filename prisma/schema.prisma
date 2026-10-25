@@ -78,6 +78,10 @@ model Membership {
   tenantId  String
   userId    String
   roleId    String
+  /// Signature details for messages signed by this person: job title, mobile, hosted photo.
+  title     String?
+  phone     String?
+  photoUrl  String?
   createdAt DateTime @default(now())
 
   tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)

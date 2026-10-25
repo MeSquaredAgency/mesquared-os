@@ -58,6 +58,11 @@ export interface TenantBranding {
   signAsAssignee?: boolean;
   /** Line under every email signature (licence number, address); mirrors the brand profile's required footer. */
   footer?: string;
+  /** Public contact details printed in the email signature block. */
+  website?: string;
+  phone?: string;
+  addresses?: string[];
+  social?: { facebook?: string; instagram?: string; youtube?: string; linkedin?: string };
 }
 
 /** Tenant-configured rules consumed by the qualification engine. */
@@ -757,6 +762,10 @@ export interface TenantPersonRecord {
   roleId: string | null;
   roleName: string | null;
   permissions: Permission[];
+  /** Signature details for messages signed by this person (members only). */
+  title: string | null;
+  phone: string | null;
+  photoUrl: string | null;
 }
 
 export interface ApiKeyRecord {

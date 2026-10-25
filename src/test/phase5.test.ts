@@ -242,12 +242,14 @@ describe("signing as the assigned person", () => {
   it("resolves the assignee's first name and email only when the switch is on and the lead is assigned to a member", async () => {
     const { senderIdentity, templates } = await import("@/lib/messaging");
     const dana = (await repository.listTenantPeople(fresh.id)).find((p) => p.via === "member")!;
-    assert.deepEqual(await senderIdentity(fresh, dana.userId), { signedBy: null, replyTo: null, userId: null }, "off by default");
+    assert.deepEqual(await senderIdentity(fresh, dana.userId), { signedBy: null, replyTo: null, userId: null, signature: null }, "off by default");
     fresh = (await repository.updateTenant(fresh.id, { branding: { ...fresh.branding, signAsAssignee: true } }))!;
+    await repository.upsertMembership(fresh.id, dana.userId, dana.roleId!, { title: "Property Manager", phone: "0400 000 000", photoUrl: "https://coastline.example/dana.png" });
     const identity = await senderIdentity(fresh, dana.userId);
     assert.equal(identity.signedBy, "Dana");
     assert.equal(identity.replyTo, "owner@coastline.example");
-    assert.deepEqual(await senderIdentity(fresh, null), { signedBy: null, replyTo: null, userId: null }, "unassigned leads are signed by the business");
+    assert.deepEqual(identity.signature, { name: "Dana Reyes", title: "Property Manager", phone: "0400 000 000", email: "owner@coastline.example", photoUrl: "https://coastline.example/dana.png" }, "signature details come from the membership");
+    assert.deepEqual(await senderIdentity(fresh, null), { signedBy: null, replyTo: null, userId: null, signature: null }, "unassigned leads are signed by the business");
     assert.equal((await senderIdentity(fresh, "user_ops")).signedBy, null, "operators never sign client messages");
 
     const signed = templates.bookingConfirmation({ tenant: fresh, firstName: "Sam", when: null, channel: "EMAIL", signedBy: "Dana" });
@@ -261,22 +263,36 @@ describe("signing as the assigned person", () => {
     assert.match(unsigned.body, /Kind regards,\nCoastline Property\nCoastline Property Co \| RLA 000001\n/, "the required footer sits under every email signature");
   });
 
-  it("renders every email as a branded banner layout with the text intact", async () => {
+  it("renders every email in the branded layout: logo, bar, button, signature block, licence line", async () => {
     const { templates } = await import("@/lib/messaging");
     const { renderEmailHtml } = await import("@/lib/messaging/email-layout");
-    const email = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "EMAIL", custom: null, infoUrl: "https://coastline.example/rentals?a=1&b=2" });
-    assert.match(email.body, /^Hi Sam,\n\nThanks for your message/, "email greetings get a paragraph break and a capital");
-    const html = renderEmailHtml(fresh, email.body);
-    assert.match(html, /<td style="background:#0f4c81[^"]*">.*Coastline Property<\/span>/s, "banner in the brand colour carries the sender name");
-    assert.match(html, /<a href="https:\/\/coastline.example\/rentals\?a=1&amp;b=2"/, "links are clickable and escaped");
-    assert.match(html, /Coastline Property Co \| RLA 000001<br>This is an automated message/, "licence line and note live in the footer");
-    assert.equal((html.match(/RLA 000001/g) ?? []).length, 1, "the footer line is not repeated in the body");
+    const email = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "EMAIL", custom: null, infoUrl: "https://coastline.example/rentals?a=1&b=2", topic: "rentals", area: "Glenelg" });
+    assert.match(email.body, /^Hi Sam,\n\nThanks for your message to Coastline Property Group about rentals in Glenelg/, "email greetings get a paragraph break and a capital; topic and area are named");
+    assert.deepEqual(email.cta, { label: "See details and times", url: "https://coastline.example/rentals?a=1&b=2" });
+    const html = renderEmailHtml(fresh, email.body, { cta: email.cta });
+    assert.match(html, /<td style="height:4px;background:#0f4c81/, "a bar in the brand colour under the header");
+    assert.match(html, /<a href="https:\/\/coastline.example\/rentals\?a=1&amp;b=2" style="display:inline-block[^"]*">See details and times<\/a>/, "the link becomes a button");
+    assert.doesNotMatch(html, /here: <a/, "the raw link sentence is gone from the body");
+    assert.match(html, /Coastline Property Co \| RLA 000001<\/div>/, "licence line sits in the signature block");
+    assert.equal((html.match(/RLA 000001/g) ?? []).length, 1, "the footer line is not repeated");
+    assert.match(html, /Reply to this email to reach a person/);
     const hostile = renderEmailHtml(fresh, "Hi,\n<script>alert(1)</script> & co\n\nKind regards,\nX");
     assert.doesNotMatch(hostile, /<script>/);
     assert.match(hostile, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; co/);
-    const lime = renderEmailHtml({ ...fresh, branding: { ...fresh.branding, primaryColor: "#8dc600", logoUrl: "https://coastline.example/logo.png" } }, email.body);
-    assert.match(lime, /background:#8dc600/);
-    assert.match(lime, /<img src="https:\/\/coastline.example\/logo.png"/, "a logo replaces the name in the banner");
+    const branded = { ...fresh, branding: { ...fresh.branding, primaryColor: "#8dc600", logoUrl: "https://coastline.example/logo.png", website: "coastline.example", phone: "1300 000 000", addresses: ["Glenelg: 1 Jetty Rd"], social: { facebook: "https://www.facebook.com/coastline" } } };
+    const signed = renderEmailHtml(branded, email.body, { cta: email.cta, signature: { name: "Dana Owner", title: "Property Manager", phone: "0400 000 000", email: "owner@coastline.example", photoUrl: "https://coastline.example/dana.png" } });
+    assert.match(signed, /<img src="https:\/\/coastline.example\/logo.png" alt="Coastline Property" height="44"/, "the logo heads the email");
+    assert.match(signed, /background:#8dc600/);
+    assert.match(signed, /<img src="https:\/\/coastline.example\/dana.png" width="72"/, "the signer's photo");
+    assert.match(signed, /Dana Owner<\/div><div[^>]*>Property Manager<\/div>/, "name and title");
+    assert.match(signed, /tel:\+61400000000[^>]*>0400 000 000<\/a>/, "mobile as a tel link");
+    assert.match(signed, /tel:\+611300000000|tel:1300000000/, "office phone");
+    assert.match(signed, /href="https:\/\/coastline.example"[^>]*>coastline.example</, "website");
+    assert.match(signed, />Facebook<\/a>/);
+    assert.match(signed, /Glenelg: 1 Jetty Rd/);
+    const business = renderEmailHtml(branded, email.body, { cta: email.cta });
+    assert.match(business, /<img src="https:\/\/coastline.example\/logo.png" width="88"/, "the business signs with its logo");
+    assert.doesNotMatch(business, /Dana/);
     assert.equal(templates.acknowledgementSms({ tenant: fresh, firstName: null, bookingUrl: "https://x/y", topic: null, signedBy: "http://evil" }).includes("evil"), false, "a bad name is dropped, not sent");
   });
 
@@ -329,5 +345,62 @@ describe("listings sync from property management software", () => {
     assert.equal((await repository.listInventory(harbor.id)).some((i) => i.externalId === "log-lot-1"), false, "isolated");
     await repository.setAutomation(fresh.id, "inventory_sync", { enabled: false });
     assert.equal((await runInventorySync(fresh)).skipped, "listings sync off");
+  });
+});
+
+describe("Phase 5 follow-up: enquiries answered with the area, bedrooms and real listings", () => {
+  it("reads what a renter asked for with fixed patterns only", async () => {
+    const { listingNeeds, suburbFromAddress } = await import("@/lib/inventory");
+    const { safeArea } = await import("@/lib/messaging/templates");
+    assert.deepEqual(listingNeeds("Do you have any 3 bedroom rentals in Blair Athol?"), { bedrooms: 3, rental: true, inspection: false });
+    assert.deepEqual(listingNeeds("two-bed unit to lease"), { bedrooms: 2, rental: true, inspection: false });
+    assert.deepEqual(listingNeeds("Can I inspect 4 Smith St"), { bedrooms: null, rental: false, inspection: true });
+    assert.equal(safeArea("looking in blair athol please", ["Blair Athol", "Mount Gambier"]), "Blair Athol");
+    assert.equal(safeArea("Mount Gambier-ish", ["Blair Athol", "Mount Gambier"]), "Mount Gambier");
+    assert.equal(safeArea("Blairathol", ["Blair Athol"]), null, "needs the whole place name");
+    assert.equal(safeArea("<b>Prospect</b> http://evil", ["Blair Athol"]), null, "only tenant-listed areas are echoed");
+    assert.equal(suburbFromAddress("6B East Way, Darlington SA 5047"), "Darlington");
+    assert.equal(suburbFromAddress("1 Gardiner Terrace, Mount Gambier, SA, 5290"), "Mount Gambier");
+    assert.equal(suburbFromAddress("13 Sutton Rd"), null);
+  });
+
+  it("imports a rent roll with manager, type and suburb, and offers the available properties that fit", async () => {
+    const { csvToInventory, importInventory, findListingsMatching, describeListing } = await import("@/lib/inventory");
+    const csv = [
+      "address,suburb,bedrooms,bathrooms,car,property_type,manager,status",
+      "\"1 Eldorado St, Munno Para West SA 5115\",,3,1,1,House,Marissa Bowell,leased",
+      "\"477 Prospect Rd, Blair Athol SA 5084\",,3,1,2,House,Luke Whittaker,available",
+      "\"2/9 Gray St, Blair Athol SA 5084\",,2,1,1,Unit,Luke Whittaker,available",
+      "\"10 Franklin Terrace\",Blair Athol,4,2,2,House,Luke Whittaker,available",
+    ].join("\n");
+    const parsed = csvToInventory(csv);
+    assert.equal(parsed.items.length, 4);
+    assert.deepEqual(parsed.items[0]!.attributes, { bedrooms: 3, bathrooms: 1, manager: "Marissa Bowell", propertyType: "House", carSpaces: 1, suburb: "Munno Para West" });
+    assert.equal(parsed.items[0]!.status, "UNAVAILABLE");
+    assert.equal(parsed.items[3]?.attributes?.suburb, "Blair Athol", "an explicit suburb column wins");
+    await importInventory(fresh, parsed.items, "propertyme-export");
+    const threes = await findListingsMatching(fresh.id, { suburb: "Blair Athol", bedrooms: 3 });
+    assert.deepEqual(threes.map((i) => i.name), ["477 Prospect Rd, Blair Athol SA 5084"], "exact bedroom match in the suburb, leased ones excluded");
+    const fives = await findListingsMatching(fresh.id, { suburb: "Blair Athol", bedrooms: 5 });
+    assert.deepEqual(fives, [], "nothing bigger than what is there");
+    const twos = await findListingsMatching(fresh.id, { suburb: "blair athol", bedrooms: 2 });
+    assert.deepEqual(twos.map((i) => i.name), ["2/9 Gray St, Blair Athol SA 5084"]);
+    const any = await findListingsMatching(fresh.id, { suburb: "Blair Athol" });
+    assert.equal(any.length, 3);
+    assert.equal(describeListing(threes[0]!, "en-AU", "AUD"), "477 Prospect Rd, Blair Athol SA 5084 · 3 beds", "suburb not repeated when the address carries it");
+    assert.equal(await findListingsMatching(fresh.id, { suburb: "Nowhere", bedrooms: 3 }).then((r) => r.length), 0);
+  });
+
+  it("writes the reply around the listings and a button, signed by the person", async () => {
+    const { templates } = await import("@/lib/messaging");
+    const reply = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "EMAIL", custom: null, infoUrl: null, topic: "rentals", area: "Blair Athol", listings: ["477 Prospect Rd, Blair Athol SA 5084 · 3 beds", "2/9 Gray St, Blair Athol SA 5084 · 2 beds"], signedBy: "Luke" });
+    assert.match(reply.body, /about rentals in Blair Athol\. Here is what we have at the moment that may suit:\n\n• 477 Prospect Rd[^\n]*\n• 2\/9 Gray St[^\n]*\n\nLuke will confirm availability and inspection times with you\./);
+    assert.equal(reply.cta, null);
+    const sms = templates.generalReply({ tenant: fresh, firstName: "Sam", channel: "SMS", custom: null, infoUrl: "https://coastline.example/rentals", topic: "rentals", area: null, listings: [] });
+    assert.match(sms.body, /^Hi Sam, thanks for your message to Coastline Property Group about rentals\. The quickest way/);
+    const ack = templates.acknowledgementEmail({ tenant: fresh, firstName: "Sam", bookingUrl: "https://book.example/x", topic: "an appraisal", area: "Glenelg", signedBy: "Dana" });
+    assert.match(ack.body, /^Hi Sam,\n\nThank you for getting in touch with Coastline Property Group about an appraisal in Glenelg\. We've received your message and Dana will be in contact soon\.\n\nIf you'd like to choose a time now, you can book here: https:\/\/book\.example\/x\n\n/);
+    assert.match(ack.body, /Kind regards,\nDana, Coastline Property\nCoastline Property Co \| RLA 000001\n\nThis is an automated message from Dana at Coastline Property Group\./);
+    assert.deepEqual(ack.cta, { label: "Book a time", url: "https://book.example/x" });
   });
 });

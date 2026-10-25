@@ -3,7 +3,7 @@ import { repository } from "@/lib/data";
 import type { TenantSummary } from "@/lib/types";
 import { chooseChannel, destinationAllowed, inQuietHours, quietHoursEnd, regionRule } from "./policy";
 import { providerFor } from "./providers";
-import type { OutboundChannel, OutboundMessage, SendResult } from "./types";
+import type { MessageCta, MessageSignature, OutboundChannel, OutboundMessage, SendResult } from "./types";
 
 export * from "./types";
 export { chooseChannel, clampOutOfQuietHours, inQuietHours, quietHoursEnd, regionRule } from "./policy";
@@ -26,6 +26,10 @@ export interface SendOptions {
   transactional?: boolean;
   /** Replies go here instead of the tenant's default reply-to (the assigned person's address). Email only. */
   replyTo?: string | null;
+  /** Rendered as a button in HTML email; the body already carries the URL. */
+  cta?: MessageCta | null;
+  /** The person the email signature block shows; the business when null. */
+  signature?: MessageSignature | null;
 }
 
 export interface SenderIdentity {
@@ -34,9 +38,11 @@ export interface SenderIdentity {
   /** Reply-to address for email, or null for the business default. */
   replyTo: string | null;
   userId: string | null;
+  /** Signature block details for email; null signs as the business. */
+  signature: MessageSignature | null;
 }
 
-export const businessIdentity: SenderIdentity = { signedBy: null, replyTo: null, userId: null };
+export const businessIdentity: SenderIdentity = { signedBy: null, replyTo: null, userId: null, signature: null };
 
 /**
  * Who a message is signed by. When the tenant has "sign as the assigned
@@ -49,7 +55,7 @@ export async function senderIdentity(tenant: TenantSummary, assigneeId: string |
   const person = (await repository.listTenantPeople(tenant.id)).find((p) => p.userId === assigneeId && p.via === "member");
   if (!person) return businessIdentity;
   const first = person.name?.trim().split(/\s+/)[0] ?? null;
-  return { signedBy: first || null, replyTo: person.email, userId: person.userId };
+  return { signedBy: first || null, replyTo: person.email, userId: person.userId, signature: { name: person.name?.trim() || first || person.email, title: person.title, phone: person.phone, email: person.email, photoUrl: person.photoUrl } };
 }
 
 /** Caps on automated sends, per tenant per day and per recipient per day. Overridable for big tenants. */
@@ -135,7 +141,7 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
   const from = await senderFor(tenant, opts.channel, opts.replyTo);
   if (!from) return refuse(`No sender identity configured for ${opts.channel} on this workspace.`, true);
 
-  const result = await providerFor(opts.channel).send({ channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject, from }, tenant);
+  const result = await providerFor(opts.channel).send({ channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject, from, cta: opts.cta ?? null, signature: opts.signature ?? null }, tenant);
   const { messageId } = await record(result.ok ? "SENT" : "FAILED", result.providerMessageId);
   return { ...result, messageId };
 }
