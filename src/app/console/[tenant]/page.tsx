@@ -139,7 +139,7 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
       </Section>
 
       <Section id="money-studio-title" title="Money and marketing" lede="Ad accounts and pacing, finance connections and invoices, tracked links and website numbers.">
-        <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={adAccounts} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />
+        <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={adAccounts.map(({ settings: _settings, ...account }) => account)} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />
       </Section>
 
       <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
