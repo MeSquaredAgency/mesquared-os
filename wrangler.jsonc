@@ -17,5 +17,13 @@
   // Run near the database (Neon, Sydney) rather than near the caller: the tick is many sequential queries.
   "placement": { "mode": "smart" },
   "observability": { "enabled": true },
-  "vars": { "NEXTJS_ENV": "production", "MESSAGING_MODE": "live", "TWILIO_WEBHOOK_URL": "https://mesquared-os.mesquared-site.workers.dev/api/v1/inbound/sms", "NEXT_PUBLIC_APP_URL": "https://mesquared-os.mesquared-site.workers.dev", "DEFAULT_FROM_EMAIL": "hello@mesquaredagency.com" }
+  "vars": {
+    "NEXTJS_ENV": "production",
+    "MESSAGING_MODE": "live",
+    "NEXT_PUBLIC_APP_URL": "https://os.mesquaredagency.com",
+    "TWILIO_WEBHOOK_URL": "https://os.mesquaredagency.com/api/v1/inbound/sms",
+    "DEFAULT_FROM_EMAIL": "hello@mesquaredagency.com",
+    // Public identifier of the Me² Google OAuth client (sign-in, Google Ads, Business Profile). The secret is a worker secret.
+    "GOOGLE_OAUTH_CLIENT_ID": "983290391012-4707aj48vatufhs3pajg5uk5umhafgrp.apps.googleusercontent.com"
+  }
 }

@@ -19,7 +19,7 @@ worker served the whole app:
 - credential encryption (AES-GCM) and API-key hashing under `nodejs_compat`
 
 Then deployed for real (24 Oct 2026) to the Me² Cloudflare account:
-`https://mesquared-os.mesquared-site.workers.dev`, with Hyperdrive
+`https://os.mesquaredagency.com (custom domain on the worker; the workers.dev address still answers)`, with Hyperdrive
 `mesquared-os-neon` in front of the Neon production branch. Health reports
 `postgres`, API-key lookups and the login query run through Hyperdrive, the
 tick rejects calls without `JOB_SECRET`, and the minute cron is registered.
