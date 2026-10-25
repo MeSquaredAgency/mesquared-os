@@ -35,6 +35,7 @@ jobs:
       - name: Apply database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL secret is not set; refusing to deploy code ahead of its migrations."
