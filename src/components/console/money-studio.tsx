@@ -17,7 +17,7 @@ interface Props {
   tenantId: string;
   tenantSlug: string;
   fmt: FormatContext;
-  adAccounts: AdAccountRecord[];
+  adAccounts: Omit<AdAccountRecord, "settings">[];
   pacing: PacingStatus | null;
   financeIntegrations: IntegrationRecord[];
   invoices: InvoiceRecord[];
@@ -65,7 +65,7 @@ export function MoneyStudio({ tenantId, tenantSlug, fmt, adAccounts, pacing, fin
   );
 }
 
-function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantId: string; fmt: FormatContext; adAccounts: AdAccountRecord[]; pacing: PacingStatus | null; pending: boolean; run: Run }) {
+function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantId: string; fmt: FormatContext; adAccounts: Omit<AdAccountRecord, "settings">[]; pacing: PacingStatus | null; pending: boolean; run: Run }) {
   const [form, setForm] = useState({ platform: "META" as "META" | "GOOGLE_ADS", externalAccountId: "", name: "", monthlyBudget: "", accessToken: "", refreshToken: "", developerToken: "", loginCustomerId: "" });
   const [budgets, setBudgets] = useState<Record<string, string>>({});
   const m = (c: number) => formatMoney(c, fmt.currency, fmt.locale);

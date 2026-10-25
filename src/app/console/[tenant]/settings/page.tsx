@@ -6,6 +6,7 @@ import { SettingsStudio } from "@/components/console/settings-studio";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { platformReadiness, tenantReadiness } from "@/lib/launch/readiness";
+import { toOperatorOption, toSettingsView } from "@/lib/tenants/settings-view";
 
 export const metadata = { title: "Workspace settings" };
 
@@ -32,7 +33,7 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
         </Button>
       </div>
       <SettingsStudio
-        tenant={tenant}
+        tenant={toSettingsView(tenant)}
         isAdmin={user.isPlatformAdmin}
         fmt={fmt}
         readiness={readiness}
@@ -40,7 +41,7 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
         brand={{ voice: config.brand?.voice ?? null, bannedPhrases: config.brand?.bannedPhrases ?? [], requiredFooter: config.brand?.complianceBlock.requiredFooter ?? "", claimsPolicy: config.brand?.complianceBlock.claimsPolicy ?? "" }}
         roles={config.roles}
         people={people}
-        operators={operators}
+        operators={operators.map(toOperatorOption)}
         keys={keys}
         modules={config.modules}
         automations={config.automations}

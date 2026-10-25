@@ -7,6 +7,8 @@ import { csvToInventory, findListingMentioned, findListingsMatching, importInven
 import { tick } from "@/lib/jobs/tick";
 import { quietHoursEnd, sendMessage, templates } from "@/lib/messaging";
 import { safeAreas } from "@/lib/messaging/templates";
+import { squareSignature } from "@/lib/finance/providers/square";
+import { connectFinanceProvider, loadFinanceCredentials } from "@/lib/finance/sync";
 import { processFinanceWebhook } from "@/lib/finance/webhook-core";
 import { verifyCalcomSignature } from "@/lib/intake/channels/calcom";
 import { verifyTwilioSignature } from "@/lib/intake/channels/twilio";
@@ -157,5 +159,32 @@ describe("medium: webhook verifiers are tested where they live", () => {
   it("refuses a finance webhook for an unknown endpoint before reading the body", async () => {
     const decision = await processFinanceWebhook({ raw: "{not json", headers: {}, url: "https://os.example.com/api/v1/webhooks/stripe/nope", provider: "STRIPE", integrationId: "nope" });
     assert.deepEqual(decision, { status: 404, body: { error: "Unknown webhook endpoint." } });
+  });
+});
+
+describe("medium: a signed provider webhook lands in the ledger", () => {
+  it("records a Square payment as a transaction, and refuses a bad signature or a missing secret", async () => {
+    const prevMode = process.env.FINANCE_MODE;
+    delete process.env.FINANCE_MODE;
+    try {
+      await connectFinanceProvider(fresh.id, "SQUARE", { accessToken: "sq_at", webhookSecret: "sq_whsec" }, { externalAccountId: `sq-${fresh.id}`, label: "Square" });
+      const loaded = await loadFinanceCredentials(fresh.id, "SQUARE");
+      assert.ok(loaded, "credentials stored");
+      const url = `https://os.example.com/api/v1/webhooks/square/${loaded.integrationId}`;
+      const event = { merchant_id: "M1", type: "payment.created", data: { type: "payment", id: "pay_med_1", object: { payment: { id: "pay_med_1", status: "COMPLETED", amount_money: { amount: 15000, currency: "AUD" }, created_at: "2026-10-02T03:04:05Z", note: "Deposit", buyer_email_address: "pat@example.test" } } } };
+      const raw = JSON.stringify(event);
+      const good = await processFinanceWebhook({ raw, headers: { "x-square-hmacsha256-signature": squareSignature("sq_whsec", url, raw) }, url, provider: "SQUARE", integrationId: loaded.integrationId });
+      assert.deepEqual(good, { status: 200, body: { received: true, transactions: 1, invoices: 0 } });
+      const bad = await processFinanceWebhook({ raw, headers: { "x-square-hmacsha256-signature": squareSignature("wrong", url, raw) }, url, provider: "SQUARE", integrationId: loaded.integrationId });
+      assert.equal(bad.status, 401);
+      const tampered = await processFinanceWebhook({ raw: raw + " ", headers: { "x-square-hmacsha256-signature": squareSignature("sq_whsec", url, raw) }, url, provider: "SQUARE", integrationId: loaded.integrationId });
+      assert.equal(tampered.status, 401);
+      await connectFinanceProvider(fresh.id, "SQUARE", { accessToken: "sq_at" }, { externalAccountId: `sq-${fresh.id}`, label: "Square" });
+      const noSecret = await processFinanceWebhook({ raw, headers: { "x-square-hmacsha256-signature": squareSignature("sq_whsec", url, raw) }, url, provider: "SQUARE", integrationId: loaded.integrationId });
+      assert.equal(noSecret.status, 503, "a workspace without a webhook secret on file cannot accept webhooks");
+    } finally {
+      if (prevMode === undefined) delete process.env.FINANCE_MODE;
+      else process.env.FINANCE_MODE = prevMode;
+    }
   });
 });
