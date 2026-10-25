@@ -88,6 +88,22 @@ export function readableTextOn(hex: string | undefined): "#000000" | "#ffffff" {
  * time in the given IANA timezone and returns the UTC instant. Returns null
  * for unparsable input.
  */
+/**
+ * What a `datetime-local` input (or an ISO string) means as an instant: a local
+ * value is read in the given zone, never the browser's, so an operator in one
+ * country schedules in the client's time.
+ */
+export function localInputToDate(value: string | null | undefined, timeZone: string): Date | null {
+  if (!value) return null;
+  const local = zonedLocalToUtc(value, timeZone);
+  if (local) return local;
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(value.trim())) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function zonedLocalToUtc(local: string, timeZone: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(local.trim());
   if (!m) return null;

@@ -2,7 +2,7 @@ import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, clampOutOfQuietHours, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta } from "@/lib/messaging";
+import { channelFor, clampOutOfQuietHours, destinationAllowed, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta } from "@/lib/messaging";
 import { safeArea, whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
@@ -85,9 +85,11 @@ export function channelsFor(tenant: TenantSummary, who: { email: string | null; 
  */
 export async function sendAndLog(input: SendAndLogInput) {
   const { tenant } = input;
-  const candidates = channelsFor(tenant, input.recipient, input.only);
+  const wanted = channelsFor(tenant, input.recipient, input.only);
+  // A number outside the countries this workspace may text is skipped, not reported as a failure; email still goes.
+  const candidates = wanted.filter((c) => c === "EMAIL" || destinationAllowed(tenant, addressFor(c, input.recipient)));
   if (candidates.length === 0) {
-    const run = await skipped(tenant.id, input.typeKey, `Couldn't ${input.verb} ${input.who}: they left no way to reach them.`, { contactId: input.contactId, leadId: input.leadId });
+    const run = await skipped(tenant.id, input.typeKey, wanted.length ? `Couldn't ${input.verb} ${input.who}: their number is outside the countries this workspace may text and they left no email.` : `Couldn't ${input.verb} ${input.who}: they left no way to reach them.`, { contactId: input.contactId, leadId: input.leadId });
     return { ok: false, providerMessageId: null, error: "no channel", simulated: false, messageId: null, runId: run.id, channel: null as OutboundChannel | null };
   }
   const run = await repository.recordAutomationRun(tenant.id, { typeKey: input.typeKey, outcome: "SENT", summary: input.sent, contactId: input.contactId, leadId: input.leadId });

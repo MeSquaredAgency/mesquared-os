@@ -170,6 +170,13 @@ function pushBounded<T>(list: T[], item: T, front = true) {
 }
 
 const byNewest = <T extends { createdAt: Date }>(a: T, b: T) => b.createdAt.getTime() - a.createdAt.getTime();
+
+/** True when no assignee filter applies, or the item's lead is assigned to that user. Items without a lead are hidden from own-records-only users. */
+function assignedTo(leadId: string | null | undefined, onlyAssigneeId: string | null | undefined): boolean {
+  if (!onlyAssigneeId) return true;
+  if (!leadId) return false;
+  return store().leads.find((l) => l.id === leadId)?.assigneeId === onlyAssigneeId;
+}
 const id = (prefix: string) => `${prefix}_${randomUUID().slice(0, 8)}`;
 
 const publicUser = (u: UserRecord & { passwordHash: string }): UserRecord => ({
@@ -725,7 +732,7 @@ export const memoryRepository: Repository = {
   async listMissedOpportunities(tenantId, opts = {}) {
     const statuses = opts.status ? new Set(opts.status) : null;
     return store()
-      .missed.filter((m) => m.tenantId === tenantId && (!statuses || statuses.has(m.status)))
+      .missed.filter((m) => m.tenantId === tenantId && (!statuses || statuses.has(m.status)) && assignedTo(m.leadId, opts.onlyAssigneeId))
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime())
       .slice(0, opts.limit ?? 50);
   },
@@ -771,8 +778,11 @@ export const memoryRepository: Repository = {
     if (run) Object.assign(run, { outcome: patch.outcome, summary: patch.summary });
   },
 
-  async listAutomationRuns(tenantId, limit = 50) {
-    return store().runs.filter((r) => r.tenantId === tenantId).sort(byNewest).slice(0, limit);
+  async listAutomationRuns(tenantId, limit = 50, opts = {}) {
+    return store()
+      .runs.filter((r) => r.tenantId === tenantId && assignedTo(r.leadId, opts.onlyAssigneeId))
+      .sort(byNewest)
+      .slice(0, limit);
   },
 
   async createException(tenantId, data) {
@@ -1371,7 +1381,7 @@ export const memoryRepository: Repository = {
     const weekStart = dayStart - 6 * 24 * 60 * 60_000;
 
     const needsYou = await this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 });
-    const open = s.missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status)).sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
+    const open = s.missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && assignedTo(m.leadId, opts.onlyAssigneeId)).sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
     const recoveredCents = s.missed
       .filter((m) => m.tenantId === tenantId && m.status === "RECOVERED" && (m.resolvedAt?.getTime() ?? 0) >= monthStart)
       .reduce((sum, m) => sum + m.recoveredValueCents, 0);
@@ -1385,7 +1395,7 @@ export const memoryRepository: Repository = {
     const openInvoices = s.invoices.filter((i) => i.tenantId === tenantId && (i.status === "SENT" || i.status === "OVERDUE"));
     const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
 
-    const runs = s.runs.filter((r) => r.tenantId === tenantId).sort(byNewest);
+    const runs = s.runs.filter((r) => r.tenantId === tenantId && assignedTo(r.leadId, opts.onlyAssigneeId)).sort(byNewest);
 
     return {
       needsYou,

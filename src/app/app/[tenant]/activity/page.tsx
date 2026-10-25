@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoRefresh } from "@/components/shell/auto-refresh";
 import { getPortalContext } from "@/lib/auth/access";
+import { hasPermission } from "@/lib/auth/permissions";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { COPY, outcomeLabel } from "@/lib/copy";
 import { repository } from "@/lib/data";
@@ -11,9 +12,10 @@ export const metadata = { title: "Activity log" };
 
 export default async function ActivityPage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
-  const { access } = await getPortalContext(slug);
+  const { access, user } = await getPortalContext(slug);
   const tenant = access.tenant;
-  const runs = await repository.listAutomationRuns(tenant.id, 200);
+  const onlyAssigneeId = hasPermission(access, "VIEW_ALL_RECORDS") ? null : user.id;
+  const runs = await repository.listAutomationRuns(tenant.id, 200, { onlyAssigneeId });
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
 
   return (

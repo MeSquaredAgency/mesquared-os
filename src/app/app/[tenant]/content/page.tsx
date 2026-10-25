@@ -20,7 +20,9 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
   const { access } = await getPortalContext(slug);
   const tenant = access.tenant;
   const canApprove = hasPermission(access, "APPROVE_CONTENT");
-  const [wb, snapshots, inbox] = await Promise.all([repository.getWorkbench(tenant.id), repository.listChannelMetrics(tenant.id, { since: new Date(Date.now() - 14 * 86_400_000) }), repository.listInboxConversations(tenant.id, { awaitingOnly: true, limit: 30 })]);
+  // Customer conversations from social channels belong to the business, not to one person's leads: only people who see all records get the inbox.
+  const canSeeInbox = hasPermission(access, "VIEW_ALL_RECORDS");
+  const [wb, snapshots, inbox] = await Promise.all([repository.getWorkbench(tenant.id), repository.listChannelMetrics(tenant.id, { since: new Date(Date.now() - 14 * 86_400_000) }), canSeeInbox ? repository.listInboxConversations(tenant.id, { awaitingOnly: true, limit: 30 }) : Promise.resolve([])]);
   const threads = await Promise.all(inbox.map(async (conversation) => ({ conversation, messages: await repository.listMessages(tenant.id, conversation.id, 10) })));
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
   const decided = wb.assets.filter((a) => a.status !== "IN_REVIEW" && a.status !== "DRAFT").slice(0, 12);
@@ -91,7 +93,7 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
           </CardContent>
         </Card>
       </div>
-      <PortalInbox tenantSlug={slug} threads={threads} canReply={canApprove} />
+      {canSeeInbox && <PortalInbox tenantSlug={slug} threads={threads} canReply={canApprove} />}
     </div>
   );
 }

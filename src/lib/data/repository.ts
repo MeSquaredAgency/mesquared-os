@@ -619,7 +619,8 @@ export interface Repository {
    * closing something an operator has looked at sticks; older ones reopen.
    */
   upsertMissedOpportunity(tenantId: string, data: NewMissedOpportunity): Promise<{ record: MissedOpportunityRecord; created: boolean }>;
-  listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number }): Promise<MissedOpportunityRecord[]>;
+  /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
+  listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
   /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
   resolveMissedOpportunity(tenantId: string, id: string, status: MissedOpportunityStatus, recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
@@ -627,7 +628,7 @@ export interface Repository {
   recordAutomationRun(tenantId: string, data: NewAutomationRun): Promise<AutomationRunRecord>;
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
-  listAutomationRuns(tenantId: string, limit?: number): Promise<AutomationRunRecord[]>;
+  listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */

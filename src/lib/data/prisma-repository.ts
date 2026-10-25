@@ -632,8 +632,14 @@ export const prismaRepository: Repository = {
   },
 
   async listAbandonedFormSessions(tenantId, idleBefore, limit = 100) {
-    const rows = await getPrisma().formSession.findMany({ where: { tenantId, submittedAt: null, flaggedAt: null, lastSeenAt: { lt: idleBefore } }, orderBy: { lastSeenAt: "asc" }, take: limit * 2 });
-    return rows.map(toFormSession).filter((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string").slice(0, limit);
+    // Only sessions that captured a way to reach the person are candidates; filtering in the query means the
+    // detail-less ones (which are never flagged) cannot crowd the window and starve detection.
+    const rows = await getPrisma().formSession.findMany({
+      where: { tenantId, submittedAt: null, flaggedAt: null, lastSeenAt: { lt: idleBefore }, OR: [{ partial: { path: ["email"], string_contains: "@" } }, { partial: { path: ["phone"], string_starts_with: "" } }] },
+      orderBy: { lastSeenAt: "asc" },
+      take: limit,
+    });
+    return rows.map(toFormSession).filter((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string");
   },
 
   async updateFormSession(tenantId, sessionKey, patch) {
@@ -713,7 +719,7 @@ export const prismaRepository: Repository = {
   },
 
   async listMissedOpportunities(tenantId, opts = {}) {
-    const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}) }, orderBy: { detectedAt: "desc" }, take: opts.limit ?? 50 });
+    const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: opts.limit ?? 50 });
     return rows.map(toMissed);
   },
 
@@ -748,8 +754,8 @@ export const prismaRepository: Repository = {
     await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
   },
 
-  async listAutomationRuns(tenantId, limit = 50) {
-    const rows = await getPrisma().automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: limit });
+  async listAutomationRuns(tenantId, limit = 50, opts = {}) {
+    const rows = await getPrisma().automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: limit });
     return rows.map(toRun);
   },
 
@@ -1282,12 +1288,12 @@ export const prismaRepository: Repository = {
 
     const [needsYou, open, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
       this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 }),
-      db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED } }, orderBy: { detectedAt: "desc" }, take: 20 }),
+      db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: 20 }),
       db.missedOpportunity.aggregate({ where: { tenantId, status: "RECOVERED", resolvedAt: { gte: monthStart } }, _sum: { recoveredValueCents: true } }),
       db.lead.count({ where: { tenantId, createdAt: { gte: monthStart } } }),
       db.transaction.aggregate({ where: { tenantId, status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.contentAsset.findMany({ where: { tenantId, status: "IN_REVIEW" }, orderBy: { createdAt: "desc" }, take: 10 }),
-      db.automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 6 }),
+      db.automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: 6 }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
       this.sumAdSpend(tenantId, monthStart),

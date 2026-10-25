@@ -2,6 +2,7 @@ import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getPortalContext } from "@/lib/auth/access";
+import { hasPermission } from "@/lib/auth/permissions";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
 import { repository } from "@/lib/data";
 import { formatMoney, timeAgo } from "@/lib/utils";
@@ -10,10 +11,11 @@ export const metadata = { title: "Missed opportunities" };
 
 export default async function OpportunitiesPage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
-  const { access } = await getPortalContext(slug);
+  const { access, user } = await getPortalContext(slug);
   const tenant = access.tenant;
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
-  const all = await repository.listMissedOpportunities(tenant.id, { limit: 200 });
+  const onlyAssigneeId = hasPermission(access, "VIEW_ALL_RECORDS") ? null : user.id;
+  const all = await repository.listMissedOpportunities(tenant.id, { limit: 200, onlyAssigneeId });
   const open = all.filter((m) => m.status === "DETECTED" || m.status === "RECOVERING" || m.status === "ESCALATED");
   const closed = all.filter((m) => m.status === "RECOVERED" || m.status === "EXPIRED");
   const recoveredCents = closed.filter((m) => m.status === "RECOVERED").reduce((s, m) => s + m.recoveredValueCents, 0);

@@ -209,7 +209,7 @@ function DraftsPanel({ tenantId, drafts, pending, run, fmt }: { tenantId: string
                   )}
                   {!isEditing && (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="green" disabled={pending || blocked || a.needsClientSignoff} title={a.needsClientSignoff ? "The client signs this one off in their portal" : blocked ? "Fix the flagged issues first" : undefined} onClick={() => run(() => decideDraftAction(tenantId, a.id, "APPROVED", { at: when[a.id] ? new Date(when[a.id]).toISOString() : null }))}>
+                      <Button size="sm" variant="green" disabled={pending || blocked || a.needsClientSignoff} title={a.needsClientSignoff ? "The client signs this one off in their portal" : blocked ? "Fix the flagged issues first" : undefined} onClick={() => run(() => decideDraftAction(tenantId, a.id, "APPROVED", { at: when[a.id] || null }))}>
                         <Check /> Approve
                       </Button>
                       <Input type="datetime-local" className="h-8 w-52 text-xs" value={when[a.id] ?? ""} onChange={(e) => setWhen({ ...when, [a.id]: e.target.value })} aria-label="Schedule for" />
@@ -261,7 +261,7 @@ function QueuePanel({ tenantId, queue, published, pending, run, fmt }: { tenantI
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Input type="datetime-local" className="h-8 w-52 text-xs" value={when[p.id] ?? ""} onChange={(e) => setWhen({ ...when, [p.id]: e.target.value })} aria-label="New time" />
-                    <Button size="sm" variant="outline" disabled={pending || !when[p.id]} onClick={() => run(() => reschedulePostAction(tenantId, p.id, new Date(when[p.id]).toISOString()))}>
+                    <Button size="sm" variant="outline" disabled={pending || !when[p.id]} onClick={() => run(() => reschedulePostAction(tenantId, p.id, when[p.id]))}>
                       <CalendarClock /> Move
                     </Button>
                     <Button size="sm" variant="green" disabled={pending || !p.channelId} onClick={() => run(() => publishNowAction(tenantId, p.id))}>
