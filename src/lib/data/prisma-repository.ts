@@ -530,11 +530,18 @@ export const prismaRepository: Repository = {
       const reset = await db.scheduledAction.update({ where: { id: existing.id }, data: { typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), status: "PENDING", attempts: 0, lastError: null, ranAt: null } });
       return { record: toAction(reset), created: true };
     }
-    // Two ticks can race here (overlapping schedulers, two instances); skipDuplicates makes the loser a quiet no-op
-    // instead of a logged unique-constraint error, and the re-read returns whichever row won.
-    const { count } = await db.scheduledAction.createMany({ data: { tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), dedupeKey: data.dedupeKey }, skipDuplicates: true });
-    const row = await db.scheduledAction.findUniqueOrThrow({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
-    return { record: toAction(row), created: count === 1 };
+    // Two ticks can race here (overlapping schedulers, two instances): the loser's insert hits the unique key and
+    // we return the row that won. The insert's own result is used, never a re-read, because a read straight after
+    // a write can be served stale by a connection pool's query cache.
+    try {
+      const row = await db.scheduledAction.create({ data: { tenantId, typeKey: data.typeKey, action: data.action, runAt: data.runAt, payload: json(data.payload ?? {}), dedupeKey: data.dedupeKey } });
+      return { record: toAction(row), created: true };
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+      const row = await db.scheduledAction.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+      if (!row) throw error;
+      return { record: toAction(row), created: false };
+    }
   },
 
   async listDueActions(now, limit = 100) {
