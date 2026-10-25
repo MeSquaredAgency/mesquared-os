@@ -1,0 +1,38 @@
+name: Uptime
+
+# Every five minutes, GitHub asks the production health endpoint whether the
+# database answers and the scheduler has ticked recently. A failed run means
+# the platform is degraded; GitHub emails the account that owns this workflow
+# on every failure (Settings → Notifications → Actions), and the run log
+# shows the health body. Five minutes is the finest schedule GitHub offers;
+# it is a safety net until a dedicated monitor is in place.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Health
+        env:
+          URL: https://os.mesquaredagency.com/api/v1/health
+        run: |
+          set -u
+          for attempt in 1 2 3; do
+            code=$(curl -s -o body.json -w '%{http_code}' --max-time 20 "$URL" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "healthy: $(cat body.json)"
+              exit 0
+            fi
+            echo "attempt $attempt: HTTP $code"
+            cat body.json 2>/dev/null || true
+            sleep 20
+          done
+          echo "::error::$URL did not return 200 on three attempts (last HTTP $code)"
+          exit 1
