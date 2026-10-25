@@ -239,6 +239,21 @@ describe("inventory", () => {
 });
 
 describe("signing as the assigned person", () => {
+  it("never lets an invite reach into another workspace's accounts", async () => {
+    const config = await repository.getTenantConfig(fresh.id);
+    const role = config.roles[0]!;
+    // A Me² operator or admin cannot be made a client member.
+    await assert.rejects(() => inviteMember(fresh.id, { email: "operator@example.com", name: null, roleId: role.id }), /Me² account/);
+    // A user who exists elsewhere cannot have their password reset from here; they can be invited as they are.
+    await assert.rejects(() => inviteMember(fresh.id, { email: "director@harbor.example", name: null, roleId: role.id, resetPassword: true }), /existing member/);
+    const other = await inviteMember(fresh.id, { email: "director@harbor.example", name: null, roleId: role.id });
+    assert.equal(other.temporaryPassword, null, "no one-time password for an account that already exists");
+    // Once they are a member here, a reset is allowed.
+    const again = await inviteMember(fresh.id, { email: "director@harbor.example", name: null, roleId: role.id, resetPassword: true });
+    assert.ok(again.temporaryPassword, "members of this workspace can be reset");
+    await repository.removeMembership(fresh.id, other.user.id);
+  });
+
   it("resolves the assignee's first name and email only when the switch is on and the lead is assigned to a member", async () => {
     const { senderIdentity, templates } = await import("@/lib/messaging");
     const dana = (await repository.listTenantPeople(fresh.id)).find((p) => p.via === "member")!;

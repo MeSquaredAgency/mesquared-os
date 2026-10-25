@@ -97,7 +97,7 @@ export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string;
       "They wrote (quoted as received):",
       `"${quoteUntrusted(summary)}"`,
       "",
-      `Why: ${reason}`,
+      `Why: ${quoteUntrusted(reason, 300)}`,
       phone ? `Phone: ${phone}` : null,
       email ? `Email: ${email}` : null,
       "",

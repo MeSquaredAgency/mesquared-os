@@ -97,9 +97,17 @@ export async function inviteMember(tenantId: string, input: { email: string; nam
     temp = temporaryPassword();
     user = await repository.createUser({ email, name: input.name?.trim() || null, passwordHash: await hashPassword(temp) });
     created = true;
-  } else if (input.resetPassword) {
-    temp = temporaryPassword();
-    await repository.setUserPassword(user.id, await hashPassword(temp));
+  } else {
+    // An existing account is only touched within its own workspace: Me² staff accounts are never made client
+    // members, and a password is only reset for someone who is already a member here, so an operator of one
+    // workspace cannot take over a user of another (or a platform admin) by "inviting" their email.
+    if (user.isOperator || user.isPlatformAdmin) throw new Error("That email belongs to a Me² account; it cannot be added as a client member.");
+    if (input.resetPassword) {
+      const member = (await repository.listTenantPeople(tenantId)).some((p) => p.userId === user!.id && p.via === "member");
+      if (!member) throw new Error("Only an existing member of this workspace can have their password reset here.");
+      temp = temporaryPassword();
+      await repository.setUserPassword(user.id, await hashPassword(temp));
+    }
   }
   await repository.upsertMembership(tenantId, user.id, input.roleId, input.profile);
   return { user, temporaryPassword: temp, created };

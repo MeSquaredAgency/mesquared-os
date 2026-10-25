@@ -24,8 +24,9 @@ being replaced. Clients never see "green" or "red"; they see "Needs you",
   unset the classifier is the rule stub. CI runs in demo mode.
 - **Secrets.** API keys are stored as SHA-256 hashes, passwords as scrypt. Never
   log raw keys, passwords or lead payloads; store payloads only via `redactPayload`.
-- **Roles.** Any server action that mutates tenant data calls `requireRole` /
-  `atLeast` from `src/lib/auth/roles.ts` with the role on `tenant.role`.
+- **Roles.** Console actions resolve the tenant from the caller's portfolio via
+  `getConsoleContext` (never from the client); portal actions call
+  `requirePermission` / `hasPermission` from `src/lib/auth/permissions.ts`.
 - **Client components get `TenantOption`, never `TenantSummary`.** Rules,
   settings and branding internals stay on the server.
 - **Neon services are optional.** Postgres, the AI Gateway, Object Storage and

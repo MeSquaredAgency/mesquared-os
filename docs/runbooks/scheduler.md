@@ -25,7 +25,7 @@ monitor with a POST check).
 - Direct probe, from a machine with the secret:
 
 ```bash
-curl -s -X POST "$NEXT_PUBLIC_APP_URL/api/jobs/tick" -H "x-job-secret: $JOB_SECRET"
+curl -s -X POST "$NEXT_PUBLIC_APP_URL/api/jobs/tick" -H "Authorization: Bearer $JOB_SECRET"
 ```
 
 It returns a small JSON summary of what ran. A `401` means the secret is wrong

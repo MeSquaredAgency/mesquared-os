@@ -201,7 +201,7 @@ export async function updateMemberProfileAction(tenantId: string, userId: string
     refresh(tenant);
     return { ok: true, message: `Signature details saved for ${person.name ?? person.email}.` };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Could not save." };
+    return fail(error);
   }
 }
 

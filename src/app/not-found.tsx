@@ -8,7 +8,7 @@ export default function NotFound() {
       <h1 className="text-xl font-semibold">That page doesn’t exist</h1>
       <p className="max-w-sm text-sm text-muted-foreground">The link may be out of date, or the page may have moved.</p>
       <Button asChild variant="outline">
-        <Link href="/dashboard">Back to the dashboard</Link>
+        <Link href="/">Back to the start</Link>
       </Button>
     </main>
   );
