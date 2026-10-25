@@ -33,7 +33,7 @@ export function OPTIONS() {
 export async function POST(req: NextRequest) {
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status, headers: CORS });
-  const limit = takeIntakeTokens([`page:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([`page:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: CORS });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid beacon." }, { status: 422, headers: CORS });

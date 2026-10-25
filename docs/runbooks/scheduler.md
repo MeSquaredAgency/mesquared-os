@@ -53,3 +53,12 @@ raised, reminders not going out, drafts not appearing on the content day.
 Do not. Detectors are tuned to a one-minute cadence and SLA deadlines are
 measured in minutes. Running less often makes "answered in under five minutes"
 impossible to honour.
+
+## Is it alive?
+
+`GET /api/v1/health` returns 200 only when the database answers and the
+scheduler has recorded a tick in the last five minutes (`scheduler.lastTickAt`
+and `scheduler.ageSeconds` in the body); otherwise 503 with `status:
+"degraded"`. Point the uptime monitor at it. The same freshness check shows as
+"The scheduler ticked in the last five minutes" under deployment readiness in
+any workspace's Settings.

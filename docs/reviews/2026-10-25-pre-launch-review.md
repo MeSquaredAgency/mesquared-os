@@ -55,6 +55,11 @@ to do, ranked by what it would cost a client.
 
 ## High: do before the first real lead
 
+All nine were fixed on the `review-high-fixes` branch (commits `395fce2`
+items 1, 3, 5, 8, 9; `de9158e` items 2, 6; `611e813` items 4, 7), each with a
+regression test in `src/test/review-fixes.test.ts` and, for the SQL paths,
+steps in `scripts/parity-check.ts`.
+
 1. **Own-records-only users see everything in three places.** The leads list
    honours "view all records", but Missed opportunities, the Activity log
    and the social inbox are queried by tenant only, with lead names, messages

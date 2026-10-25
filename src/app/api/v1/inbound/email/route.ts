@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (!tenant) return NextResponse.json({ received: true, ignored: "no workspace for this inbox address" });
 
   const sender = mail.from.toLowerCase().replace(/.*<|>.*/g, "");
-  const limit = takeIntakeTokens([`email:${tenant.id}`, `email:${tenant.id}:${sender}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([`email:${tenant.id}`, `email:${tenant.id}:${sender}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
 
   const enquiry = parseEnquiryEmail(mail);

@@ -222,7 +222,8 @@ export interface NewReview {
   receivedAt: Date;
 }
 
-export type ApiKeyScope = "intake" | "content";
+/** intake: public web forms and the page beacon. webhooks: call-tracking and review connectors (private). content: uploads and the library (private). */
+export type ApiKeyScope = "intake" | "content" | "webhooks";
 
 // --- Phase 4 inputs ---------------------------------------------------------------
 
@@ -619,7 +620,8 @@ export interface Repository {
    * closing something an operator has looked at sticks; older ones reopen.
    */
   upsertMissedOpportunity(tenantId: string, data: NewMissedOpportunity): Promise<{ record: MissedOpportunityRecord; created: boolean }>;
-  listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number }): Promise<MissedOpportunityRecord[]>;
+  /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
+  listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
   /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
   resolveMissedOpportunity(tenantId: string, id: string, status: MissedOpportunityStatus, recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
@@ -627,7 +629,7 @@ export interface Repository {
   recordAutomationRun(tenantId: string, data: NewAutomationRun): Promise<AutomationRunRecord>;
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
-  listAutomationRuns(tenantId: string, limit?: number): Promise<AutomationRunRecord[]>;
+  listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
@@ -681,6 +683,17 @@ export interface Repository {
   /** Replaces the password and bumps sessionVersion so every existing session ends. */
   setUserPassword(userId: string, passwordHash: string): Promise<void>;
   upsertMembership(tenantId: string, userId: string, roleId: string, profile?: MemberProfile): Promise<void>;
+
+  // Platform liveness and counters shared by every instance (not tenant data).
+  /** True when the database answers within a few seconds; demo mode always answers. */
+  ping(): Promise<boolean>;
+  recordHeartbeat(key: string, at: Date): Promise<void>;
+  getHeartbeat(key: string): Promise<Date | null>;
+  /** Counts one hit in a fixed window; the count restarts when the window has passed. Atomic across instances. */
+  rateLimitHit(key: string, windowMs: number, now?: Date): Promise<{ count: number; windowStart: Date }>;
+  /** The current count without adding to it (0 once the window has passed). */
+  rateLimitPeek(key: string, windowMs: number, now?: Date): Promise<number>;
+  rateLimitClear(key: string): Promise<void>;
   removeMembership(tenantId: string, userId: string): Promise<void>;
   assignOperator(tenantId: string, userId: string): Promise<void>;
   listOperators(): Promise<UserRecord[]>;

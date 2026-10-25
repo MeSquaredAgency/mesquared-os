@@ -26,7 +26,7 @@ const reviewSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   registerContentEngine();
-  const auth = await resolveTenantFromRequest(req);
+  const auth = await resolveTenantFromRequest(req, "webhooks");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const parsed = reviewSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid review payload.", issues: z.flattenError(parsed.error).fieldErrors }, { status: 422 });

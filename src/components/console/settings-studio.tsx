@@ -388,7 +388,7 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
 
 function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boolean; run: Run }) {
   const [label, setLabel] = useState("Website forms");
-  const [scopes, setScopes] = useState<{ intake: boolean; content: boolean }>({ intake: true, content: false });
+  const [scopes, setScopes] = useState<{ intake: boolean; content: boolean; webhooks: boolean }>({ intake: true, content: false, webhooks: false });
   const [raw, setRaw] = useState<string | null>(null);
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -442,12 +442,15 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
           )}
           <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label" aria-label="Key label" />
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={scopes.intake} onChange={(e) => setScopes({ ...scopes, intake: e.target.checked })} /> intake (forms, calls, reviews, page beacon)
+            <input type="checkbox" checked={scopes.intake} onChange={(e) => setScopes({ ...scopes, intake: e.target.checked })} /> intake (website forms and the page beacon; this one is public)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={scopes.webhooks} onChange={(e) => setScopes({ ...scopes, webhooks: e.target.checked })} /> webhooks (call tracking and review feeds; keep private)
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={scopes.content} onChange={(e) => setScopes({ ...scopes, content: e.target.checked })} /> content (uploads and material; keep private)
           </label>
-          <Button variant="green" disabled={pending || (!scopes.intake && !scopes.content)} onClick={() => run(async () => { const r = await issueApiKeyAction(tenant.id, label, [...(scopes.intake ? ["intake" as const] : []), ...(scopes.content ? ["content" as const] : [])]); if (r.ok && r.rawKey) setRaw(r.rawKey); return r; })}>
+          <Button variant="green" disabled={pending || (!scopes.intake && !scopes.content && !scopes.webhooks)} onClick={() => run(async () => { const r = await issueApiKeyAction(tenant.id, label, [...(scopes.intake ? ["intake" as const] : []), ...(scopes.content ? ["content" as const] : []), ...(scopes.webhooks ? ["webhooks" as const] : [])]); if (r.ok && r.rawKey) setRaw(r.rawKey); return r; })}>
             <KeyRound /> Issue key
           </Button>
         </CardContent>

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const authReq = parsed.data._key ? new NextRequest(req.url, { headers: { "x-api-key": parsed.data._key } }) : req;
   const auth = await resolveTenantFromRequest(authReq);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status, headers: CORS });
-  const limit = takeIntakeTokens([`track:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([`track:${auth.tenant.id}`, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
   if (!limit.allowed) return NextResponse.json({ error: "Too many requests." }, { status: 429, headers: CORS });
 
   const partial: Record<string, unknown> = {};

@@ -1,7 +1,7 @@
 import { repository } from "@/lib/data";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
+import { channelFor, destinationAllowed, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
 import { safeArea, safeTopic } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
@@ -26,9 +26,12 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
   // 2. Acknowledge: preferred channel for the region first, the other channel if that one isn't set up.
   if (enabled("enquiry_auto_reply")) {
     const preferred = channelFor(tenant, lead);
-    const candidates: OutboundChannel[] = preferred ? [preferred, ...(preferred !== "EMAIL" && lead.email ? ["EMAIL" as const] : []), ...(preferred === "EMAIL" && lead.phone ? ["SMS" as const] : [])] : [];
+    const wanted: OutboundChannel[] = preferred ? [preferred, ...(preferred !== "EMAIL" && lead.email ? ["EMAIL" as const] : []), ...(preferred === "EMAIL" && lead.phone ? ["SMS" as const] : [])] : [];
+    // A number outside the countries this workspace may text is not a provider failure: skip it and use email.
+    const candidates = wanted.filter((c) => c === "EMAIL" || destinationAllowed(tenant, lead.phone ?? ""));
     if (candidates.length === 0) {
-      await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SKIPPED", summary: `${name} left no phone or email, so no acknowledgement could be sent.`, leadId: lead.id, contactId: lead.contactId });
+      const why = wanted.length ? `${name}'s number is outside the countries this workspace may text and they left no email` : `${name} left no phone or email`;
+      await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SKIPPED", summary: `${why}, so no acknowledgement could be sent.`, leadId: lead.id, contactId: lead.contactId });
     } else {
       const topic = safeTopic(typeof lead.attributes.service === "string" ? lead.attributes.service : null, tenant.qualificationRules.highIntentServices) ?? (tenant.qualificationRules.highIntentServices ?? []).find((s) => (lead.message ?? "").toLowerCase().includes(s.toLowerCase())) ?? null;
       const area = safeArea(`${lead.message ?? ""} ${typeof lead.attributes.suburb === "string" ? lead.attributes.suburb : ""}`, tenant.qualificationRules.serviceAreas);
@@ -73,12 +76,17 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
     const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Told ${recipients.length === 1 ? recipients[0].name ?? recipients[0].email : `${recipients.length} people`} about ${name}.`, leadId: lead.id, contactId: lead.contactId, details: { recipients: recipients.map((r) => r.userId) } });
     const reached: string[] = [];
     const failed: string[] = [];
+    let notConfigured = 0;
     for (const r of recipients) {
       const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
       (sent.ok ? reached : failed).push(r.name ?? r.email);
-      if (!sent.ok && !sent.simulated) console.error(`[playbook] alert to ${r.email.slice(0, 3)}… for ${tenant.slug} failed: ${sent.error}`);
+      if (!sent.ok && sent.simulated) notConfigured++;
+      else if (!sent.ok) console.error(`[playbook] alert to ${r.email.slice(0, 3)}… for ${tenant.slug} failed: ${sent.error}`);
     }
-    if (reached.length === 0) {
+    if (reached.length === 0 && notConfigured === failed.length) {
+      // Email is not set up at all (demo, or a deployment without a from-address): say so, no exception per lead.
+      await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `Couldn't tell anyone about ${name}: email isn't connected for ${tenant.name} yet.` });
+    } else if (reached.length === 0) {
       // The log must say nobody was told, and a person must be found another way.
       await repository.updateAutomationRun(tenant.id, run.id, { outcome: "FAILED", summary: `Couldn't tell anyone about ${name}: ${failed.length} alert${failed.length === 1 ? "" : "s"} failed to send.` });
       await repository.createException(tenant.id, { reason: `Nobody was alerted about ${name}; the lead alert could not be sent.`, suggestedAction: "Call them, then check the email provider and the people who receive lead alerts.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });

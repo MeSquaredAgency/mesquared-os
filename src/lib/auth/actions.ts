@@ -44,20 +44,20 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   const hardKeys = [`ip:${ip}`, `pair:${ip}:${email}`];
   const softKey = `email:${email}`;
 
-  if (hardKeys.some((k) => isLocked(k))) {
-    return { error: "Too many attempts from this connection. Please wait 15 minutes and try again.", email };
+  for (const k of hardKeys) {
+    if (await isLocked(k)) return { error: "Too many attempts from this connection. Please wait 15 minutes and try again.", email };
   }
-  const delay = delayFor(softKey);
+  const delay = await delayFor(softKey);
   if (delay > 0) await sleep(delay);
 
   const found = await repository.findUserByEmail(email);
   const ok = await verifyPassword(parsed.data.password, found?.passwordHash ?? DUMMY_HASH);
   if (!found || !ok) {
-    for (const k of [...hardKeys, softKey]) recordFailure(k);
+    for (const k of [...hardKeys, softKey]) await recordFailure(k);
     return { error: "That email and password don’t match our records.", email };
   }
 
-  for (const k of [...hardKeys, softKey]) clearFailures(k);
+  for (const k of [...hardKeys, softKey]) await clearFailures(k);
   await createSessionCookie(found.user);
   redirect(safeNext(parsed.data.next));
 }

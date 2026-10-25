@@ -196,8 +196,8 @@ describe("E.164 by region", () => {
     assert.equal(result.outcome, "created");
     if (result.outcome !== "created") return;
     assert.equal(result.lead.phone, "+61400777000");
-    const dup = await processIntake(harbor, intakeSchema.parse({ phone: "+61 400 777 000", message: "again" }), {});
-    assert.equal(dup.outcome, "duplicate");
+    const dup = await processIntake(harbor, intakeSchema.parse({ phone: "+61 400 777 000", message: "Appraisal for my Adelaide house please." }), {});
+    assert.equal(dup.outcome, "duplicate", "the same enquiry again, with the number formatted differently, is one lead");
   });
 });
 

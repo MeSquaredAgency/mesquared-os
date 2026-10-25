@@ -74,8 +74,11 @@ describe("intake pipeline (demo repository)", () => {
     assert.equal(created.outcome, "created");
     const byExternal = await processIntake(tenant, intakeSchema.parse({ externalId: "dup_1", email: "someone-else@example.com" }), {});
     assert.equal(byExternal.outcome, "duplicate");
-    const byEmail = await processIntake(tenant, intakeSchema.parse({ email: "DUP@example.com", message: "again" }), {});
-    assert.equal(byEmail.outcome, "duplicate");
+    const sameWords = await processIntake(tenant, intakeSchema.parse({ email: "DUP@example.com", message: "Appraisal please" }), {});
+    assert.equal(sameWords.outcome, "duplicate", "the same words from the same person within a day are one enquiry");
+    const newWords = await processIntake(tenant, intakeSchema.parse({ email: "DUP@example.com", message: "Actually, can you also manage my rental in Glenelg?" }), {});
+    assert.equal(newWords.outcome, "created", "a different question from a known person is a new enquiry");
+    assert.equal(newWords.outcome === "created" && newWords.lead.contactId, created.outcome === "created" && created.lead.contactId, "on the same contact");
   });
 
   it("never dedupes or links contacts across tenants", async () => {

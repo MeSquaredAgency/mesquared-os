@@ -632,8 +632,14 @@ export const prismaRepository: Repository = {
   },
 
   async listAbandonedFormSessions(tenantId, idleBefore, limit = 100) {
-    const rows = await getPrisma().formSession.findMany({ where: { tenantId, submittedAt: null, flaggedAt: null, lastSeenAt: { lt: idleBefore } }, orderBy: { lastSeenAt: "asc" }, take: limit * 2 });
-    return rows.map(toFormSession).filter((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string").slice(0, limit);
+    // Only sessions that captured a way to reach the person are candidates; filtering in the query means the
+    // detail-less ones (which are never flagged) cannot crowd the window and starve detection.
+    const rows = await getPrisma().formSession.findMany({
+      where: { tenantId, submittedAt: null, flaggedAt: null, lastSeenAt: { lt: idleBefore }, OR: [{ partial: { path: ["email"], string_contains: "@" } }, { partial: { path: ["phone"], string_starts_with: "" } }] },
+      orderBy: { lastSeenAt: "asc" },
+      take: limit,
+    });
+    return rows.map(toFormSession).filter((f) => typeof f.partial.email === "string" || typeof f.partial.phone === "string");
   },
 
   async updateFormSession(tenantId, sessionKey, patch) {
@@ -713,7 +719,7 @@ export const prismaRepository: Repository = {
   },
 
   async listMissedOpportunities(tenantId, opts = {}) {
-    const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}) }, orderBy: { detectedAt: "desc" }, take: opts.limit ?? 50 });
+    const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: opts.limit ?? 50 });
     return rows.map(toMissed);
   },
 
@@ -748,8 +754,8 @@ export const prismaRepository: Repository = {
     await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
   },
 
-  async listAutomationRuns(tenantId, limit = 50) {
-    const rows = await getPrisma().automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: limit });
+  async listAutomationRuns(tenantId, limit = 50, opts = {}) {
+    const rows = await getPrisma().automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: limit });
     return rows.map(toRun);
   },
 
@@ -1078,6 +1084,52 @@ export const prismaRepository: Repository = {
     await getPrisma().user.update({ where: { id: userId }, data: { passwordHash, sessionVersion: { increment: 1 } } });
   },
 
+  async ping() {
+    const db = getPrisma();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 3000);
+    });
+    const query = db.$queryRaw`SELECT 1`.then(
+      () => true,
+      () => false,
+    );
+    const result = await Promise.race([query, timeout]);
+    if (timer) clearTimeout(timer);
+    return result;
+  },
+
+  async recordHeartbeat(key, at) {
+    await getPrisma().heartbeat.upsert({ where: { key }, update: { at }, create: { key, at } });
+  },
+
+  async getHeartbeat(key) {
+    return (await getPrisma().heartbeat.findUnique({ where: { key } }))?.at ?? null;
+  },
+
+  async rateLimitHit(key, windowMs, now = new Date()) {
+    const expiredBefore = new Date(now.getTime() - windowMs);
+    const rows = await getPrisma().$queryRaw<{ count: number; windowStart: Date }[]>`
+      INSERT INTO "RateLimitBucket" ("key", "count", "windowStart") VALUES (${key}, 1, ${now})
+      ON CONFLICT ("key") DO UPDATE SET
+        "count" = CASE WHEN "RateLimitBucket"."windowStart" <= ${expiredBefore} THEN 1 ELSE "RateLimitBucket"."count" + 1 END,
+        "windowStart" = CASE WHEN "RateLimitBucket"."windowStart" <= ${expiredBefore} THEN ${now} ELSE "RateLimitBucket"."windowStart" END
+      RETURNING "count", "windowStart"`;
+    const row = rows[0];
+    if (!row) throw new Error("rate limit upsert returned no row");
+    return { count: Number(row.count), windowStart: new Date(row.windowStart) };
+  },
+
+  async rateLimitPeek(key, windowMs, now = new Date()) {
+    const row = await getPrisma().rateLimitBucket.findUnique({ where: { key } });
+    if (!row || row.windowStart.getTime() <= now.getTime() - windowMs) return 0;
+    return row.count;
+  },
+
+  async rateLimitClear(key) {
+    await getPrisma().rateLimitBucket.deleteMany({ where: { key } });
+  },
+
   async upsertMembership(tenantId, userId, roleId, profile) {
     const fields = { ...(profile?.title !== undefined ? { title: profile.title } : {}), ...(profile?.phone !== undefined ? { phone: profile.phone } : {}), ...(profile?.photoUrl !== undefined ? { photoUrl: profile.photoUrl } : {}) };
     await getPrisma().membership.upsert({ where: { tenantId_userId: { tenantId, userId } }, update: { roleId, ...fields }, create: { tenantId, userId, roleId, ...fields } });
@@ -1282,12 +1334,12 @@ export const prismaRepository: Repository = {
 
     const [needsYou, open, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
       this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 }),
-      db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED } }, orderBy: { detectedAt: "desc" }, take: 20 }),
+      db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: 20 }),
       db.missedOpportunity.aggregate({ where: { tenantId, status: "RECOVERED", resolvedAt: { gte: monthStart } }, _sum: { recoveredValueCents: true } }),
       db.lead.count({ where: { tenantId, createdAt: { gte: monthStart } } }),
       db.transaction.aggregate({ where: { tenantId, status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.contentAsset.findMany({ where: { tenantId, status: "IN_REVIEW" }, orderBy: { createdAt: "desc" }, take: 10 }),
-      db.automationRun.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 6 }),
+      db.automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: 6 }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
       this.sumAdSpend(tenantId, monthStart),

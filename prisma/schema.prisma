@@ -1342,3 +1342,20 @@ model SiteMetricSnapshot {
 
   @@unique([tenantId, date])
 }
+
+// ---------------------------------------------------------------------------
+// Platform liveness and shared counters (pre-launch review, 25 Oct 2026)
+// ---------------------------------------------------------------------------
+
+/// Liveness marks written by background work (the scheduler tick) and read by the health endpoint and readiness.
+model Heartbeat {
+  key String   @id
+  at  DateTime
+}
+
+/// Fixed-window counters shared by every instance: intake rate limits, sign-in lockouts, per-workspace daily caps.
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime
+}

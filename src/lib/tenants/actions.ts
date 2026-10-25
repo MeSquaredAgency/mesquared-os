@@ -252,7 +252,7 @@ export async function assignOperatorAction(tenantId: string, userId: string): Pr
 export async function issueApiKeyAction(tenantId: string, label: string, scopes: ApiKeyScope[]): Promise<ActionResult & { rawKey?: string }> {
   try {
     const { tenant } = await operatorTenant(tenantId);
-    const clean = scopes.filter((s): s is ApiKeyScope => s === "intake" || s === "content");
+    const clean = scopes.filter((s): s is ApiKeyScope => s === "intake" || s === "content" || s === "webhooks");
     const issued = await issueApiKey(tenantId, label.slice(0, 80), clean);
     refresh(tenant);
     return { ok: true, message: `Key "${issued.key.label}" issued. Copy it now; it is shown once.`, rawKey: issued.raw };

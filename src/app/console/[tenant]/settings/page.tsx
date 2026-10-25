@@ -36,7 +36,7 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
         isAdmin={user.isPlatformAdmin}
         fmt={fmt}
         readiness={readiness}
-        platformReadiness={platformReadiness()}
+        platformReadiness={platformReadiness(process.env, { lastTickAt: await repository.getHeartbeat("tick").catch(() => null) })}
         brand={{ voice: config.brand?.voice ?? null, bannedPhrases: config.brand?.bannedPhrases ?? [], requiredFooter: config.brand?.complianceBlock.requiredFooter ?? "", claimsPolicy: config.brand?.complianceBlock.claimsPolicy ?? "" }}
         roles={config.roles}
         people={people}

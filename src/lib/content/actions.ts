@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getConsoleContext, getPortalContext } from "@/lib/auth/access";
 import { ForbiddenError, requirePermission } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
+import { localInputToDate } from "@/lib/utils";
 import { emit } from "@/lib/events";
 import { saveChannelCredentials } from "@/lib/social/credentials";
 import { replyToConversation } from "@/lib/social/inbox";
@@ -114,8 +115,8 @@ export async function decideDraftAction(tenantId: string, assetId: string, statu
     if (status === "APPROVED") {
       if (asset.generation.compliance && !asset.generation.compliance.ok) return { ok: false, message: "Fix the flagged issues before approving." };
       if (asset.needsClientSignoff) return { ok: false, message: "This one mentions prices, names or claims and needs the client’s own sign-off." };
-      const at = opts.at ? new Date(opts.at) : null;
-      if (at && Number.isNaN(at.getTime())) return { ok: false, message: "That date doesn’t look right." };
+      const at = opts.at ? localInputToDate(opts.at, ctx.tenant.timezone) : null;
+      if (opts.at && !at) return { ok: false, message: "That date doesn’t look right." };
       await repository.updateContentAssetStatus(tenantId, assetId, "APPROVED");
       await emit(tenantId, "content.approved", { assetId, by: ctx.userId, via: "operator" });
       const { when, post } = await scheduleApproved(ctx.tenant, { ...asset, status: "APPROVED" }, { at });
@@ -131,12 +132,12 @@ export async function decideDraftAction(tenantId: string, assetId: string, statu
   }
 }
 
-export async function reschedulePostAction(tenantId: string, postId: string, atIso: string): Promise<ActionResult> {
+export async function reschedulePostAction(tenantId: string, postId: string, atLocal: string): Promise<ActionResult> {
   try {
     const ctx = await operatorTenant(tenantId);
     if (!ctx) return { ok: false, message: "That workspace isn’t in your portfolio." };
-    const at = new Date(atIso);
-    if (Number.isNaN(at.getTime())) return { ok: false, message: "That date doesn’t look right." };
+    const at = localInputToDate(atLocal, ctx.tenant.timezone);
+    if (!at) return { ok: false, message: "That date doesn’t look right." };
     const post = await repository.findSocialPostById(tenantId, postId);
     if (!post) return { ok: false, message: "That post no longer exists." };
     if (post.status === "PUBLISHED" || post.status === "PUBLISHING") return { ok: false, message: "That post is already on its way." };

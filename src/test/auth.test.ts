@@ -48,22 +48,22 @@ describe("session tokens", () => {
 });
 
 describe("sign-in rate limiter", () => {
-  it("locks after five failures within the window and clears on success", () => {
+  it("locks after five failures within the window and clears on success", async () => {
     _resetRateLimiter();
-    for (let i = 0; i < 4; i++) recordFailure("a@b.co");
-    assert.equal(isLocked("a@b.co"), false);
-    recordFailure("a@b.co");
-    assert.equal(isLocked("a@b.co"), true);
-    clearFailures("a@b.co");
-    assert.equal(isLocked("a@b.co"), false);
+    for (let i = 0; i < 4; i++) await recordFailure("a@b.co");
+    assert.equal(await isLocked("a@b.co"), false);
+    await recordFailure("a@b.co");
+    assert.equal(await isLocked("a@b.co"), true);
+    await clearFailures("a@b.co");
+    assert.equal(await isLocked("a@b.co"), false);
   });
 
-  it("expires the window", () => {
+  it("expires the window", async () => {
     _resetRateLimiter();
     const t0 = 1_000_000;
-    for (let i = 0; i < 5; i++) recordFailure("c@d.co", t0);
-    assert.equal(isLocked("c@d.co", t0 + 1000), true);
-    assert.equal(isLocked("c@d.co", t0 + 16 * 60_000), false);
+    for (let i = 0; i < 5; i++) await recordFailure("c@d.co", t0);
+    assert.equal(await isLocked("c@d.co", t0 + 1000), true);
+    assert.equal(await isLocked("c@d.co", t0 + 16 * 60_000), false);
   });
 });
 
@@ -71,13 +71,13 @@ describe("sign-in rate limiter: progressive delay", () => {
   it("grows the delay per failure and caps it", async () => {
     const { _resetRateLimiter, delayFor, recordFailure } = await import("../lib/auth/rate-limit.ts");
     _resetRateLimiter();
-    assert.equal(delayFor("email:x@y.z"), 0);
-    recordFailure("email:x@y.z");
-    assert.equal(delayFor("email:x@y.z"), 500);
-    recordFailure("email:x@y.z");
-    assert.equal(delayFor("email:x@y.z"), 1000);
-    for (let i = 0; i < 10; i++) recordFailure("email:x@y.z");
-    assert.equal(delayFor("email:x@y.z"), 4000);
+    assert.equal(await delayFor("email:x@y.z"), 0);
+    await recordFailure("email:x@y.z");
+    assert.equal(await delayFor("email:x@y.z"), 500);
+    await recordFailure("email:x@y.z");
+    assert.equal(await delayFor("email:x@y.z"), 1000);
+    for (let i = 0; i < 10; i++) await recordFailure("email:x@y.z");
+    assert.equal(await delayFor("email:x@y.z"), 4000);
   });
 });
 
