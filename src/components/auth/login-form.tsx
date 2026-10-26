@@ -22,13 +22,13 @@ export function LoginForm({ next, demoHint, googleEnabled = false, notice }: { n
   return (
     <form action={action} className="flex flex-col gap-4" noValidate>
       {notice && (
-        <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+        <p role="status" className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
           {notice}
         </p>
       )}
       {googleEnabled && (
         <>
-          <a href={googleHref} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+          <a href={googleHref} className="inline-flex h-11 items-center justify-center gap-2.5 rounded-full border bg-card px-5 text-sm font-medium transition-colors duration-300 hover:border-foreground">
             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 48 48">
               <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.3l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z" />
               <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.5 2.9-2.2 5.4-4.7 7.1l7.3 5.7c4.3-4 6.8-9.8 6.8-16.8z" />
@@ -71,11 +71,11 @@ export function LoginForm({ next, demoHint, googleEnabled = false, notice }: { n
         />
       </label>
       {state.error && (
-        <p id="signin-error" ref={alertRef} tabIndex={-1} role="alert" className="rounded-md bg-red-soft px-3 py-2 text-sm text-red-text outline-none">
+        <p id="signin-error" ref={alertRef} tabIndex={-1} role="alert" className="rounded-lg bg-red-soft px-4 py-3 text-sm text-red-text outline-none">
           {state.error}
         </p>
       )}
-      <Button type="submit" disabled={pending} className="mt-1 h-10">
+      <Button type="submit" disabled={pending} className="mt-1">
         <LogIn /> {pending ? "Signing in…" : "Sign in"}
       </Button>
       {demoHint && <p className="text-center text-xs text-muted-foreground">{demoHint}</p>}

@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Check, FileQuestion, MessageSquareReply, UserX, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { closeRequest, markReviewReplied, openRequest, setBookingOutcome } from "@/lib/console/actions";
 import type { BookingRecord, InformationRequestRecord, LeadRecord, ReviewRecord } from "@/lib/types";
@@ -30,19 +30,15 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
   return (
     <div className="flex flex-col gap-4">
       {notice && (
-        <p role="status" aria-live="polite" className="rounded-md bg-muted px-3 py-2 text-sm">
+        <p role="status" aria-live="polite" className="rounded-lg bg-muted px-4 py-3 text-sm">
           {notice}
         </p>
       )}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card aria-labelledby="appointments-title">
-          <CardHeader>
-            <CardTitle id="appointments-title">Appointments</CardTitle>
-            <CardDescription>Mark outcomes so follow-ups, review requests and no-show recovery run.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Section id="appointments-title" title="Appointments" lede="Mark outcomes so follow-ups, review requests and no-show recovery run.">
+<Panel className="py-5">
             {bookings.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">No scheduled appointments.</p>
+              <p className="py-4 text-base text-muted-foreground">No scheduled appointments.</p>
             ) : (
               <ul className="divide-y">
                 {bookings.map((b) => (
@@ -56,7 +52,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                     </div>
                     {b.status === "SCHEDULED" && (
                       <div className="flex gap-2">
-                        <Button size="sm" variant="green" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "COMPLETED"))}>
+                        <Button size="sm" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "COMPLETED"))}>
                           <Check /> Attended
                         </Button>
                         <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "NO_SHOW"))}>
@@ -68,15 +64,11 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
 
-        <Card aria-labelledby="requests-title">
-          <CardHeader>
-            <CardTitle id="requests-title">Waiting on</CardTitle>
-            <CardDescription>Documents and information being chased automatically.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+        <Section id="requests-title" title="Waiting on" lede="Documents and information being chased automatically.">
+<Panel className="py-5 flex flex-col gap-3">
             <ul className="divide-y">
               {requests.map((r) => (
                 <li key={r.id} className="flex items-center justify-between gap-2 py-2.5">
@@ -91,10 +83,10 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <Button size="icon" variant="ghost" className="size-8" aria-label="Received" title="Received" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, true))}>
+                    <Button size="icon" variant="ghost" className="size-9" aria-label="Received" title="Received" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, true))}>
                       <Check />
                     </Button>
-                    <Button size="icon" variant="ghost" className="size-8" aria-label="Stop chasing" title="Stop chasing" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, false))}>
+                    <Button size="icon" variant="ghost" className="size-9" aria-label="Stop chasing" title="Stop chasing" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, false))}>
                       <X />
                     </Button>
                   </div>
@@ -114,7 +106,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <FileQuestion className="size-3.5" aria-hidden="true" /> Chase something new
               </p>
-              <select className="h-8 rounded-md border bg-background px-2 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
+              <select className="h-10 rounded-lg border border-input bg-card px-3 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
                 <option value="">Who…</option>
                 {leads.map((l) => (
                   <option key={l.id} value={l.id}>
@@ -122,26 +114,22 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                   </option>
                 ))}
               </select>
-              <Input placeholder="What are you waiting on? e.g. the signed application" value={newReq.description} onChange={(e) => setNewReq((n) => ({ ...n, description: e.target.value }))} className="h-8 text-sm" />
+              <Input placeholder="What are you waiting on? e.g. the signed application" value={newReq.description} onChange={(e) => setNewReq((n) => ({ ...n, description: e.target.value }))} className="h-10 text-sm" />
               <div className="flex items-center gap-2">
-                <Input type="number" min={1} max={30} value={newReq.dueInDays} onChange={(e) => setNewReq((n) => ({ ...n, dueInDays: e.target.value }))} className="h-8 w-20 text-sm" aria-label="First reminder in days" />
+                <Input type="number" min={1} max={30} value={newReq.dueInDays} onChange={(e) => setNewReq((n) => ({ ...n, dueInDays: e.target.value }))} className="h-10 w-20 text-sm" aria-label="First reminder in days" />
                 <span className="text-xs text-muted-foreground">days until first reminder</span>
                 <Button type="submit" size="sm" className="ml-auto" disabled={pending || !newReq.leadId || !newReq.description.trim()}>
                   Open
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
 
-        <Card aria-labelledby="reviews-title">
-          <CardHeader>
-            <CardTitle id="reviews-title">Reviews</CardTitle>
-            <CardDescription>Unanswered reviews become missed opportunities after two days.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Section id="reviews-title" title="Reviews" lede="Unanswered reviews become missed opportunities after two days.">
+<Panel className="py-5">
             {reviews.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">No reviews yet.</p>
+              <p className="py-4 text-base text-muted-foreground">No reviews yet.</p>
             ) : (
               <ul className="divide-y">
                 {reviews.map((rv) => (
@@ -164,8 +152,8 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
       </div>
     </div>
   );

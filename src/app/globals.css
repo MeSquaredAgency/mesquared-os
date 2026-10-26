@@ -1,71 +1,111 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Light is the default; dark follows the system preference.
- * `--green` / `--red` are fills. `--green-text` / `--red-text` are the
- * darker (light mode) or lighter (dark mode) variants that pass WCAG AA for
- * text on the page background and on the matching `-soft` tint.
+ * Me² design system (the "Me²" Design System artifact), applied to the app.
+ *
+ * Two tones. Paper is the default and the client portal: warm paper ground,
+ * cream cards, ink text. Abyss is the operator console: deep navy ground,
+ * raised navy cards, mist text. A surface sets `data-theme` and every token
+ * below follows; components use the semantic names only.
+ *
+ * Coral is a signal, not a fill: the 8px square on primary buttons and
+ * kickers, focus rings, nothing larger. Green and red are reserved for money
+ * direction and risk. Every text token below passes 4.5:1 on its ground.
  */
-:root {
-  --background: oklch(0.985 0.002 90);
-  --foreground: oklch(0.2 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.02 260);
-  --primary: oklch(0.28 0.04 260);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.955 0.005 260);
-  --secondary-foreground: oklch(0.28 0.04 260);
-  --muted: oklch(0.955 0.005 260);
-  --muted-foreground: oklch(0.46 0.02 260);
-  --accent: oklch(0.955 0.005 260);
-  --accent-foreground: oklch(0.28 0.04 260);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.91 0.005 260);
-  --input: oklch(0.88 0.005 260);
-  --ring: oklch(0.6 0.03 260);
-  --green: oklch(0.62 0.17 150);
-  --green-text: oklch(0.45 0.15 150);
-  --green-soft: oklch(0.95 0.05 150);
-  --red: oklch(0.6 0.2 25);
-  --red-text: oklch(0.5 0.19 25);
-  --red-soft: oklch(0.95 0.04 25);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.975 0.003 260);
+:root,
+[data-theme="paper"] {
+  color-scheme: light;
+
+  --abyss: #121d28;
+  --abyss-2: #1b2834;
+  --navy: #1b3853;
+  --ink: #1b232c;
+  --coral: #e7785c;
+  --coral-deep: #a6412a;
+  --mist: #f4efe7;
+  --haze: #a49c92;
+  --slate: #5b5650;
+  --paper: #f7f2ea;
+  --paper-2: #eee6da;
+  --cream: #fffdf9;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--cream);
+  --card-foreground: var(--ink);
+  --popover: var(--cream);
+  --popover-foreground: var(--ink);
+  --primary: var(--abyss);
+  --primary-foreground: var(--mist);
+  --primary-hover: var(--navy);
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper-2);
+  --muted-foreground: var(--slate);
+  --accent: var(--paper-2);
+  --accent-foreground: var(--ink);
+  /* The coral square on this ground, and the one that sits on a primary button's fill. */
+  --brand: var(--coral-deep);
+  --brand-on-primary: var(--coral);
+  --destructive: var(--coral-deep);
+  --border: #1b232c24;
+  --input: #1b232c6e;
+  --ring: var(--coral-deep);
+  --green: #2e7d5b;
+  --green-text: #2a6b4e;
+  --green-soft: #dcefe3;
+  --red: #c4502f;
+  --red-text: #a6412a;
+  --red-soft: #f7dfd6;
+  --sidebar: #f1ebe0;
+
+  --radius: 10px;
+  --radius-panel: 18px;
+  --radius-card: 24px;
+  --shadow-card: 0 1px #1b232c0a, 0 36px 90px -30px #5b402852, 0 14px 30px -20px #1b232c38;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.17 0.015 260);
-    --foreground: oklch(0.96 0 0);
-    --card: oklch(0.21 0.015 260);
-    --card-foreground: oklch(0.96 0 0);
-    --popover: oklch(0.21 0.015 260);
-    --popover-foreground: oklch(0.96 0 0);
-    --primary: oklch(0.92 0 0);
-    --primary-foreground: oklch(0.2 0.02 260);
-    --secondary: oklch(0.27 0.015 260);
-    --secondary-foreground: oklch(0.96 0 0);
-    --muted: oklch(0.27 0.015 260);
-    --muted-foreground: oklch(0.74 0.01 260);
-    --accent: oklch(0.27 0.015 260);
-    --accent-foreground: oklch(0.96 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 18%);
-    --ring: oklch(0.55 0.02 260);
-    --green: oklch(0.72 0.17 150);
-    --green-text: oklch(0.82 0.15 150);
-    --green-soft: oklch(0.3 0.06 150);
-    --red: oklch(0.7 0.19 25);
-    --red-text: oklch(0.82 0.14 25);
-    --red-soft: oklch(0.3 0.06 25);
-    --sidebar: oklch(0.19 0.015 260);
-  }
+[data-theme="abyss"] {
+  color-scheme: dark;
+
+  --background: var(--abyss);
+  --foreground: var(--mist);
+  --card: var(--abyss-2);
+  --card-foreground: var(--mist);
+  --popover: var(--abyss-2);
+  --popover-foreground: var(--mist);
+  --primary: var(--mist);
+  --primary-foreground: var(--abyss);
+  --primary-hover: #ffffff;
+  --secondary: #f4efe714;
+  --secondary-foreground: var(--mist);
+  --muted: #f4efe70f;
+  --muted-foreground: var(--haze);
+  --accent: #f4efe714;
+  --accent-foreground: var(--mist);
+  --brand: var(--coral);
+  --brand-on-primary: var(--coral-deep);
+  --destructive: var(--coral-deep);
+  --border: #f4efe721;
+  --input: #f4efe752;
+  --ring: var(--coral);
+  --green: #6fc39a;
+  --green-text: #8fd3b0;
+  --green-soft: #1f3b31;
+  --red: var(--coral);
+  --red-text: #f0a08a;
+  --red-soft: #3a261f;
+  --sidebar: #0e1721;
+
+  --shadow-card: 0 40px 100px -30px #000000b3, inset 0 1px #f4efe717, inset 0 0 0 1px #f4efe70f;
 }
+
+/* `dark:` utilities follow the tone, never the operating system. */
+@custom-variant dark (&:where([data-theme="abyss"], [data-theme="abyss"] *));
 
 @theme inline {
+  --font-sans: var(--font-instrument), "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -74,12 +114,15 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-on-primary: var(--brand-on-primary);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -91,22 +134,63 @@
   --color-red-text: var(--red-text);
   --color-red-soft: var(--red-soft);
   --color-sidebar: var(--sidebar);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-navy: var(--navy);
+  --color-cream: var(--cream);
+  --color-coral: var(--coral);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius-panel);
+  --radius-2xl: var(--radius-card);
+
+  /* A type scale the audience can read on a phone: nothing on screen below 13px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.4;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 1.1;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   html {
-    color-scheme: light dark;
+    font-size: 16px;
   }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv11", "ss01";
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01", "tnum";
+  }
+  /* Headings are condensed and tight, never bold. */
+  h1,
+  h2,
+  h3 {
+    font-weight: 520;
+    font-stretch: 88%;
+    letter-spacing: -0.02em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Functional icons are thin single strokes, and sparse. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+  ::selection {
+    background: var(--coral-deep);
+    color: #ffffff;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -117,5 +201,82 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+@layer components {
+  /* A raised dark panel: the abyss-2 → abyss sweep with the one allowed glow, coral at 20% in a corner. */
+  .panel-dark {
+    background:
+      radial-gradient(70% 60% at 100% 0%, rgb(231 120 92 / 0.18), transparent 65%),
+      linear-gradient(160deg, var(--abyss-2), var(--abyss));
+    box-shadow:
+      0 40px 100px -30px #000000b3,
+      inset 0 1px #f4efe717,
+      inset 0 0 0 1px #f4efe70f;
+  }
+  /* Display type: the hero line only. Condensed, tight, never bold. */
+  .display {
+    font-size: clamp(2.25rem, 4.2vw, 3.75rem);
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+    font-weight: 520;
+    font-stretch: 88%;
+    text-wrap: balance;
+  }
+  /* A number that carries a section: at risk, recovered, handled. */
+  .display-sm {
+    font-size: clamp(1.75rem, 2.6vw, 2.5rem);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-weight: 520;
+    font-stretch: 88%;
+    font-variant-numeric: tabular-nums;
+  }
+  /* One per section, balance-wrapped. */
+  .headline {
+    font-size: clamp(1.375rem, 2vw, 1.75rem);
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    font-weight: 520;
+    font-stretch: 88%;
+    text-wrap: balance;
+  }
+  /* The line under a headline. */
+  .lede {
+    max-width: 44ch;
+    font-size: 1.0625rem;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+  }
+  /* The page heading: one per screen. */
+  .page-title {
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    font-weight: 520;
+    font-stretch: 88%;
+    text-wrap: balance;
+  }
+  /* A small label above a block, with the coral square. Sentence case, never uppercase. */
+  .kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .kicker::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    background: var(--brand);
+  }
+  /* Money and counts line up. */
+  .num {
+    font-variant-numeric: tabular-nums;
   }
 }

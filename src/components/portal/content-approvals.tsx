@@ -4,7 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 import { Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { COPY } from "@/lib/copy";
 import { decideAsset } from "@/lib/marketing/actions";
@@ -39,28 +39,19 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fil
     });
 
   return (
-    <Card aria-labelledby="content-title">
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle id="content-title">{COPY.awaitingApproval}</CardTitle>
-          <CardDescription className="mt-1">Drafts the engine prepared. Approve to schedule, or send back.</CardDescription>
-        </div>
-        <Badge variant={waiting.length ? "secondary" : "muted"}>{waiting.length}</Badge>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <Section id="content-title" title={COPY.awaitingApproval} lede={waiting.length === 0 ? "Nothing waiting for approval." : "Drafts we prepared and checked. Approve to schedule, or send back with a note."}>
+      <div className="flex flex-col gap-3">
         {notice && (
-          <p role="status" aria-live="polite" className={cn("rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+          <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
             {notice.text}
           </p>
         )}
-        {waiting.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting for approval.</p>
-        ) : (
+        {waiting.length > 0 && (
           <ul className="flex flex-col gap-3">
             {waiting.map((a) => {
               const blocked = a.needsClientSignoff && !isMember;
               return (
-                <li key={a.id} className="rounded-lg border p-3">
+                <li key={a.id} className="rounded-xl border bg-card p-5">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <StatusBadge status={a.status} />
                     <Badge variant="outline">{humanize(a.kind)}</Badge>
@@ -76,7 +67,7 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fil
                   )}
                   {canApprove ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="green" onClick={() => decide(a.id, "APPROVED")} disabled={pending || blocked} title={blocked ? "Mentions prices, names or claims: the client signs this off" : undefined}>
+                      <Button size="sm" onClick={() => decide(a.id, "APPROVED")} disabled={pending || blocked} title={blocked ? "Mentions prices, names or claims: the client signs this off" : undefined}>
                         <Check /> Approve
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => decide(a.id, "REJECTED")} disabled={pending}>
@@ -92,7 +83,7 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fil
             })}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Section>
   );
 }

@@ -9,7 +9,7 @@ export default async function NoAccessPage() {
   const user = await requireUser();
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
-      <h1 className="text-lg font-semibold">Nothing to show yet</h1>
+      <h1 className="text-lg">Nothing to show yet</h1>
       <p className="max-w-sm text-sm text-muted-foreground">{user.email} is signed in but hasn’t been added to a business yet. Ask your Me² contact to add you.</p>
       <form action={signOut}>
         <Button type="submit" variant="outline">

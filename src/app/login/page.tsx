@@ -1,4 +1,6 @@
 import { LoginForm } from "@/components/auth/login-form";
+import { BrandMark } from "@/components/shell/app-shell";
+import { Motif } from "@/components/shell/hero";
 import { GOOGLE_SIGN_IN_MESSAGES, googleConfig } from "@/lib/auth/google";
 import { dataMode } from "@/lib/data";
 import { DEMO_ACCOUNTS } from "@/lib/data/fixtures";
@@ -17,16 +19,25 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       : undefined;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-sidebar p-4">
-      <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xs">
-        <div className="mb-6 flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">M²</span>
-          <div className="leading-tight">
-            <p className="text-sm font-semibold">MeSquared OS</p>
-            <p className="text-xs text-muted-foreground">Sign in</p>
+    <main data-theme="paper" className="grid min-h-screen bg-background text-foreground lg:grid-cols-[1.1fr_1fr]">
+      <aside data-theme="abyss" className="panel-dark relative hidden overflow-hidden text-foreground lg:flex lg:flex-col lg:justify-between lg:p-14">
+        <Motif className="absolute -top-6 right-0 w-[420px]" />
+        <BrandMark tone="abyss" className="relative h-8 self-start" />
+        <div className="relative flex max-w-xl flex-col gap-5">
+          <p className="kicker">MeSquared OS</p>
+          <p className="display">We run the back office. You run the business.</p>
+          <p className="lede">What needs you, what we handled, and what we won back. One place, with a person checking the work.</p>
+        </div>
+      </aside>
+      <div className="flex items-center justify-center px-5 py-12 lg:px-16">
+        <div className="w-full max-w-sm">
+          <BrandMark tone="paper" className="mb-10 h-7 lg:hidden" />
+          <h1 className="page-title">Sign in</h1>
+          <p className="lede mt-2 text-base">Your business, squared.</p>
+          <div className="mt-8">
+            <LoginForm next={next} demoHint={demoHint} googleEnabled={googleEnabled} notice={notice} />
           </div>
         </div>
-        <LoginForm next={next} demoHint={demoHint} googleEnabled={googleEnabled} notice={notice} />
       </div>
     </main>
   );
