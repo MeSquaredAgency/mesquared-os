@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Section } from "@/components/shell/section";
+import { Empty, Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
@@ -32,19 +32,19 @@ export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) 
       lede="Money about to walk out the door, and what we’re doing about it."
       action={
         <dl className="flex gap-8 text-right">
-          <div>
+          <div className="flex flex-col-reverse">
+            <dt className="text-sm text-muted-foreground">{COPY.atRiskLabel}</dt>
             <dd className="display-sm text-red-text">{formatMoney(missed.atRiskCents, fmt.currency, fmt.locale)}</dd>
-            <dt className="text-sm text-muted-foreground">{COPY.atRisk}</dt>
           </div>
-          <div>
+          <div className="flex flex-col-reverse">
+            <dt className="text-sm text-muted-foreground">{COPY.recoveredThisMonth}</dt>
             <dd className="display-sm text-green-text">{formatMoney(missed.recoveredCents, fmt.currency, fmt.locale)}</dd>
-            <dt className="text-sm text-muted-foreground">{COPY.recovered.toLowerCase()} this month</dt>
           </div>
         </dl>
       }
     >
       {shown.length === 0 ? (
-        <p className="rounded-xl border bg-card px-6 py-8 text-center text-base text-muted-foreground">Nothing slipping through right now.</p>
+        <Empty>Nothing slipping through right now.</Empty>
       ) : (
         <div className="rounded-xl border bg-card px-6 py-2">
           <ul className="divide-y">

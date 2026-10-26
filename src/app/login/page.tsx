@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <BrandMark tone="abyss" className="relative h-8 self-start" />
         <div className="relative flex max-w-xl flex-col gap-5">
           <p className="kicker">MeSquared OS</p>
-          <h2 className="display">We run the back office. You run the business.</h2>
+          <p className="display">We run the back office. You run the business.</p>
           <p className="lede">What needs you, what we handled, and what we won back. One place, with a person checking the work.</p>
         </div>
       </aside>

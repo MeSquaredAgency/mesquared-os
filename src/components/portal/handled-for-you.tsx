@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Avatar } from "@/components/shell/me2-person";
+import { Avatar } from "@/components/shell/avatar";
 import { Section } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
@@ -29,7 +29,7 @@ export function HandledForYou({ handled, activityHref }: { handled: PortalHome["
         <div className="mb-3 flex items-center gap-3">
           <Avatar name={null} />
           <div className="leading-tight">
-            <p className="text-sm font-semibold">Your Me² person</p>
+            <p className="text-sm font-medium">Your Me² person</p>
             <p className="text-xs text-muted-foreground">People, backed by AI</p>
           </div>
         </div>

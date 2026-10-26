@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, PlugZap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Empty } from "@/components/shell/section";
 import { healthTone } from "@/lib/health";
 import type { PortfolioRow } from "@/lib/types";
 import { cn, formatMoney } from "@/lib/utils";
@@ -23,22 +24,22 @@ function Num({ value, warn = false }: { value: number; warn?: boolean }) {
 
 /** The core of the Operator Console: every tenant in the portfolio, worst health first. */
 export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
-  if (rows.length === 0) return <p className="rounded-xl border bg-card px-6 py-10 text-center text-base text-muted-foreground">No workspaces assigned to you yet.</p>;
+  if (rows.length === 0) return <Empty>No workspaces assigned to you yet.</Empty>;
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-muted-foreground">
           <tr className="border-b">
-            <th className="px-6 py-4 font-medium">Workspace</th>
-            <th className="px-3 py-4 font-medium">Health</th>
-            <th className="px-3 py-4 font-medium">SLA breaches</th>
-            <th className="px-3 py-4 font-medium">Missed opps</th>
-            <th className="px-3 py-4 font-medium">At risk</th>
-            <th className="px-3 py-4 font-medium">Exceptions</th>
-            <th className="px-3 py-4 font-medium">Content due</th>
-            <th className="px-3 py-4 font-medium">Ad pacing</th>
-            <th className="px-3 py-4 font-medium">Integrations</th>
-            <th className="px-6 py-4 font-medium">Leads today</th>
+            <th scope="col" className="px-6 py-4 font-medium">Workspace</th>
+            <th scope="col" className="px-3 py-4 font-medium">Health</th>
+            <th scope="col" className="px-3 py-4 font-medium">SLA breaches</th>
+            <th scope="col" className="px-3 py-4 font-medium">Missed opps</th>
+            <th scope="col" className="px-3 py-4 font-medium">At risk</th>
+            <th scope="col" className="px-3 py-4 font-medium">Exceptions</th>
+            <th scope="col" className="px-3 py-4 font-medium">Content due</th>
+            <th scope="col" className="px-3 py-4 font-medium">Ad pacing</th>
+            <th scope="col" className="px-3 py-4 font-medium">Integrations</th>
+            <th scope="col" className="px-6 py-4 font-medium">Leads today</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -85,12 +86,12 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
                     {failing.length === 0 && pending.length === 0 ? <Badge variant="green">All connected</Badge> : null}
                     {failing.map((i) => (
                       <Badge key={i.provider} variant="red" title={i.lastError ?? undefined}>
-                        <AlertTriangle strokeWidth={1.75} /> {i.provider.toLowerCase().replace(/_/g, " ")}
+                        <AlertTriangle /> {i.provider.toLowerCase().replace(/_/g, " ")}
                       </Badge>
                     ))}
                     {pending.map((i) => (
                       <Badge key={i.provider} variant="outline">
-                        <PlugZap strokeWidth={1.75} /> {i.provider.toLowerCase().replace(/_/g, " ")}
+                        <PlugZap /> {i.provider.toLowerCase().replace(/_/g, " ")}
                       </Badge>
                     ))}
                   </span>

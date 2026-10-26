@@ -30,13 +30,13 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {notice && (
-          <p role="status" aria-live="polite" className={cn("rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+          <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
             {notice.text}
           </p>
         )}
         <label className="flex flex-col gap-1 text-sm font-medium">
           Template
-          <select className="h-9 rounded-xl border bg-card px-3 text-sm font-normal" value={form.templateKey} onChange={(e) => setForm({ ...form, templateKey: e.target.value })}>
+          <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.templateKey} onChange={(e) => setForm({ ...form, templateKey: e.target.value })}>
             {templates.map((t) => (
               <option key={t.key} value={t.key}>
                 {t.name}
@@ -54,7 +54,7 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           Region and timezone
-          <select className="h-9 rounded-xl border bg-card px-3 text-sm font-normal" value={form.preset} onChange={(e) => setForm({ ...form, preset: Number(e.target.value) })}>
+          <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.preset} onChange={(e) => setForm({ ...form, preset: Number(e.target.value) })}>
             {regions.map((r, i) => (
               <option key={r.label} value={i}>
                 {r.label} · {r.currency}
@@ -85,7 +85,6 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
           <Input value={form.requiredFooter} onChange={(e) => setForm({ ...form, requiredFooter: e.target.value })} placeholder={isRealEstate ? "Business Name | RLA 000000" : "e.g. ABN or registration line"} />
         </label>
         <Button
-          variant="green"
           disabled={pending || form.name.trim().length < 2}
           onClick={() =>
             start(async () => {

@@ -9,6 +9,7 @@ import { MoneyStudio } from "@/components/console/money-studio";
 import { pacingStatus } from "@/lib/ads/sync";
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { OperationsPanels } from "@/components/console/operations-panels";
+import { PageHeader, Section } from "@/components/shell/section";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { NeedsYou } from "@/components/portal/needs-you";
@@ -58,37 +59,36 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
   const readiness = readinessSummary(await tenantReadiness(tenant));
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">{tenant.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {humanize(tenant.industry)} · {tenant.templateKey ? `${tenant.templateKey.replace(/_/g, " ")} template` : "no template"} · {tenant.timezone}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            <Link className="underline" href={`/console/${tenant.slug}/settings`}>
-              {readiness.ready ? "Ready to launch" : `Launch readiness: ${readiness.requiredPassed} of ${readiness.requiredTotal} required checks`}
+    <div className="flex flex-col gap-12">
+      <PageHeader
+        kicker={`${humanize(tenant.industry)} · ${tenant.timezone}`}
+        title={tenant.name}
+        lede={
+          <>
+            {tenant.templateKey ? `${humanize(tenant.templateKey)} template. ` : "No template applied. "}
+            <Link className="underline underline-offset-4" href={`/console/${tenant.slug}/settings`}>
+              {readiness.ready ? "Ready to launch." : `Launch readiness: ${readiness.requiredPassed} of ${readiness.requiredTotal} required checks.`}
             </Link>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/console/${tenant.slug}/settings`}>
-              <Settings /> Settings
-            </Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href={`/app/${tenant.slug}`}>
-              Open client portal <ArrowUpRight />
-            </Link>
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href={`/console/${tenant.slug}/settings`}>
+                <Settings /> Settings
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href={`/app/${tenant.slug}`}>
+                Open client portal <ArrowUpRight />
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <NeedsYou leads={home.needsYou} fmt={fmt} />
-        <MissedOpportunities missed={home.missed} fmt={fmt} />
-      </div>
+      <NeedsYou leads={home.needsYou} fmt={fmt} />
+      <MissedOpportunities missed={home.missed} fmt={fmt} />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Card aria-labelledby="integrations-title">
@@ -147,21 +147,13 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
 
       <OperationsPanels tenantId={tenant.id} fmt={fmt} bookings={bookingRows} requests={requestRows} reviews={reviews} leads={leads} />
 
-      <section aria-labelledby="content-studio-title" className="flex flex-col gap-3">
-        <div>
-          <h2 id="content-studio-title" className="text-lg font-semibold tracking-tight">Content and social</h2>
-          <p className="text-sm text-muted-foreground">Material in, drafts out, approvals, the publishing queue, the inbox and channel numbers.</p>
-        </div>
+      <Section id="content-studio-title" title="Content and social" lede="Material in, drafts out, approvals, the publishing queue, the inbox and channel numbers.">
         <ContentStudio tenantId={tenant.id} fmt={fmt} sources={workbench.sources} drafts={workbench.assets} posts={workbench.posts} channels={summarizeChannels(workbench.channels, snapshots)} inbox={inboxThreads} draftCounts={draftCounts} />
-      </section>
+      </Section>
 
-      <section aria-labelledby="money-studio-title" className="flex flex-col gap-3">
-        <div>
-          <h2 id="money-studio-title" className="text-lg font-semibold tracking-tight">Money and marketing</h2>
-          <p className="text-sm text-muted-foreground">Ad accounts and pacing, finance connections and invoices, tracked links and website numbers.</p>
-        </div>
+      <Section id="money-studio-title" title="Money and marketing" lede="Ad accounts and pacing, finance connections and invoices, tracked links and website numbers.">
         <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={adAccounts} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />
-      </section>
+      </Section>
 
       <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
     </div>

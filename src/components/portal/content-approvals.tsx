@@ -42,7 +42,7 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fil
     <Section id="content-title" title={COPY.awaitingApproval} lede={waiting.length === 0 ? "Nothing waiting for approval." : "Drafts we prepared and checked. Approve to schedule, or send back with a note."}>
       <div className="flex flex-col gap-3">
         {notice && (
-          <p role="status" aria-live="polite" className={cn("rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+          <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
             {notice.text}
           </p>
         )}
@@ -67,7 +67,7 @@ export function ContentApprovals({ tenantSlug, assets, canApprove, isMember, fil
                   )}
                   {canApprove ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="green" onClick={() => decide(a.id, "APPROVED")} disabled={pending || blocked} title={blocked ? "Mentions prices, names or claims: the client signs this off" : undefined}>
+                      <Button size="sm" onClick={() => decide(a.id, "APPROVED")} disabled={pending || blocked} title={blocked ? "Mentions prices, names or claims: the client signs this off" : undefined}>
                         <Check /> Approve
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => decide(a.id, "REJECTED")} disabled={pending}>

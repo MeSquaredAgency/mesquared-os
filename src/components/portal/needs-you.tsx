@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Phone } from "lucide-react";
-import { Avatar } from "@/components/shell/me2-person";
+import { Avatar } from "@/components/shell/avatar";
 import { Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ function Lead({ lead, fmt, showReasons }: { lead: LeadRecord; fmt: FormatContext
         {lead.phone && (
           <Button asChild variant="outline" size="sm">
             <a href={`tel:${lead.phone}`}>
-              <Phone strokeWidth={1.75} /> Call
+              <Phone /> Call
             </a>
           </Button>
         )}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createRealtimeClient, type SealedLiveQuery } from "@neon/realtime/client";
 import { RealtimeProvider, useLiveQuery } from "@neon/realtime-react";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/shell/avatar";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { ticketLabel } from "@/lib/copy";
 import { classifierLabel, leadDisplayName } from "@/lib/leads";
@@ -24,36 +25,40 @@ interface RowsProps {
 
 /** The lead list itself; used for the static render and for live rows alike. */
 export function LeadRows({ rows, fmt, stageNames }: RowsProps) {
-  if (rows.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">No leads yet.</p>;
+  if (rows.length === 0) return <p className="py-10 text-center text-base text-muted-foreground">No leads yet.</p>;
   return (
     <ul className="divide-y">
-      {rows.map((l) => (
-        <li key={l.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-              {leadDisplayName(l)}
-              <Badge variant={l.ticketType === "GREEN" ? "green" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
-            </p>
-            <p className="line-clamp-2 text-sm text-muted-foreground">{l.message ?? "No message"}</p>
-            <p className="text-xs text-muted-foreground">
-              {humanize(l.source)} · <span suppressHydrationWarning>{formatDateTime(l.createdAt, fmt)}</span> · {classifierLabel(l.qualifiedBy)}
-              {l.stageId && stageNames[l.stageId] && <> · {stageNames[l.stageId]}</>}
-            </p>
-            {l.qualificationReason && (
-              <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Why it was classified this way</summary>
-                <p className="mt-1">{l.qualificationReason}</p>
-              </details>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm font-semibold tabular-nums" title="Intent score out of 100">
-              {l.intentScore ?? "–"}
-            </span>
-            <StatusBadge status={l.status} />
-          </div>
-        </li>
-      ))}
+      {rows.map((l) => {
+        const name = leadDisplayName(l);
+        return (
+          <li key={l.id} className="flex items-start gap-4 py-5">
+            <Avatar name={name} />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <p className="flex flex-wrap items-center gap-2.5 text-base font-medium">
+                {name}
+                <Badge variant={l.ticketType === "GREEN" ? "green" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
+              </p>
+              <p className="line-clamp-2 text-base text-muted-foreground">{l.message ?? "No message"}</p>
+              <p className="text-sm text-muted-foreground">
+                {humanize(l.source)} · <span suppressHydrationWarning>{formatDateTime(l.createdAt, fmt)}</span> · {classifierLabel(l.qualifiedBy)}
+                {l.stageId && stageNames[l.stageId] && <> · {stageNames[l.stageId]}</>}
+              </p>
+              {l.qualificationReason && (
+                <details className="text-sm text-muted-foreground">
+                  <summary className="cursor-pointer">Why it was classified this way</summary>
+                  <p className="mt-1">{l.qualificationReason}</p>
+                </details>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <StatusBadge status={l.status} />
+              <span className="text-sm text-muted-foreground num" title="Intent score out of 100">
+                Intent {l.intentScore ?? "–"}
+              </span>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -109,9 +114,9 @@ function LiveLeadRows({ tenantSlug, userId, sealedQuery, rows: initialData, fmt,
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 pt-3 text-xs text-muted-foreground" role="status" aria-live="polite">
         <span
-          className={cn("size-1.5 rounded-full", status === "live" ? "bg-green motion-safe:animate-pulse" : status === "error" ? "bg-red" : "bg-muted-foreground")}
+          className={cn("size-2", status === "live" ? "bg-green motion-safe:animate-pulse" : status === "error" ? "bg-red" : "bg-muted-foreground")}
           aria-hidden="true"
         />
         {status === "live" ? "Live" : status === "connecting" ? "Connecting…" : status === "stale" ? "Reconnecting…" : "Live updates stopped"}

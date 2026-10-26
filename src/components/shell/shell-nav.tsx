@@ -19,7 +19,7 @@ export interface NavItem {
   badge?: number;
 }
 
-const Count = ({ n }: { n: number }) => <span className="rounded-full bg-red-soft px-2 py-0.5 text-xs font-semibold text-red-text num">{n}</span>;
+const Count = ({ n }: { n: number }) => <span className="rounded-full bg-red-soft px-2 py-0.5 text-xs font-medium text-red-text num">{n}</span>;
 
 export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?: boolean }) {
   const pathname = usePathname();
@@ -38,7 +38,7 @@ export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?:
               aria-current={active ? "page" : undefined}
               className={cn("flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm transition-colors duration-300", active ? "bg-card font-medium text-foreground" : "text-muted-foreground")}
             >
-              <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+              <Icon className="size-4" aria-hidden="true" />
               {item.label}
               {item.badge ? <Count n={item.badge} /> : null}
             </Link>
@@ -63,7 +63,7 @@ export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?:
               active ? "bg-card font-medium text-foreground" : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
             )}
           >
-            <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+            <Icon className="size-4" aria-hidden="true" />
             <span className="flex min-w-0 flex-1 flex-col leading-tight">
               <span>{item.label}</span>
               {item.hint && <span className="text-xs font-normal text-muted-foreground">{item.hint}</span>}

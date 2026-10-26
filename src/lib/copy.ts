@@ -10,6 +10,8 @@ export const COPY = {
   recovered: "Recovered",
   missedOpportunities: "Missed opportunities",
   atRisk: "at risk",
+  atRiskLabel: "At risk",
+  recoveredThisMonth: "Recovered this month",
   money: "Money",
   awaitingApproval: "Waiting for your approval",
   activityLog: "Activity log",

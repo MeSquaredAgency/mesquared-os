@@ -47,8 +47,8 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
       </Hero>
 
       <StatStrip label="This month at a glance" columns={3}>
-        <Stat label={COPY.atRisk[0].toUpperCase() + COPY.atRisk.slice(1)} value={formatMoney(home.missed.atRiskCents, fmt.currency, fmt.locale)} tone={home.missed.atRiskCents > 0 ? "red" : "neutral"} hint={`${home.missed.open.length} open`} />
-        <Stat label={`${COPY.recovered} this month`} value={formatMoney(home.missed.recoveredCents, fmt.currency, fmt.locale)} tone={home.missed.recoveredCents > 0 ? "green" : "neutral"} hint="Won back for you" />
+        <Stat label={COPY.atRiskLabel} value={formatMoney(home.missed.atRiskCents, fmt.currency, fmt.locale)} tone={home.missed.atRiskCents > 0 ? "red" : "neutral"} hint={`${home.missed.open.length} open`} />
+        <Stat label={COPY.recoveredThisMonth} value={formatMoney(home.missed.recoveredCents, fmt.currency, fmt.locale)} tone={home.missed.recoveredCents > 0 ? "green" : "neutral"} hint="Won back for you" />
         <Stat label="Handled this week" value={home.handled.countWeek} hint={`${home.handled.countToday} today`} />
       </StatStrip>
 

@@ -7,14 +7,14 @@ import { cn } from "@/lib/utils";
 const Tabs = TabsPrimitive.Root;
 
 function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.List>) {
-  return <TabsPrimitive.List className={cn("inline-flex min-h-11 w-fit items-center justify-center gap-0.5 rounded-full bg-muted p-1 text-muted-foreground", className)} {...props} />;
+  return <TabsPrimitive.List className={cn("inline-flex min-h-12 w-fit items-center justify-center gap-0.5 rounded-full bg-muted p-1 text-muted-foreground", className)} {...props} />;
 }
 
 function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
   return (
     <TabsPrimitive.Trigger
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors duration-300 data-[state=active]:bg-card data-[state=active]:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        "inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors duration-300 data-[state=active]:bg-card data-[state=active]:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         className,
       )}
       {...props}

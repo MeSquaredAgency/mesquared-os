@@ -15,16 +15,16 @@ const buttonVariants = cva(
       variant: {
         default:
           "bg-primary text-primary-foreground hover:bg-primary-hover after:size-2 after:shrink-0 after:bg-brand-on-primary after:transition-transform after:duration-300 after:content-[''] hover:after:rotate-90 hover:after:scale-125",
-        destructive: "bg-red-text text-white hover:opacity-90",
+        /* Coral-deep on both tones: white text passes on it, and it is the one place coral is a fill. */
+        destructive: "bg-destructive text-white hover:opacity-90",
         outline: "border border-border bg-transparent text-foreground hover:border-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-accent",
         ghost: "text-foreground hover:bg-accent",
         link: "text-foreground underline underline-offset-4 hover:text-muted-foreground",
-        green: "bg-green-text text-white hover:opacity-90",
       },
       size: {
         default: "h-11 px-5 text-sm",
-        sm: "h-9 px-4 text-sm",
+        sm: "h-10 px-4 text-sm",
         lg: "h-[54px] px-7 text-base",
         icon: "size-11",
       },

@@ -1,5 +1,5 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { LeadRows, LiveLeads } from "@/components/portal/lead-rows";
+import { PageHeader, Panel } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
@@ -31,20 +31,15 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
   const rows = (await repository.listRecentLeads(tenant.id, limit)).filter((l) => viewAll || l.assigneeId === user.id || l.assigneeId === null).map(toLiveLeadRow);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="page-title">Leads</h1>
-        <p className="text-sm text-muted-foreground">{viewAll ? "Everyone who has enquired." : "Your leads and any not yet assigned."}</p>
-      </div>
-      <Card>
-        <CardContent>
-          {sealed ? (
-            <LiveLeads key={sealed.queryFingerprint} tenantSlug={slug} userId={user.id} realtimeUrl={realtimeUrl()} sealedQuery={sealed} rows={rows} fmt={fmt} stageNames={stageNames} />
-          ) : (
-            <LeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex flex-col gap-10">
+      <PageHeader kicker="Leads" title={viewAll ? "Everyone who has enquired" : "Your leads"} lede={viewAll ? "Every enquiry, newest first, with how we read it and where it is up to." : "Your leads and any not yet assigned, newest first."} />
+      <Panel>
+        {sealed ? (
+          <LiveLeads key={sealed.queryFingerprint} tenantSlug={slug} userId={user.id} realtimeUrl={realtimeUrl()} sealedQuery={sealed} rows={rows} fmt={fmt} stageNames={stageNames} />
+        ) : (
+          <LeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
+        )}
+      </Panel>
     </div>
   );
 }

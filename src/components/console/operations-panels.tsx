@@ -30,7 +30,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
   return (
     <div className="flex flex-col gap-4">
       {notice && (
-        <p role="status" aria-live="polite" className="rounded-md bg-muted px-3 py-2 text-sm">
+        <p role="status" aria-live="polite" className="rounded-lg bg-muted px-4 py-3 text-sm">
           {notice}
         </p>
       )}
@@ -56,7 +56,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                     </div>
                     {b.status === "SCHEDULED" && (
                       <div className="flex gap-2">
-                        <Button size="sm" variant="green" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "COMPLETED"))}>
+                        <Button size="sm" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "COMPLETED"))}>
                           <Check /> Attended
                         </Button>
                         <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => setBookingOutcome(tenantId, b.id, "NO_SHOW"))}>
@@ -91,10 +91,10 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <Button size="icon" variant="ghost" className="size-8" aria-label="Received" title="Received" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, true))}>
+                    <Button size="icon" variant="ghost" className="size-9" aria-label="Received" title="Received" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, true))}>
                       <Check />
                     </Button>
-                    <Button size="icon" variant="ghost" className="size-8" aria-label="Stop chasing" title="Stop chasing" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, false))}>
+                    <Button size="icon" variant="ghost" className="size-9" aria-label="Stop chasing" title="Stop chasing" disabled={pending} onClick={() => run(() => closeRequest(tenantId, r.id, false))}>
                       <X />
                     </Button>
                   </div>
@@ -114,7 +114,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <FileQuestion className="size-3.5" aria-hidden="true" /> Chase something new
               </p>
-              <select className="h-8 rounded-xl border bg-card px-2 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
+              <select className="h-10 rounded-lg border border-input bg-card px-3 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
                 <option value="">Who…</option>
                 {leads.map((l) => (
                   <option key={l.id} value={l.id}>
@@ -122,9 +122,9 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                   </option>
                 ))}
               </select>
-              <Input placeholder="What are you waiting on? e.g. the signed application" value={newReq.description} onChange={(e) => setNewReq((n) => ({ ...n, description: e.target.value }))} className="h-8 text-sm" />
+              <Input placeholder="What are you waiting on? e.g. the signed application" value={newReq.description} onChange={(e) => setNewReq((n) => ({ ...n, description: e.target.value }))} className="h-10 text-sm" />
               <div className="flex items-center gap-2">
-                <Input type="number" min={1} max={30} value={newReq.dueInDays} onChange={(e) => setNewReq((n) => ({ ...n, dueInDays: e.target.value }))} className="h-8 w-20 text-sm" aria-label="First reminder in days" />
+                <Input type="number" min={1} max={30} value={newReq.dueInDays} onChange={(e) => setNewReq((n) => ({ ...n, dueInDays: e.target.value }))} className="h-10 w-20 text-sm" aria-label="First reminder in days" />
                 <span className="text-xs text-muted-foreground">days until first reminder</span>
                 <Button type="submit" size="sm" className="ml-auto" disabled={pending || !newReq.leadId || !newReq.description.trim()}>
                   Open

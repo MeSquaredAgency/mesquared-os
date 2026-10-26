@@ -56,7 +56,7 @@ export function SettingsStudio(props: Props) {
   return (
     <div className="flex flex-col gap-3">
       {notice && (
-        <p role="status" aria-live="polite" className={cn("whitespace-pre-wrap rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+        <p role="status" aria-live="polite" className={cn("whitespace-pre-wrap rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
           {notice.text}
         </p>
       )}
@@ -231,7 +231,6 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
           {field("Line every email and asset must carry", "requiredFooter", { placeholder: "Business Name | Licence 000000" })}
           {field("Claims policy", "claimsPolicy", { placeholder: "Only state prices and figures from a record on file." })}
           <Button
-            variant="green"
             disabled={pending}
             onClick={() =>
               run(() =>
@@ -325,11 +324,11 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
                     </div>
                   </div>
                   {editing === p.userId && (
-                    <div className="mt-2 grid gap-2 rounded-md border bg-muted/30 p-3 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+                    <div className="mt-2 grid gap-2 rounded-lg border bg-muted/40 p-4 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
                       <Input placeholder="Job title" value={profile.title} onChange={(e) => setProfile({ ...profile, title: e.target.value })} aria-label="Job title" />
                       <Input placeholder="Mobile" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} aria-label="Mobile" />
                       <Input placeholder="Photo address (https, round PNG)" value={profile.photoUrl} onChange={(e) => setProfile({ ...profile, photoUrl: e.target.value })} aria-label="Photo address" />
-                      <Button size="sm" variant="green" disabled={pending} onClick={() => run(async () => { const r = await updateMemberProfileAction(tenant.id, p.userId, profile); if (r.ok) setEditing(null); return r; })}>
+                      <Button size="sm" disabled={pending} onClick={() => run(async () => { const r = await updateMemberProfileAction(tenant.id, p.userId, profile); if (r.ok) setEditing(null); return r; })}>
                         Save
                       </Button>
                       <p className="text-xs text-muted-foreground sm:col-span-4">Shown in the email signature when messages are signed as {p.name?.split(" ")[0] ?? "this person"}.</p>
@@ -350,7 +349,7 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           </ul>
           {isAdmin && operators.length > 0 && (
             <div className="mt-2 flex gap-2">
-              <select className="h-8 rounded-xl border bg-card px-2 text-xs" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} aria-label="Operator">
+              <select className="h-10 rounded-lg border border-input bg-card px-3 text-sm" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} aria-label="Operator">
                 {operators.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name ?? o.email}
@@ -371,7 +370,7 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {reveal && (
-            <div className="rounded-md border bg-muted p-3 text-sm" role="status">
+            <div className="rounded-lg border bg-muted p-4 text-sm" role="status">
               <p className="font-medium">{reveal.email}</p>
               <p className="font-mono text-base">{reveal.password}</p>
               <p className="text-xs text-muted-foreground">Shown once and cleared from this screen after two minutes. Hand it over privately and ask them to sign in with Google or change it.</p>
@@ -387,14 +386,14 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           )}
           <Input type="email" placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} aria-label="Email" />
           <Input placeholder="Name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} aria-label="Name" />
-          <select className="h-9 rounded-xl border bg-card px-3 text-sm" value={invite.roleId} onChange={(e) => setInvite({ ...invite, roleId: e.target.value })} aria-label="Role">
+          <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={invite.roleId} onChange={(e) => setInvite({ ...invite, roleId: e.target.value })} aria-label="Role">
             {roles.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name} — {r.permissions.map((x) => humanize(x).toLowerCase()).join(", ") || "no permissions"}
               </option>
             ))}
           </select>
-          <Button variant="green" disabled={pending || !invite.email.includes("@") || !invite.roleId} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, invite); if (r.ok) { if (r.temporaryPassword) setReveal({ email: invite.email, password: r.temporaryPassword }); setInvite({ ...invite, email: "", name: "" }); } return r; })}>
+          <Button disabled={pending || !invite.email.includes("@") || !invite.roleId} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, invite); if (r.ok) { if (r.temporaryPassword) setReveal({ email: invite.email, password: r.temporaryPassword }); setInvite({ ...invite, email: "", name: "" }); } return r; })}>
             <UserPlus /> Invite
           </Button>
         </CardContent>
@@ -450,7 +449,7 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {raw && (
-            <div className="rounded-md border bg-muted p-3">
+            <div className="rounded-lg border bg-muted p-4">
               <p className="break-all font-mono text-sm">{raw}</p>
               <Button size="sm" variant="outline" className="mt-2" onClick={() => navigator.clipboard?.writeText(raw)}>
                 <Copy /> Copy
@@ -467,7 +466,7 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={scopes.content} onChange={(e) => setScopes({ ...scopes, content: e.target.checked })} /> content (uploads and material; keep private)
           </label>
-          <Button variant="green" disabled={pending || (!scopes.intake && !scopes.content && !scopes.webhooks)} onClick={() => run(async () => { const r = await issueApiKeyAction(tenant.id, label, [...(scopes.intake ? ["intake" as const] : []), ...(scopes.content ? ["content" as const] : []), ...(scopes.webhooks ? ["webhooks" as const] : [])]); if (r.ok && r.rawKey) setRaw(r.rawKey); return r; })}>
+          <Button disabled={pending || (!scopes.intake && !scopes.content && !scopes.webhooks)} onClick={() => run(async () => { const r = await issueApiKeyAction(tenant.id, label, [...(scopes.intake ? ["intake" as const] : []), ...(scopes.content ? ["content" as const] : []), ...(scopes.webhooks ? ["webhooks" as const] : [])]); if (r.ok && r.rawKey) setRaw(r.rawKey); return r; })}>
             <KeyRound /> Issue key
           </Button>
         </CardContent>
@@ -492,7 +491,7 @@ function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & {
                   <p className="text-sm font-medium">{MODULE_BY_KEY[m.moduleKey]?.name ?? m.moduleKey}</p>
                   <p className="text-xs text-muted-foreground">{MODULE_BY_KEY[m.moduleKey]?.description}</p>
                 </div>
-                <Button size="sm" variant={m.enabled ? "green" : "outline"} disabled={pending} onClick={() => run(() => setModuleAction(tenant.id, m.moduleKey, !m.enabled))}>
+                <Button size="sm" variant={m.enabled ? "default" : "outline"} disabled={pending} onClick={() => run(() => setModuleAction(tenant.id, m.moduleKey, !m.enabled))}>
                   {m.enabled ? "On" : "Off"}
                 </Button>
               </li>
@@ -513,7 +512,7 @@ function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & {
                   <p className="text-sm font-medium">{AUTOMATION_BY_KEY[a.typeKey]?.name ?? a.typeKey}</p>
                   <p className="text-xs text-muted-foreground">{AUTOMATION_BY_KEY[a.typeKey]?.description}</p>
                 </div>
-                <Button size="sm" variant={a.enabled ? "green" : "outline"} disabled={pending} onClick={() => run(() => setAutomationAction(tenant.id, a.typeKey, !a.enabled))}>
+                <Button size="sm" variant={a.enabled ? "default" : "outline"} disabled={pending} onClick={() => run(() => setAutomationAction(tenant.id, a.typeKey, !a.enabled))}>
                   {a.enabled ? "On" : "Off"}
                 </Button>
               </li>
@@ -541,7 +540,7 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
           {["*", ...OPPORTUNITY_TYPES].map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">
               <span>{t === "*" ? "Everything" : humanize(t)}</span>
-              <select className="h-8 w-56 rounded-xl border bg-card px-2 text-xs" value={rules[t] ?? ""} onChange={(e) => setRules({ ...rules, [t]: e.target.value })}>
+              <select className="h-10 w-56 rounded-lg border border-input bg-card px-3 text-sm" value={rules[t] ?? ""} onChange={(e) => setRules({ ...rules, [t]: e.target.value })}>
                 <option value="">Operators only</option>
                 {members.map((m) => (
                   <option key={m.userId} value={m.userId}>
@@ -551,7 +550,7 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
               </select>
             </label>
           ))}
-          <Button variant="green" disabled={pending} onClick={() => run(() => saveEscalationRulesAction(tenant.id, Object.entries(rules).filter(([, v]) => v).map(([when, notifyUserId]) => ({ when, notifyUserId }))))}>
+          <Button disabled={pending} onClick={() => run(() => saveEscalationRulesAction(tenant.id, Object.entries(rules).filter(([, v]) => v).map(([when, notifyUserId]) => ({ when, notifyUserId }))))}>
             <Check /> Save rules
           </Button>
         </CardContent>
@@ -565,10 +564,10 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
           {OPPORTUNITY_TYPES.map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">
               <span>{humanize(t)}</span>
-              <Input type="number" min={0} className="h-8 w-32 text-xs" value={values[t]} onChange={(e) => setValues({ ...values, [t]: e.target.value })} aria-label={`Value of ${humanize(t)}`} />
+              <Input type="number" min={0} className="w-36" value={values[t]} onChange={(e) => setValues({ ...values, [t]: e.target.value })} aria-label={`Value of ${humanize(t)}`} />
             </label>
           ))}
-          <Button variant="green" disabled={pending} onClick={() => run(() => saveOpportunityValuesAction(tenant.id, Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v)]))))}>
+          <Button disabled={pending} onClick={() => run(() => saveOpportunityValuesAction(tenant.id, Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v)]))))}>
             <Check /> Save values
           </Button>
         </CardContent>
@@ -617,7 +616,7 @@ function InventoryPanel({ tenant, inventory, modules, fmt, pending, run }: Props
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Textarea rows={8} value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={"address,suburb,status,rent,bedrooms,url\n12 Marine Parade,Glenelg,available,620,2,https://…"} aria-label="CSV" />
-          <Button variant="green" disabled={pending || csv.trim().length < 10} onClick={() => run(async () => { const r = await importInventoryAction(tenant.id, csv); if (r.ok) setCsv(""); return r; })}>
+          <Button disabled={pending || csv.trim().length < 10} onClick={() => run(async () => { const r = await importInventoryAction(tenant.id, csv); if (r.ok) setCsv(""); return r; })}>
             <Upload /> Import
           </Button>
         </CardContent>

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { NewWorkspaceForm } from "@/components/console/new-workspace-form";
+import { PageHeader } from "@/components/shell/section";
 import { getConsoleContext } from "@/lib/auth/access";
 import { TEMPLATES } from "@/lib/templates";
 import { REGION_PRESETS } from "@/lib/tenants/provision";
@@ -10,11 +11,8 @@ export default async function NewWorkspacePage() {
   const { user } = await getConsoleContext();
   if (!user.isPlatformAdmin) notFound();
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="page-title">New workspace</h1>
-        <p className="text-sm text-muted-foreground">A client is set up by applying a template. The real-estate template carries the licence line and the listing flows; health and fitness carries memberships and classes; generic covers the rest.</p>
-      </div>
+    <div className="flex flex-col gap-10">
+      <PageHeader kicker="New workspace" title="Set up a client" lede="A client is set up by applying a template. Real estate carries the licence line and the listing flows; health and fitness carries memberships and classes; generic covers the rest." />
       <NewWorkspaceForm templates={TEMPLATES.map((t) => ({ key: t.key, name: t.name, industry: t.industry }))} regions={REGION_PRESETS} />
     </div>
   );

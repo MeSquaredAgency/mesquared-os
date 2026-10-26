@@ -76,7 +76,7 @@ export function LoginForm({ next, demoHint, googleEnabled = false, notice }: { n
         </p>
       )}
       <Button type="submit" disabled={pending} className="mt-1">
-        <LogIn strokeWidth={1.75} /> {pending ? "Signing in…" : "Sign in"}
+        <LogIn /> {pending ? "Signing in…" : "Sign in"}
       </Button>
       {demoHint && <p className="text-center text-xs text-muted-foreground">{demoHint}</p>}
     </form>

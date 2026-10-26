@@ -8,7 +8,7 @@ export function UserMenu({ user, compact = false }: { user: UserRecord; compact?
     return (
       <form action={signOut}>
         <Button type="submit" variant="ghost" size="icon" title={`Sign out ${user.email}`} aria-label="Sign out">
-          <LogOut strokeWidth={1.75} />
+          <LogOut />
         </Button>
       </form>
     );
@@ -21,7 +21,7 @@ export function UserMenu({ user, compact = false }: { user: UserRecord; compact?
       </div>
       <form action={signOut}>
         <Button type="submit" variant="ghost" size="icon" className="size-9" title="Sign out" aria-label="Sign out">
-          <LogOut strokeWidth={1.75} />
+          <LogOut />
         </Button>
       </form>
     </div>
