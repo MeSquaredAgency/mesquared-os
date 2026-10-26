@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { CalendarClock, Check, Link2, Pencil, RefreshCw, Send, Sparkles, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/shell/status-badge";
@@ -90,12 +90,8 @@ function MaterialPanel({ tenantId, sources, draftCounts, pending, run, fmt }: { 
   const [body, setBody] = useState("");
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="material-new-title">
-        <CardHeader>
-          <CardTitle as="h3" id="material-new-title">Add material</CardTitle>
-          <CardDescription>Paste a voice-note transcript, notes from a job, a review, a listing description. The engine drafts one post per connected channel.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+      <Section id="material-new-title" level="h3" title="Add material" lede="Paste a voice-note transcript, notes from a job, a review, a listing description. The engine drafts one post per connected channel.">
+<Panel className="py-5 flex flex-col gap-2">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What is this? e.g. Voice note — owners switching managers" aria-label="Material title" />
           <Textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} placeholder="The material itself, in the business's own words." aria-label="Material text" />
           <div className="flex gap-2">
@@ -119,16 +115,12 @@ function MaterialPanel({ tenantId, sources, draftCounts, pending, run, fmt }: { 
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">Files (photos, recordings) are uploaded with a content-scoped API key to /api/v1/assets; recordings are transcribed when transcription is configured.</p>
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="material-list-title">
-        <CardHeader>
-          <CardTitle as="h3" id="material-list-title">Source material</CardTitle>
-          <CardDescription>Everything the engine has to work from.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        </Panel>
+</Section>
+      <Section id="material-list-title" level="h3" title="Source material" lede="Everything the engine has to work from.">
+<Panel className="py-5">
           {sources.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">Nothing yet.</p>
+            <p className="py-4 text-base text-muted-foreground">Nothing yet.</p>
           ) : (
             <ul className="divide-y">
               {sources.map((s) => (
@@ -147,8 +139,8 @@ function MaterialPanel({ tenantId, sources, draftCounts, pending, run, fmt }: { 
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -159,14 +151,10 @@ function DraftsPanel({ tenantId, drafts, pending, run, fmt }: { tenantId: string
   const [when, setWhen] = useState<Record<string, string>>({});
   const [note, setNote] = useState<Record<string, string>>({});
   return (
-    <Card aria-labelledby="drafts-title">
-      <CardHeader>
-        <CardTitle as="h3" id="drafts-title">Drafts to review</CardTitle>
-        <CardDescription>Approve routine posts here. Anything with prices, names or claims waits for the client in their portal.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Section id="drafts-title" level="h3" title="Drafts to review" lede="Approve routine posts here. Anything with prices, names or claims waits for the client in their portal.">
+<Panel className="py-5">
         {drafts.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">Nothing waiting. Add material or let the daily batch run.</p>
+          <p className="py-4 text-base text-muted-foreground">Nothing waiting. Add material or let the daily batch run.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {drafts.map((a) => {
@@ -226,8 +214,8 @@ function DraftsPanel({ tenantId, drafts, pending, run, fmt }: { tenantId: string
             })}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </Panel>
+</Section>
   );
 }
 
@@ -235,14 +223,10 @@ function QueuePanel({ tenantId, queue, published, pending, run, fmt }: { tenantI
   const [when, setWhen] = useState<Record<string, string>>({});
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="queue-title">
-        <CardHeader>
-          <CardTitle as="h3" id="queue-title">Scheduled</CardTitle>
-          <CardDescription>Goes out at the time shown; move it, publish now, or take it off.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="queue-title" level="h3" title="Scheduled" lede="Goes out at the time shown; move it, publish now, or take it off.">
+<Panel className="py-5">
           {queue.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">Nothing in the queue.</p>
+            <p className="py-4 text-base text-muted-foreground">Nothing in the queue.</p>
           ) : (
             <ul className="divide-y">
               {queue.map((p) => (
@@ -274,16 +258,12 @@ function QueuePanel({ tenantId, queue, published, pending, run, fmt }: { tenantI
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="published-title">
-        <CardHeader>
-          <CardTitle as="h3" id="published-title">Recently published</CardTitle>
-          <CardDescription>With the numbers each platform reports.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        </Panel>
+</Section>
+      <Section id="published-title" level="h3" title="Recently published" lede="With the numbers each platform reports.">
+<Panel className="py-5">
           {published.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">Nothing published yet.</p>
+            <p className="py-4 text-base text-muted-foreground">Nothing published yet.</p>
           ) : (
             <ul className="divide-y">
               {published.map((p) => (
@@ -305,8 +285,8 @@ function QueuePanel({ tenantId, queue, published, pending, run, fmt }: { tenantI
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -315,19 +295,12 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
   const [form, setForm] = useState({ platform: "FACEBOOK" as SocialPlatform, externalAccountId: "", displayName: "", accessToken: "", refreshToken: "", igUserId: "" });
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="channels-list-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle as="h3" id="channels-list-title">Connected channels</CardTitle>
-            <CardDescription>Numbers refresh daily; sync now pulls the inbox, reviews and numbers.</CardDescription>
-          </div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncNowAction(tenantId))}>
+      <Section id="channels-list-title" level="h3" title="Connected channels" lede="Numbers refresh daily; sync now pulls the inbox, reviews and numbers." action={<><Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncNowAction(tenantId))}>
             <RefreshCw /> Sync now
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </Button></>}>
+<Panel className="py-5">
           {channels.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No channels yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No channels yet.</p>
           ) : (
             <ul className="divide-y">
               {channels.map((s) => (
@@ -347,14 +320,10 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="connect-title">
-        <CardHeader>
-          <CardTitle as="h3" id="connect-title">Connect a channel</CardTitle>
-          <CardDescription>Paste the account id and a token from the platform&apos;s developer flow. Tokens are encrypted and never shown again.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="connect-title" level="h3" title="Connect a channel" lede="Paste the account id and a token from the platform&apos;s developer flow. Tokens are encrypted and never shown again.">
+<Panel className="py-5 flex flex-col gap-2">
           <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as SocialPlatform })} aria-label="Platform">
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>
@@ -379,8 +348,8 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
           >
             <Link2 /> Connect
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }

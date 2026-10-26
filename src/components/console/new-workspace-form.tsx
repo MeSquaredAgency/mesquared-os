@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { provisionTenantAction } from "@/lib/tenants/actions";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +23,8 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
   const isRealEstate = templates.find((t) => t.key === form.templateKey)?.industry === "REAL_ESTATE";
 
   return (
-    <Card aria-labelledby="new-ws-title" className="max-w-2xl">
-      <CardHeader>
-        <CardTitle id="new-ws-title">New workspace</CardTitle>
-        <CardDescription>Pick the industry template, name the business, and set where it is. Everything else is filled in from the template and can be changed in Settings.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <Section id="new-ws-title" title="New workspace" lede="Pick the industry template, name the business, and set where it is. Everything else is filled in from the template and can be changed in Settings." className="max-w-2xl">
+<Panel className="py-5 flex flex-col gap-3">
         {notice && (
           <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
             {notice.text}
@@ -96,7 +92,7 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
         >
           Create workspace
         </Button>
-      </CardContent>
-    </Card>
+      </Panel>
+</Section>
   );
 }

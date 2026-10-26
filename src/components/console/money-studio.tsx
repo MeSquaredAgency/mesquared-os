@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Check, Link2, RefreshCw, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shell/status-badge";
 import type { PacingStatus } from "@/lib/ads/sync";
@@ -71,21 +71,12 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
   const m = (c: number) => formatMoney(c, fmt.currency, fmt.locale);
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="ads-accounts-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle as="h3" id="ads-accounts-title">Ad accounts and pacing</CardTitle>
-            <CardDescription>
-              {pacing ? `${m(pacing.spentCents)} spent of ${m(pacing.budgetCents)} planned by day ${pacing.daysElapsed} of ${pacing.daysInMonth}${pacing.driftPct !== null ? ` (${pacing.driftPct > 0 ? "+" : ""}${pacing.driftPct}% vs plan, heading for ${m(pacing.projectedCents)})` : ""}.` : "Set a monthly budget on each account to get pacing alerts."}
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncAdsNowAction(tenantId))}>
+      <Section id="ads-accounts-title" level="h3" title="Ad accounts and pacing" lede={<>{pacing ? `${m(pacing.spentCents)} spent of ${m(pacing.budgetCents)} planned by day ${pacing.daysElapsed} of ${pacing.daysInMonth}${pacing.driftPct !== null ? ` (${pacing.driftPct > 0 ? "+" : ""}${pacing.driftPct}% vs plan, heading for ${m(pacing.projectedCents)})` : ""}.` : "Set a monthly budget on each account to get pacing alerts."}</>} action={<><Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncAdsNowAction(tenantId))}>
             <RefreshCw /> Sync now
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </Button></>}>
+<Panel className="py-5">
           {adAccounts.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No ad accounts connected.</p>
+            <p className="py-4 text-base text-muted-foreground">No ad accounts connected.</p>
           ) : (
             <ul className="divide-y">
               {adAccounts.map((a) => (
@@ -110,14 +101,10 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="ads-connect-title">
-        <CardHeader>
-          <CardTitle as="h3" id="ads-connect-title">Connect an ad account</CardTitle>
-          <CardDescription>Read-only access: spend and results only. Tokens are encrypted and never shown again.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="ads-connect-title" level="h3" title="Connect an ad account" lede="Read-only access: spend and results only. Tokens are encrypted and never shown again.">
+<Panel className="py-5 flex flex-col gap-2">
           <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as "META" | "GOOGLE_ADS" })} aria-label="Platform">
             <option value="META">Meta (Facebook & Instagram)</option>
             <option value="GOOGLE_ADS">Google Ads</option>
@@ -145,8 +132,8 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
           >
             <Link2 /> Connect
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -155,22 +142,15 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
   const [form, setForm] = useState({ provider: "XERO" as "SQUARE" | "STRIPE" | "XERO", externalAccountId: "", label: "", accessToken: "", refreshToken: "", xeroTenantId: "", locationId: "", webhookSecret: "" });
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="invoices-ops-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle as="h3" id="invoices-ops-title">Invoices</CardTitle>
-            <CardDescription>Reminders go out before the due date and chase while overdue; after the last one a person is asked to call.</CardDescription>
-          </div>
-          <div className="flex gap-2">
+      <Section id="invoices-ops-title" level="h3" title="Invoices" lede="Reminders go out before the due date and chase while overdue; after the last one a person is asked to call." action={<><div className="flex gap-2">
             <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncFinanceNowAction(tenantId))}>
               <RefreshCw /> Sync
             </Button>
             <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => runRemindersNowAction(tenantId))}>
               <Send /> Run reminders
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </div></>}>
+<Panel className="py-5">
           {integrations.length > 0 && (
             <ul className="mb-3 flex flex-wrap gap-2 text-xs">
               {integrations.map((i) => (
@@ -182,7 +162,7 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
             </ul>
           )}
           {invoices.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No invoices yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No invoices yet.</p>
           ) : (
             <ul className="divide-y">
               {invoices.slice(0, 15).map((i) => (
@@ -208,14 +188,10 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="finance-connect-title">
-        <CardHeader>
-          <CardTitle as="h3" id="finance-connect-title">Connect a finance provider</CardTitle>
-          <CardDescription>Read-only. Square and Stripe also push payments in real time through their webhook; paste the signing secret for that.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="finance-connect-title" level="h3" title="Connect a finance provider" lede="Read-only. Square and Stripe also push payments in real time through their webhook; paste the signing secret for that.">
+<Panel className="py-5 flex flex-col gap-2">
           <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as "SQUARE" | "STRIPE" | "XERO" })} aria-label="Provider">
             <option value="XERO">Xero</option>
             <option value="SQUARE">Square</option>
@@ -244,8 +220,8 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
           >
             <Link2 /> Connect
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -254,19 +230,12 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
   const [form, setForm] = useState({ destination: "", label: "", code: "", source: "", medium: "", campaign: "" });
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="links-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle as="h3" id="links-title">Tracked links</CardTitle>
-            <CardDescription>Use these on signboards, flyers, bios and posts so the lead carries its campaign.</CardDescription>
-          </div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => rollupSiteNowAction(tenantId))}>
+      <Section id="links-title" level="h3" title="Tracked links" lede="Use these on signboards, flyers, bios and posts so the lead carries its campaign." action={<><Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => rollupSiteNowAction(tenantId))}>
             <RefreshCw /> Website numbers
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </Button></>}>
+<Panel className="py-5">
           {links.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No links yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No links yet.</p>
           ) : (
             <ul className="divide-y">
               {links.map((l) => (
@@ -281,14 +250,10 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="links-new-title">
-        <CardHeader>
-          <CardTitle as="h3" id="links-new-title">New tracked link</CardTitle>
-          <CardDescription>Short code defaults to {tenantSlug}-xxxxxx.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="links-new-title" level="h3" title="New tracked link" lede={<>Short code defaults to {tenantSlug}-xxxxxx.</>}>
+<Panel className="py-5 flex flex-col gap-2">
           <Input placeholder="Destination URL (https://…)" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} aria-label="Destination" />
           <Input placeholder="Label, e.g. Signboard QR — Glenelg" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} aria-label="Label" />
           <div className="grid grid-cols-3 gap-2">
@@ -309,8 +274,8 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
           >
             <Link2 /> Create link
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }

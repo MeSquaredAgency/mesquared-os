@@ -5,8 +5,8 @@ import { useEffect, useState, useTransition } from "react";
 import { Check, Copy, KeyRound, Trash2, UserPlus, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
@@ -117,24 +117,16 @@ function CheckList({ checks }: { checks: ReadinessCheck[] }) {
 function ReadinessPanel({ tenant, checks, platform }: { tenant: TenantSummary; checks: ReadinessCheck[]; platform: ReadinessCheck[] }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="readiness-ws-title">
-        <CardHeader>
-          <CardTitle id="readiness-ws-title">{tenant.name}: workspace</CardTitle>
-          <CardDescription>The success test: every lead answered in minutes, missed opportunities visible, a week of content approvable, ad spend tied to leads.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="readiness-ws-title" title={<>{tenant.name}: workspace</>} lede="The success test: every lead answered in minutes, missed opportunities visible, a week of content approvable, ad spend tied to leads.">
+<Panel className="py-5">
           <CheckList checks={checks} />
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="readiness-platform-title">
-        <CardHeader>
-          <CardTitle id="readiness-platform-title">Deployment</CardTitle>
-          <CardDescription>Applies to every workspace on this deployment.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        </Panel>
+</Section>
+      <Section id="readiness-platform-title" title="Deployment" lede="Applies to every workspace on this deployment.">
+<Panel className="py-5">
           <CheckList checks={platform} />
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -182,12 +174,8 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
   );
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Business and service levels</CardTitle>
-          <CardDescription>How messages are signed, how fast leads must be answered, when not to message.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+      <Section id="business-and-service-levels-title" title="Business and service levels" lede="How messages are signed, how fast leads must be answered, when not to message.">
+<Panel className="py-5 flex flex-col gap-3">
           {field("Business name", "name")}
           <div className="grid gap-3 sm:grid-cols-2">
             {field("Sender name", "fromName")}
@@ -212,14 +200,10 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
             {field("YouTube channel", "youtube", { placeholder: "https://www.youtube.com/@…" })}
           </div>
           {area("Offices (one per line)", "addresses", "Adelaide: Level 1 / 1 Example Rd, Suburb\nMount Gambier: 1 Example St")}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Qualification, brand and compliance</CardTitle>
-          <CardDescription>Read by the lead qualifier and enforced on every piece of content.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+        </Panel>
+</Section>
+      <Section id="qualification-brand-and-compliance-title" title="Qualification, brand and compliance" lede="Read by the lead qualifier and enforced on every piece of content.">
+<Panel className="py-5 flex flex-col gap-3">
           {area("What makes a lead worth a person's time (one per line)", "greenCriteria", "wants an appraisal\nowner of an investment property")}
           {area("Enquiries handled automatically (one per line)", "autoHandled", "rental availability questions\ninvoice and supplier emails")}
           {field("Services people ask for (comma separated)", "highIntentServices", { placeholder: "appraisal, property management" })}
@@ -267,8 +251,8 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
           >
             <Check /> Save settings
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -289,14 +273,10 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
   const assigned = people.filter((p) => p.via === "operator");
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>People at {tenant.name}</CardTitle>
-          <CardDescription>Roles decide what each person sees: finances, approvals, lead alerts, user management, all records or own.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="people-at-title" title={<>People at {tenant.name}</>} lede="Roles decide what each person sees: finances, approvals, lead alerts, user management, all records or own.">
+<Panel className="py-5">
           {members.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">Nobody from the client yet.</p>
+            <p className="py-4 text-base text-muted-foreground">Nobody from the client yet.</p>
           ) : (
             <ul className="divide-y">
               {members.map((p) => (
@@ -361,14 +341,10 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite a person</CardTitle>
-          <CardDescription>New accounts get a one-time password to hand over privately. They sign in at /login.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="invite-a-person-title" title="Invite a person" lede="New accounts get a one-time password to hand over privately. They sign in at /login.">
+<Panel className="py-5 flex flex-col gap-2">
           {reveal && (
             <div className="rounded-lg border bg-muted p-4 text-sm" role="status">
               <p className="font-medium">{reveal.email}</p>
@@ -396,8 +372,8 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           <Button disabled={pending || !invite.email.includes("@") || !invite.roleId} onClick={() => run(async () => { const r = await inviteMemberAction(tenant.id, invite); if (r.ok) { if (r.temporaryPassword) setReveal({ email: invite.email, password: r.temporaryPassword }); setInvite({ ...invite, email: "", name: "" }); } return r; })}>
             <UserPlus /> Invite
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -408,14 +384,10 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
   const [raw, setRaw] = useState<string | null>(null);
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>API keys</CardTitle>
-          <CardDescription>Intake keys go in public web forms, call tracking and review feeds. Content keys upload files and material and must stay private.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="api-keys-title" title="API keys" lede="Intake keys go in public web forms, call tracking and review feeds. Content keys upload files and material and must stay private.">
+<Panel className="py-5">
           {keys.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">No keys issued yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No keys issued yet.</p>
           ) : (
             <ul className="divide-y">
               {keys.map((k) => (
@@ -440,14 +412,10 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Issue a key</CardTitle>
-          <CardDescription>The key is shown once. Put it in the form as a hidden field or the x-api-key header.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="issue-a-key-title" title="Issue a key" lede="The key is shown once. Put it in the form as a hidden field or the x-api-key header.">
+<Panel className="py-5 flex flex-col gap-2">
           {raw && (
             <div className="rounded-lg border bg-muted p-4">
               <p className="break-all font-mono text-sm">{raw}</p>
@@ -469,8 +437,8 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
           <Button disabled={pending || (!scopes.intake && !scopes.content && !scopes.webhooks)} onClick={() => run(async () => { const r = await issueApiKeyAction(tenant.id, label, [...(scopes.intake ? ["intake" as const] : []), ...(scopes.content ? ["content" as const] : []), ...(scopes.webhooks ? ["webhooks" as const] : [])]); if (r.ok && r.rawKey) setRaw(r.rawKey); return r; })}>
             <KeyRound /> Issue key
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -478,12 +446,8 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
 function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & { pending: boolean; run: Run }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Modules</CardTitle>
-          <CardDescription>What this workspace runs.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="modules-title" title="Modules" lede="What this workspace runs.">
+<Panel className="py-5">
           <ul className="divide-y">
             {modules.map((m) => (
               <li key={m.moduleKey} className="flex items-center justify-between gap-2 py-2">
@@ -497,14 +461,10 @@ function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & {
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Automations</CardTitle>
-          <CardDescription>Each one logs what it did in plain words. Reactivation stays off for real estate unless the client asks.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        </Panel>
+</Section>
+      <Section id="automations-title" title="Automations" lede="Each one logs what it did in plain words. Reactivation stays off for real estate unless the client asks.">
+<Panel className="py-5">
           <ul className="divide-y">
             {automations.map((a) => (
               <li key={a.typeKey} className="flex items-center justify-between gap-2 py-2">
@@ -518,8 +478,8 @@ function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & {
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -530,12 +490,8 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
   const [values, setValues] = useState<Record<string, string>>(Object.fromEntries(OPPORTUNITY_TYPES.map((t) => [t, String((tenant.opportunityValues[t] ?? 0) / 100)])));
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Who at the client hears about what</CardTitle>
-          <CardDescription>By default missed opportunities go to Me² operators. Name a client person here and they are emailed as well.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+      <Section id="who-at-the-client-hears-about-what-title" title="Who at the client hears about what" lede="By default missed opportunities go to Me² operators. Name a client person here and they are emailed as well.">
+<Panel className="py-5 flex flex-col gap-2">
           {members.length === 0 && <p className="text-sm text-muted-foreground">Invite someone from the client first.</p>}
           {["*", ...OPPORTUNITY_TYPES].map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">
@@ -553,14 +509,10 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
           <Button disabled={pending} onClick={() => run(() => saveEscalationRulesAction(tenant.id, Object.entries(rules).filter(([, v]) => v).map(([when, notifyUserId]) => ({ when, notifyUserId }))))}>
             <Check /> Save rules
           </Button>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>What a missed opportunity is worth</CardTitle>
-          <CardDescription>In {fmt.currency}. Drives the “money at risk” and “recovered” figures the client sees.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="what-a-missed-opportunity-is-worth-title" title="What a missed opportunity is worth" lede={<>In {fmt.currency}. Drives the “money at risk” and “recovered” figures the client sees.</>}>
+<Panel className="py-5 flex flex-col gap-2">
           {OPPORTUNITY_TYPES.map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">
               <span>{humanize(t)}</span>
@@ -570,8 +522,8 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
           <Button disabled={pending} onClick={() => run(() => saveOpportunityValuesAction(tenant.id, Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v)]))))}>
             <Check /> Save values
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -582,14 +534,10 @@ function InventoryPanel({ tenant, inventory, modules, fmt, pending, run }: Props
   const money = (c: number | null) => (c === null ? "" : (c / 100).toLocaleString(fmt.locale, { style: "currency", currency: fmt.currency, maximumFractionDigits: 0 }));
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Listings and stock</CardTitle>
-          <CardDescription>{on ? "New active listings become content-engine material; an enquiry that names one gets its link in the automatic reply." : "The inventory module is off for this workspace; switch it on under Modules to use this."}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section id="listings-and-stock-title" title="Listings and stock" lede={<>{on ? "New active listings become content-engine material; an enquiry that names one gets its link in the automatic reply." : "The inventory module is off for this workspace; switch it on under Modules to use this."}</>}>
+<Panel className="py-5">
           {inventory.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">Nothing imported yet.</p>
+            <p className="py-4 text-base text-muted-foreground">Nothing imported yet.</p>
           ) : (
             <ul className="divide-y">
               {inventory.slice(0, 30).map((i) => (
@@ -607,20 +555,16 @@ function InventoryPanel({ tenant, inventory, modules, fmt, pending, run }: Props
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Import from CSV</CardTitle>
-          <CardDescription>A header row, then one item per line. Columns understood: address or name, status, rent, price, bedrooms, bathrooms, suburb, url, available, reference, quantity.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="import-from-csv-title" title="Import from CSV" lede="A header row, then one item per line. Columns understood: address or name, status, rent, price, bedrooms, bathrooms, suburb, url, available, reference, quantity.">
+<Panel className="py-5 flex flex-col gap-2">
           <Textarea rows={8} value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={"address,suburb,status,rent,bedrooms,url\n12 Marine Parade,Glenelg,available,620,2,https://…"} aria-label="CSV" />
           <Button disabled={pending || csv.trim().length < 10} onClick={() => run(async () => { const r = await importInventoryAction(tenant.id, csv); if (r.ok) setCsv(""); return r; })}>
             <Upload /> Import
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }

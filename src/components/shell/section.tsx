@@ -9,20 +9,23 @@ interface SectionProps {
   lede?: ReactNode;
   /** One action at the right of the header: a line button or a pair of numbers. */
   action?: ReactNode;
+  /** h3 for a section nested inside another section's content. */
+  level?: "h2" | "h3";
   children: ReactNode;
   className?: string;
 }
 
 /** The page rhythm: kicker → headline → lede → content, one idea per section. */
-export function Section({ id, kicker, title, lede, action, children, className }: SectionProps) {
+export function Section({ id, kicker, title, lede, action, level = "h2", children, className }: SectionProps) {
+  const Heading = level;
   return (
     <section aria-labelledby={id} className={cn("flex flex-col gap-5", className)}>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
         <div className="flex flex-col gap-2">
           {kicker && <p className="kicker">{kicker}</p>}
-          <h2 id={id} className="headline">
+          <Heading id={id} className={level === "h2" ? "headline" : "text-lg leading-tight"}>
             {title}
-          </h2>
+          </Heading>
           {lede && <p className="lede text-base">{lede}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}

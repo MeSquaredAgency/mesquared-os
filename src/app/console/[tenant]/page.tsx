@@ -3,13 +3,12 @@ import { notFound } from "next/navigation";
 import { ArrowUpRight, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContentStudio } from "@/components/console/content-studio";
 import { MoneyStudio } from "@/components/console/money-studio";
 import { pacingStatus } from "@/lib/ads/sync";
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { OperationsPanels } from "@/components/console/operations-panels";
-import { PageHeader, Section } from "@/components/shell/section";
+import { PageHeader, Panel, Section } from "@/components/shell/section";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { NeedsYou } from "@/components/portal/needs-you";
@@ -90,59 +89,47 @@ export default async function ConsoleTenantPage({ params }: { params: Promise<{ 
       <NeedsYou leads={home.needsYou} fmt={fmt} />
       <MissedOpportunities missed={home.missed} fmt={fmt} />
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card aria-labelledby="integrations-title">
-          <CardHeader>
-            <CardTitle id="integrations-title">Integrations</CardTitle>
-            <CardDescription>Connected systems and their state.</CardDescription>
-          </CardHeader>
-          <CardContent>
+      <div className="grid gap-10 xl:grid-cols-3 xl:gap-8">
+        <Section id="integrations-title" title="Integrations" lede="Connected systems and their state.">
+          <Panel>
             <ul className="divide-y">
               {config.integrations.map((i) => (
-                <li key={i.id} className="flex items-center justify-between gap-2 py-2">
+                <li key={i.id} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm">{i.label ?? humanize(i.provider)}</p>
-                    {i.lastError && <p className="truncate text-xs text-red-text">{i.lastError}</p>}
+                    <p className="truncate text-base">{i.label ?? humanize(i.provider)}</p>
+                    {i.lastError && <p className="truncate text-sm text-red-text">{i.lastError}</p>}
                   </div>
                   <Badge variant={i.status === "CONNECTED" ? "green" : i.status === "PENDING" ? "outline" : "red"}>{humanize(i.status)}</Badge>
                 </li>
               ))}
-              {config.integrations.length === 0 && <li className="py-2 text-sm text-muted-foreground">Nothing connected yet.</li>}
+              {config.integrations.length === 0 && <li className="py-4 text-base text-muted-foreground">Nothing connected yet.</li>}
             </ul>
-          </CardContent>
-        </Card>
-        <Card aria-labelledby="modules-title">
-          <CardHeader>
-            <CardTitle id="modules-title">Modules</CardTitle>
-            <CardDescription>What this workspace has switched on.</CardDescription>
-          </CardHeader>
-          <CardContent>
+          </Panel>
+        </Section>
+        <Section id="modules-title" title="Modules" lede="What this workspace has switched on.">
+          <Panel>
             <ul className="divide-y">
               {config.modules.map((m) => (
-                <li key={m.moduleKey} className="flex items-center justify-between gap-2 py-2">
-                  <span className="text-sm">{MODULE_BY_KEY[m.moduleKey]?.name ?? m.moduleKey}</span>
+                <li key={m.moduleKey} className="flex items-center justify-between gap-3 py-3">
+                  <span className="text-base">{MODULE_BY_KEY[m.moduleKey]?.name ?? m.moduleKey}</span>
                   <Badge variant={m.enabled ? "green" : "muted"}>{m.enabled ? "On" : "Off"}</Badge>
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-        <Card aria-labelledby="automations-title">
-          <CardHeader>
-            <CardTitle id="automations-title">Automations</CardTitle>
-            <CardDescription>Reusable types enabled for this tenant.</CardDescription>
-          </CardHeader>
-          <CardContent>
+          </Panel>
+        </Section>
+        <Section id="automations-title" title="Automations" lede="Reusable types enabled for this workspace.">
+          <Panel>
             <ul className="divide-y">
               {config.automations.map((a) => (
-                <li key={a.typeKey} className="flex items-center justify-between gap-2 py-2">
-                  <span className="text-sm">{AUTOMATION_BY_KEY[a.typeKey]?.name ?? a.typeKey}</span>
+                <li key={a.typeKey} className="flex items-center justify-between gap-3 py-3">
+                  <span className="text-base">{AUTOMATION_BY_KEY[a.typeKey]?.name ?? a.typeKey}</span>
                   <Badge variant={a.enabled ? "green" : "muted"}>{a.enabled ? "On" : "Off"}</Badge>
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
+          </Panel>
+        </Section>
       </div>
 
       <OperationsPanels tenantId={tenant.id} fmt={fmt} bookings={bookingRows} requests={requestRows} reviews={reviews} leads={leads} />

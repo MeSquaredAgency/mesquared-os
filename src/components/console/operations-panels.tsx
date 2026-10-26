@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Check, FileQuestion, MessageSquareReply, UserX, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { closeRequest, markReviewReplied, openRequest, setBookingOutcome } from "@/lib/console/actions";
 import type { BookingRecord, InformationRequestRecord, LeadRecord, ReviewRecord } from "@/lib/types";
@@ -35,14 +35,10 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
         </p>
       )}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card aria-labelledby="appointments-title">
-          <CardHeader>
-            <CardTitle id="appointments-title">Appointments</CardTitle>
-            <CardDescription>Mark outcomes so follow-ups, review requests and no-show recovery run.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Section id="appointments-title" title="Appointments" lede="Mark outcomes so follow-ups, review requests and no-show recovery run.">
+<Panel className="py-5">
             {bookings.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">No scheduled appointments.</p>
+              <p className="py-4 text-base text-muted-foreground">No scheduled appointments.</p>
             ) : (
               <ul className="divide-y">
                 {bookings.map((b) => (
@@ -68,15 +64,11 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
 
-        <Card aria-labelledby="requests-title">
-          <CardHeader>
-            <CardTitle id="requests-title">Waiting on</CardTitle>
-            <CardDescription>Documents and information being chased automatically.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+        <Section id="requests-title" title="Waiting on" lede="Documents and information being chased automatically.">
+<Panel className="py-5 flex flex-col gap-3">
             <ul className="divide-y">
               {requests.map((r) => (
                 <li key={r.id} className="flex items-center justify-between gap-2 py-2.5">
@@ -131,17 +123,13 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
 
-        <Card aria-labelledby="reviews-title">
-          <CardHeader>
-            <CardTitle id="reviews-title">Reviews</CardTitle>
-            <CardDescription>Unanswered reviews become missed opportunities after two days.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Section id="reviews-title" title="Reviews" lede="Unanswered reviews become missed opportunities after two days.">
+<Panel className="py-5">
             {reviews.length === 0 ? (
-              <p className="py-4 text-sm text-muted-foreground">No reviews yet.</p>
+              <p className="py-4 text-base text-muted-foreground">No reviews yet.</p>
             ) : (
               <ul className="divide-y">
                 {reviews.map((rv) => (
@@ -164,8 +152,8 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
+</Section>
       </div>
     </div>
   );
