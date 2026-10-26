@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SettingsStudio } from "@/components/console/settings-studio";
+import { PageHeader } from "@/components/shell/section";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { platformReadiness, tenantReadiness } from "@/lib/launch/readiness";
@@ -19,18 +20,19 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{tenant.name}: settings</h1>
-          <p className="text-sm text-muted-foreground">Everything about this client is configuration here, never code. Changes apply straight away.</p>
-        </div>
-        <Button asChild variant="outline">
-          <Link href={`/console/${tenant.slug}`}>
-            <ArrowLeft /> Back to workspace
-          </Link>
-        </Button>
-      </div>
+    <div className="flex flex-col gap-10">
+      <PageHeader
+        kicker={tenant.name}
+        title="Settings"
+        lede="Everything about this client is configuration here, never code. Changes apply straight away."
+        actions={
+          <Button asChild variant="outline">
+            <Link href={`/console/${tenant.slug}`}>
+              <ArrowLeft /> Back to workspace
+            </Link>
+          </Button>
+        }
+      />
       <SettingsStudio
         tenant={tenant}
         isAdmin={user.isPlatformAdmin}

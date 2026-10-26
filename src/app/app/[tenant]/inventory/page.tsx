@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, PageHeader, Panel } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { describeListing } from "@/lib/inventory";
@@ -21,46 +21,35 @@ export default async function InventoryPage({ params }: { params: Promise<{ tena
   const label = tenant.industry === "REAL_ESTATE" ? "Listings" : "Inventory";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{label}</h1>
-        <p className="text-sm text-muted-foreground">
-          {active.length} active of {items.length}. New listings are drafted into posts automatically, and enquiries that name one get its details in the automatic reply.
-        </p>
-      </div>
-      <Card aria-labelledby="inventory-title">
-        <CardHeader>
-          <CardTitle id="inventory-title">On the books</CardTitle>
-          <CardDescription>Imported by Me² from your listing feed or spreadsheet.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Nothing imported yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {items.map((i) => (
-                <li key={i.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{i.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {describeListing(i, tenant.locale, tenant.currency).replace(`${i.name} · `, "") || humanize(i.type)} · updated {formatDateTime(i.updatedAt, fmt).replace(/,.*$/, "")}
-                      {typeof i.attributes.url === "string" && (
-                        <>
-                          {" · "}
-                          <a className="underline" href={i.attributes.url} target="_blank" rel="noreferrer">
-                            View
-                          </a>
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <Badge variant={i.status === "ACTIVE" ? "green" : i.status === "LOW" ? "secondary" : "muted"}>{humanize(i.status)}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex flex-col gap-10">
+      <PageHeader kicker={label} title={`${active.length} active of ${items.length} on the books`} lede="Imported by Me² from your feed or spreadsheet. New listings are drafted into posts, and enquiries that name one get its details in the reply." />
+      {items.length === 0 ? (
+        <Empty>Nothing imported yet.</Empty>
+      ) : (
+        <Panel>
+          <ul className="divide-y">
+            {items.map((i) => (
+              <li key={i.id} className="flex items-center justify-between gap-6 py-4">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <p className="truncate text-base font-medium">{i.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {describeListing(i, tenant.locale, tenant.currency).replace(`${i.name} · `, "") || humanize(i.type)} · updated {formatDateTime(i.updatedAt, fmt).replace(/,.*$/, "")}
+                    {typeof i.attributes.url === "string" && (
+                      <>
+                        {" · "}
+                        <a className="underline underline-offset-4" href={i.attributes.url} target="_blank" rel="noreferrer">
+                          View
+                        </a>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <Badge variant={i.status === "ACTIVE" ? "green" : i.status === "LOW" ? "secondary" : "muted"}>{humanize(i.status)}</Badge>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
     </div>
   );
 }

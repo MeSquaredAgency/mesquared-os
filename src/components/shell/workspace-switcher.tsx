@@ -14,14 +14,14 @@ export function WorkspaceSwitcher({ current, options, basePath }: { current: Ten
   const single = options.length <= 1;
 
   const trigger = (
-    <Button variant="outline" className="h-11 w-full justify-between px-3" aria-label={`Business: ${current.name}${single ? "" : ". Switch business"}`} disabled={single}>
+    <Button variant="outline" className="h-12 w-full justify-between rounded-xl bg-card px-3 hover:border-border hover:bg-accent" aria-label={`Business: ${current.name}${single ? "" : ". Switch business"}`} disabled={single}>
       <span className="flex min-w-0 items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
           <Building2 className="size-3.5" />
         </span>
         <span className="flex min-w-0 flex-col items-start leading-tight">
           <span className="truncate text-sm font-medium">{current.name}</span>
-          <span className="text-[11px] text-muted-foreground">Business</span>
+          <span className="text-xs text-muted-foreground">Business</span>
         </span>
       </span>
       {!single && <ChevronsUpDown className="size-4 text-muted-foreground" aria-hidden="true" />}

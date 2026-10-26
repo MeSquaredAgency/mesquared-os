@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Check, Link2, RefreshCw, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Panel, Section } from "@/components/shell/section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shell/status-badge";
 import type { PacingStatus } from "@/lib/ads/sync";
@@ -37,7 +37,7 @@ export function MoneyStudio({ tenantId, tenantSlug, fmt, adAccounts, pacing, fin
   return (
     <div className="flex flex-col gap-3">
       {notice && (
-        <p role="status" aria-live="polite" className={cn("rounded-md px-3 py-2 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
+        <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.tone === "ok" ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
           {notice.text}
         </p>
       )}
@@ -71,21 +71,12 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
   const m = (c: number) => formatMoney(c, fmt.currency, fmt.locale);
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="ads-accounts-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle id="ads-accounts-title">Ad accounts and pacing</CardTitle>
-            <CardDescription>
-              {pacing ? `${m(pacing.spentCents)} spent of ${m(pacing.budgetCents)} planned by day ${pacing.daysElapsed} of ${pacing.daysInMonth}${pacing.driftPct !== null ? ` (${pacing.driftPct > 0 ? "+" : ""}${pacing.driftPct}% vs plan, heading for ${m(pacing.projectedCents)})` : ""}.` : "Set a monthly budget on each account to get pacing alerts."}
-            </CardDescription>
-          </div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncAdsNowAction(tenantId))}>
+      <Section id="ads-accounts-title" level="h3" title="Ad accounts and pacing" lede={<>{pacing ? `${m(pacing.spentCents)} spent of ${m(pacing.budgetCents)} planned by day ${pacing.daysElapsed} of ${pacing.daysInMonth}${pacing.driftPct !== null ? ` (${pacing.driftPct > 0 ? "+" : ""}${pacing.driftPct}% vs plan, heading for ${m(pacing.projectedCents)})` : ""}.` : "Set a monthly budget on each account to get pacing alerts."}</>} action={<><Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncAdsNowAction(tenantId))}>
             <RefreshCw /> Sync now
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </Button></>}>
+<Panel className="py-5">
           {adAccounts.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No ad accounts connected.</p>
+            <p className="py-4 text-base text-muted-foreground">No ad accounts connected.</p>
           ) : (
             <ul className="divide-y">
               {adAccounts.map((a) => (
@@ -100,7 +91,7 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Input className="h-8 w-28 text-xs" type="number" min={0} placeholder={a.monthlyBudgetCents != null ? String(a.monthlyBudgetCents / 100) : "Budget / month"} value={budgets[a.id] ?? ""} onChange={(e) => setBudgets({ ...budgets, [a.id]: e.target.value })} aria-label={`Monthly budget for ${a.name ?? a.externalAccountId}`} />
+                    <Input className="w-36" type="number" min={0} placeholder={a.monthlyBudgetCents != null ? String(a.monthlyBudgetCents / 100) : "Budget / month"} value={budgets[a.id] ?? ""} onChange={(e) => setBudgets({ ...budgets, [a.id]: e.target.value })} aria-label={`Monthly budget for ${a.name ?? a.externalAccountId}`} />
                     <Button size="sm" variant="outline" disabled={pending || budgets[a.id] === undefined || budgets[a.id] === ""} onClick={() => run(() => setAdBudgetAction(tenantId, a.id, Number(budgets[a.id])))}>
                       <Check /> Save
                     </Button>
@@ -110,15 +101,11 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="ads-connect-title">
-        <CardHeader>
-          <CardTitle id="ads-connect-title">Connect an ad account</CardTitle>
-          <CardDescription>Read-only access: spend and results only. Tokens are encrypted and never shown again.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as "META" | "GOOGLE_ADS" })} aria-label="Platform">
+        </Panel>
+</Section>
+      <Section id="ads-connect-title" level="h3" title="Connect an ad account" lede="Read-only access: spend and results only. Tokens are encrypted and never shown again.">
+<Panel className="py-5 flex flex-col gap-2">
+          <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as "META" | "GOOGLE_ADS" })} aria-label="Platform">
             <option value="META">Meta (Facebook & Instagram)</option>
             <option value="GOOGLE_ADS">Google Ads</option>
           </select>
@@ -134,7 +121,6 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
             </>
           )}
           <Button
-            variant="green"
             disabled={pending || !form.externalAccountId || form.accessToken.length < 8}
             onClick={() =>
               run(async () => {
@@ -146,8 +132,8 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
           >
             <Link2 /> Connect
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -156,26 +142,19 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
   const [form, setForm] = useState({ provider: "XERO" as "SQUARE" | "STRIPE" | "XERO", externalAccountId: "", label: "", accessToken: "", refreshToken: "", xeroTenantId: "", locationId: "", webhookSecret: "" });
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="invoices-ops-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle id="invoices-ops-title">Invoices</CardTitle>
-            <CardDescription>Reminders go out before the due date and chase while overdue; after the last one a person is asked to call.</CardDescription>
-          </div>
-          <div className="flex gap-2">
+      <Section id="invoices-ops-title" level="h3" title="Invoices" lede="Reminders go out before the due date and chase while overdue; after the last one a person is asked to call." action={<><div className="flex gap-2">
             <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => syncFinanceNowAction(tenantId))}>
               <RefreshCw /> Sync
             </Button>
             <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => runRemindersNowAction(tenantId))}>
               <Send /> Run reminders
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </div></>}>
+<Panel className="py-5">
           {integrations.length > 0 && (
             <ul className="mb-3 flex flex-wrap gap-2 text-xs">
               {integrations.map((i) => (
-                <li key={i.id} className="rounded-md border px-2 py-1">
+                <li key={i.id} className="rounded-lg border px-3 py-2">
                   {i.label ?? i.provider} <Badge variant={i.status === "CONNECTED" ? "green" : "red"} className="ml-1">{i.status === "CONNECTED" ? "Connected" : "Needs attention"}</Badge>
                   {(i.provider === "SQUARE" || i.provider === "STRIPE") && <span className="ml-2 text-muted-foreground">webhook: {appUrl}/api/v1/webhooks/{i.provider.toLowerCase()}/{i.id}</span>}
                 </li>
@@ -183,7 +162,7 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
             </ul>
           )}
           {invoices.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No invoices yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No invoices yet.</p>
           ) : (
             <ul className="divide-y">
               {invoices.slice(0, 15).map((i) => (
@@ -209,15 +188,11 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="finance-connect-title">
-        <CardHeader>
-          <CardTitle id="finance-connect-title">Connect a finance provider</CardTitle>
-          <CardDescription>Read-only. Square and Stripe also push payments in real time through their webhook; paste the signing secret for that.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as "SQUARE" | "STRIPE" | "XERO" })} aria-label="Provider">
+        </Panel>
+</Section>
+      <Section id="finance-connect-title" level="h3" title="Connect a finance provider" lede="Read-only. Square and Stripe also push payments in real time through their webhook; paste the signing secret for that.">
+<Panel className="py-5 flex flex-col gap-2">
+          <select className="h-11 rounded-lg border border-input bg-card px-4 text-base" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as "SQUARE" | "STRIPE" | "XERO" })} aria-label="Provider">
             <option value="XERO">Xero</option>
             <option value="SQUARE">Square</option>
             <option value="STRIPE">Stripe</option>
@@ -234,7 +209,6 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
           {form.provider === "SQUARE" && <Input placeholder="Location id (optional)" value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} aria-label="Location id" />}
           {form.provider !== "XERO" && <Input type="password" placeholder="Webhook signing secret" value={form.webhookSecret} onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })} aria-label="Webhook secret" autoComplete="off" />}
           <Button
-            variant="green"
             disabled={pending || !form.externalAccountId || form.accessToken.length < 8}
             onClick={() =>
               run(async () => {
@@ -246,8 +220,8 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
           >
             <Link2 /> Connect
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }
@@ -256,19 +230,12 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
   const [form, setForm] = useState({ destination: "", label: "", code: "", source: "", medium: "", campaign: "" });
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card aria-labelledby="links-title">
-        <CardHeader className="flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle id="links-title">Tracked links</CardTitle>
-            <CardDescription>Use these on signboards, flyers, bios and posts so the lead carries its campaign.</CardDescription>
-          </div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => rollupSiteNowAction(tenantId))}>
+      <Section id="links-title" level="h3" title="Tracked links" lede="Use these on signboards, flyers, bios and posts so the lead carries its campaign." action={<><Button size="sm" variant="outline" disabled={pending} onClick={() => run(() => rollupSiteNowAction(tenantId))}>
             <RefreshCw /> Website numbers
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </Button></>}>
+<Panel className="py-5">
           {links.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">No links yet.</p>
+            <p className="py-4 text-base text-muted-foreground">No links yet.</p>
           ) : (
             <ul className="divide-y">
               {links.map((l) => (
@@ -283,14 +250,10 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-      <Card aria-labelledby="links-new-title">
-        <CardHeader>
-          <CardTitle id="links-new-title">New tracked link</CardTitle>
-          <CardDescription>Short code defaults to {tenantSlug}-xxxxxx.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        </Panel>
+</Section>
+      <Section id="links-new-title" level="h3" title="New tracked link" lede={<>Short code defaults to {tenantSlug}-xxxxxx.</>}>
+<Panel className="py-5 flex flex-col gap-2">
           <Input placeholder="Destination URL (https://…)" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} aria-label="Destination" />
           <Input placeholder="Label, e.g. Signboard QR — Glenelg" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} aria-label="Label" />
           <div className="grid grid-cols-3 gap-2">
@@ -300,7 +263,6 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
           </div>
           <Input placeholder="Short code (optional)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} aria-label="Short code" />
           <Button
-            variant="green"
             disabled={pending || !/^https?:\/\//.test(form.destination)}
             onClick={() =>
               run(async () => {
@@ -312,8 +274,8 @@ function LinksPanel({ tenantId, tenantSlug, links, pending, run, appUrl, fmt }: 
           >
             <Link2 /> Create link
           </Button>
-        </CardContent>
-      </Card>
+        </Panel>
+</Section>
     </div>
   );
 }

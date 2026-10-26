@@ -19,13 +19,15 @@ export interface NavItem {
   badge?: number;
 }
 
+const Count = ({ n }: { n: number }) => <span className="rounded-full bg-red-soft px-2 py-0.5 text-xs font-medium text-red-text num">{n}</span>;
+
 export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?: boolean }) {
   const pathname = usePathname();
   const isActive = (item: NavItem) => (item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`));
 
   if (mobile) {
     return (
-      <nav aria-label="Main" className="flex gap-1 overflow-x-auto border-b bg-sidebar px-2 py-1.5">
+      <nav aria-label="Main" className="flex gap-1 overflow-x-auto border-b bg-sidebar px-3 py-2">
         {items.map((item) => {
           const Icon = ICONS[item.icon];
           const active = isActive(item);
@@ -34,11 +36,11 @@ export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?:
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={cn("flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm", active ? "bg-background font-medium text-foreground shadow-xs" : "text-muted-foreground")}
+              className={cn("flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm transition-colors duration-300", active ? "bg-card font-medium text-foreground" : "text-muted-foreground")}
             >
               <Icon className="size-4" aria-hidden="true" />
               {item.label}
-              {item.badge ? <span className="rounded-full bg-red-soft px-1.5 text-[10px] font-semibold text-red-text">{item.badge}</span> : null}
+              {item.badge ? <Count n={item.badge} /> : null}
             </Link>
           );
         })}
@@ -57,16 +59,16 @@ export function ShellNav({ items, mobile = false }: { items: NavItem[]; mobile?:
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-              active ? "bg-background font-medium text-foreground shadow-xs" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+              "flex items-center gap-3 rounded-full px-4 py-2.5 text-sm transition-colors duration-300",
+              active ? "bg-card font-medium text-foreground" : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
             )}
           >
             <Icon className="size-4" aria-hidden="true" />
             <span className="flex min-w-0 flex-1 flex-col leading-tight">
               <span>{item.label}</span>
-              {item.hint && <span className="text-[11px] font-normal text-muted-foreground">{item.hint}</span>}
+              {item.hint && <span className="text-xs font-normal text-muted-foreground">{item.hint}</span>}
             </span>
-            {item.badge ? <span className="rounded-full bg-red-soft px-1.5 text-[10px] font-semibold text-red-text">{item.badge}</span> : null}
+            {item.badge ? <Count n={item.badge} /> : null}
           </Link>
         );
       })}

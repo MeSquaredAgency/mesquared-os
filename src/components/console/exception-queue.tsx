@@ -6,9 +6,10 @@ import { Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Empty } from "@/components/shell/section";
 import { resolveException } from "@/lib/console/actions";
 import type { ExceptionRecord, TenantOption } from "@/lib/types";
-import { cn, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 
 interface Props {
   items: ExceptionRecord[];
@@ -35,25 +36,25 @@ export function ExceptionQueue({ items, tenants }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {notice && (
-        <p role="status" aria-live="polite" className="rounded-md bg-muted px-3 py-2 text-sm">
+        <p role="status" aria-live="polite" className="rounded-lg bg-muted px-4 py-3 text-sm">
           {notice}
         </p>
       )}
       {visible.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">Queue is clear.</p>
+        <Empty>Queue is clear.</Empty>
       ) : (
         <ul className="flex flex-col gap-3">
           {visible.map((item) => {
             const tenant = tenantById.get(item.tenantId);
             return (
-              <li key={item.id} className="rounded-xl border bg-card p-4">
-                <div className="flex flex-wrap items-center gap-2">
+              <li key={item.id} className="flex flex-col gap-3 rounded-xl border bg-card px-6 py-5">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
                   {tenant && (
-                    <Link href={`/console/${tenant.slug}`} className="text-xs font-medium hover:underline">
+                    <Link href={`/console/${tenant.slug}`} className="kicker text-sm text-foreground hover:underline">
                       {tenant.name}
                     </Link>
                   )}
-                  <span className="text-xs text-muted-foreground">· {timeAgo(item.createdAt)}</span>
+                  <span className="text-muted-foreground">· {timeAgo(item.createdAt)}</span>
                   {item.confidence !== null && (
                     <Badge variant="outline" title="Automation confidence">
                       {Math.round(item.confidence * 100)}% confident
@@ -61,20 +62,16 @@ export function ExceptionQueue({ items, tenants }: Props) {
                   )}
                   {item.escalatedToUserId && <Badge variant="secondary">Escalated to client</Badge>}
                 </div>
-                <p className="mt-2 text-sm font-medium">{item.reason}</p>
-                {item.suggestedAction && <p className="mt-1 text-sm text-muted-foreground">Suggested: {item.suggestedAction}</p>}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Input
-                    placeholder="What you did (optional)"
-                    value={notes[item.id] ?? ""}
-                    onChange={(e) => setNotes((n) => ({ ...n, [item.id]: e.target.value }))}
-                    className={cn("h-8 max-w-sm text-xs")}
-                    aria-label="Resolution note"
-                  />
-                  <Button size="sm" variant="green" onClick={() => resolve(item, true)} disabled={pending}>
+                <div>
+                  <p className="text-lg leading-snug">{item.reason}</p>
+                  {item.suggestedAction && <p className="mt-1 text-base text-muted-foreground">Suggested: {item.suggestedAction}</p>}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Input placeholder="What you did (optional)" value={notes[item.id] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [item.id]: e.target.value }))} className="max-w-sm" aria-label="Resolution note" />
+                  <Button onClick={() => resolve(item, true)} disabled={pending}>
                     <Check /> Recovered
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => (typeof window === "undefined" || window.confirm("Close this without recovering it? The missed opportunity is written off.")) && resolve(item, false)} disabled={pending}>
+                  <Button variant="outline" onClick={() => (typeof window === "undefined" || window.confirm("Close this without recovering it? The missed opportunity is written off.")) && resolve(item, false)} disabled={pending}>
                     <X /> Close
                   </Button>
                 </div>

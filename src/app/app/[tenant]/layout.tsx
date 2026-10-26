@@ -17,6 +17,7 @@ export default async function PortalLayout({ children, params }: { children: Rea
   return (
     <AppShell
       user={user}
+      tone="paper"
       nav={[
         { href: base, label: "Home", hint: COPY.needsYou, icon: "home", exact: true },
         { href: `${base}/leads`, label: "Leads", hint: "Everyone who enquired", icon: "users" },

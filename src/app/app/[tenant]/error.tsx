@@ -14,7 +14,7 @@ export default function PortalError({ error, reset }: { error: Error & { digest?
         <AlertTriangle className="size-6" />
       </span>
       <div>
-        <h1 className="text-lg font-semibold">Something went wrong</h1>
+        <h1 className="text-lg">Something went wrong</h1>
         <p className="mt-1 text-sm text-muted-foreground">Try again. If it keeps happening, check the server log.</p>
         {error.digest && <p className="mt-2 text-xs text-muted-foreground">Reference: {error.digest}</p>}
       </div>

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { AttributionCard, InvoicesCard, MoneyHeadline, WebsiteCard } from "@/components/portal/money-details";
+import { PageHeader } from "@/components/shell/section";
 import { pacingStatus } from "@/lib/ads/sync";
 import { buildAttributionReport } from "@/lib/attribution/report";
 import { getPortalContext } from "@/lib/auth/access";
@@ -24,16 +25,14 @@ export default async function MoneyPage({ params }: { params: Promise<{ tenant: 
     buildAttributionReport(tenant, new Date(now.getTime() - 30 * 86_400_000), now),
     repository.listSiteMetrics(tenant.id, new Date(now.getTime() - 14 * 86_400_000)),
   ]);
+  const month = now.toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, month: "long" });
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Money</h1>
-        <p className="text-sm text-muted-foreground">What came in, what it cost to get, and what is still owed to {tenant.name}.</p>
-      </div>
+    <div className="flex flex-col gap-12">
+      <PageHeader kicker="Money" title={`${month} so far`} lede={`What came in, what it cost to get, and what is still owed to ${tenant.name}.`} />
       {home.money && <MoneyHeadline money={home.money} pacing={pacing} fmt={fmt} />}
       <AttributionCard report={report} fmt={fmt} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-12 xl:grid-cols-2 xl:gap-8">
         <InvoicesCard invoices={invoices.sort((a, b) => (a.status === "OVERDUE" ? -1 : 0) - (b.status === "OVERDUE" ? -1 : 0))} fmt={fmt} />
         <WebsiteCard site={summarizeSite(site, now)} fmt={fmt} />
       </div>
