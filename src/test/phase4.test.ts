@@ -9,6 +9,7 @@ import { markOverdue, runFinanceSync, runInvoiceReminders } from "@/lib/finance/
 import { tick } from "@/lib/jobs/tick";
 import { rollupSite, summarizeEvents, summarizeSite } from "@/lib/website/rollup";
 import type { WebEventRecord } from "@/lib/types";
+import { startOfDayInZone } from "@/lib/utils";
 
 const harbor = demoTenants[0];
 const summit = demoTenants[1];
@@ -154,8 +155,11 @@ describe("website numbers", () => {
   });
 
   it("the tick queues the daily money and website jobs", async () => {
-    await tick(new Date());
-    const due = await repository.listDueActions(new Date(Date.now() + 2 * 86_400_000));
+    // Early morning in the tenants' zone: the jobs are queued for after quiet hours rather than run inside this tick.
+    // (After 8am local the content batch is due at once, runs in the same tick and is DONE, not pending.)
+    const now = new Date(startOfDayInZone("Australia/Adelaide").getTime() + 2 * 3_600_000);
+    await tick(now);
+    const due = await repository.listDueActions(new Date(now.getTime() + 2 * 86_400_000));
     const keys = new Set(due.map((a) => a.typeKey));
     for (const key of ["ads_sync", "finance_sync", "website_analytics", "inventory_sync", "content_engine"]) assert.ok(keys.has(key), `the tick queues the daily ${key} job`);
   });
