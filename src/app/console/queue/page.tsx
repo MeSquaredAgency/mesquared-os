@@ -11,7 +11,7 @@ export default async function QueuePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Exception queue</h1>
+        <h1 className="page-title">Exception queue</h1>
         <p className="text-sm text-muted-foreground">Everything automation couldn’t finish on its own, across your portfolio.</p>
       </div>
       <ExceptionQueue items={items} tenants={tenants.map((t) => toTenantOption(t.tenant))} />

@@ -23,7 +23,7 @@ export default async function InventoryPage({ params }: { params: Promise<{ tena
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{label}</h1>
+        <h1 className="page-title">{label}</h1>
         <p className="text-sm text-muted-foreground">
           {active.length} active of {items.length}. New listings are drafted into posts automatically, and enquiries that name one get its details in the automatic reply.
         </p>

@@ -7,21 +7,21 @@ export function UserMenu({ user, compact = false }: { user: UserRecord; compact?
   if (compact) {
     return (
       <form action={signOut}>
-        <Button type="submit" variant="ghost" size="icon" className="size-11" title={`Sign out ${user.email}`} aria-label="Sign out">
-          <LogOut />
+        <Button type="submit" variant="ghost" size="icon" title={`Sign out ${user.email}`} aria-label="Sign out">
+          <LogOut strokeWidth={1.75} />
         </Button>
       </form>
     );
   }
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5">
+    <div className="flex items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2">
       <div className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate text-xs font-medium">{user.name ?? user.email}</span>
-        <span className="truncate text-[11px] text-muted-foreground">{user.isPlatformAdmin ? "Platform admin" : user.email}</span>
+        <span className="truncate text-sm font-medium">{user.name ?? user.email}</span>
+        <span className="truncate text-xs text-muted-foreground">{user.isPlatformAdmin ? "Platform admin" : user.email}</span>
       </div>
       <form action={signOut}>
-        <Button type="submit" variant="ghost" size="icon" className="size-8" title="Sign out" aria-label="Sign out">
-          <LogOut />
+        <Button type="submit" variant="ghost" size="icon" className="size-9" title="Sign out" aria-label="Sign out">
+          <LogOut strokeWidth={1.75} />
         </Button>
       </form>
     </div>

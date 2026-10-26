@@ -33,7 +33,7 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Leads</h1>
+        <h1 className="page-title">Leads</h1>
         <p className="text-sm text-muted-foreground">{viewAll ? "Everyone who has enquired." : "Your leads and any not yet assigned."}</p>
       </div>
       <Card>

@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
 import type { PortalHome } from "@/lib/types";
 import { formatMoney, timeAgo, type FormatContext } from "@/lib/utils";
@@ -23,49 +24,56 @@ const STATUS_LABEL: Record<string, { text: string; variant: "red" | "secondary" 
 /** Revenue leaking out, with the money at risk and what has been won back. */
 export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) {
   const shown = missed.open.slice(0, limit);
+  const more = missed.open.length - shown.length;
   return (
-    <Card aria-labelledby="missed-title" className="border-t-4 border-t-red">
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle id="missed-title">{COPY.missedOpportunities}</CardTitle>
-          <CardDescription className="mt-1">Money about to walk out the door, and what we’ve won back this month.</CardDescription>
-        </div>
-        <div className="text-right">
-          <p className="text-lg font-semibold tabular-nums text-red-text">{formatMoney(missed.atRiskCents, fmt.currency, fmt.locale)}</p>
-          <p className="text-[11px] text-muted-foreground">{COPY.atRisk}</p>
-          <p className="mt-1 text-sm font-semibold tabular-nums text-green-text">{formatMoney(missed.recoveredCents, fmt.currency, fmt.locale)}</p>
-          <p className="text-[11px] text-muted-foreground">{COPY.recovered.toLowerCase()} this month</p>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {shown.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Nothing slipping through right now.</p>
-        ) : (
+    <Section
+      id="missed-title"
+      title={COPY.missedOpportunities}
+      lede="Money about to walk out the door, and what we’re doing about it."
+      action={
+        <dl className="flex gap-8 text-right">
+          <div>
+            <dd className="display-sm text-red-text">{formatMoney(missed.atRiskCents, fmt.currency, fmt.locale)}</dd>
+            <dt className="text-sm text-muted-foreground">{COPY.atRisk}</dt>
+          </div>
+          <div>
+            <dd className="display-sm text-green-text">{formatMoney(missed.recoveredCents, fmt.currency, fmt.locale)}</dd>
+            <dt className="text-sm text-muted-foreground">{COPY.recovered.toLowerCase()} this month</dt>
+          </div>
+        </dl>
+      }
+    >
+      {shown.length === 0 ? (
+        <p className="rounded-xl border bg-card px-6 py-8 text-center text-base text-muted-foreground">Nothing slipping through right now.</p>
+      ) : (
+        <div className="rounded-xl border bg-card px-6 py-2">
           <ul className="divide-y">
             {shown.map((m) => {
               const s = STATUS_LABEL[m.status] ?? STATUS_LABEL.DETECTED;
               return (
-                <li key={m.id} className="flex items-start justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type}</p>
-                    <p className="text-sm">{m.summary}</p>
-                    <p className="text-[11px] text-muted-foreground">{timeAgo(m.detectedAt)}</p>
+                <li key={m.id} className="flex items-start justify-between gap-6 py-5">
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <p className="kicker text-xs">{MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type}</p>
+                    <p className="text-base">{m.summary}</p>
+                    <p className="text-sm text-muted-foreground">{timeAgo(m.detectedAt)}</p>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-sm font-semibold tabular-nums">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale)}</span>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span className="text-lg num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale)}</span>
                     <Badge variant={s.variant}>{s.text}</Badge>
                   </div>
                 </li>
               );
             })}
           </ul>
-        )}
-        {allHref && missed.open.length > shown.length && (
-          <Link href={allHref} className="mt-2 inline-block text-xs text-primary hover:underline">
-            +{missed.open.length - shown.length} more
-          </Link>
-        )}
-      </CardContent>
-    </Card>
+          {allHref && more > 0 && (
+            <div className="border-t py-4">
+              <Button asChild variant="outline" size="sm">
+                <Link href={allHref}>{more} more</Link>
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }

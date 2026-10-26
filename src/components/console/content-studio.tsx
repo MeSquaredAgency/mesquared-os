@@ -356,7 +356,7 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
           <CardDescription>Paste the account id and a token from the platform&apos;s developer flow. Tokens are encrypted and never shown again.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as SocialPlatform })} aria-label="Platform">
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as SocialPlatform })} aria-label="Platform">
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>
                 {PLATFORM_LABEL[p]}

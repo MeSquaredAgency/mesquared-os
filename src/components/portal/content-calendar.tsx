@@ -34,17 +34,17 @@ export function ContentCalendar({ days, fmt, title = "Calendar", description = "
                   </span>
                 </p>
                 {items.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground/70">—</p>
+                  <p className="text-xs text-muted-foreground/70">—</p>
                 ) : (
                   <ul className="flex flex-col gap-1.5">
                     {items.map((it) => (
-                      <li key={it.key} className="rounded-md bg-background p-1.5 text-xs shadow-xs">
+                      <li key={it.key} className="rounded-md bg-background p-1.5 text-xs">
                         <div className="flex items-center justify-between gap-1">
                           <span className="truncate font-medium">{it.label}</span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">{it.at ? it.at.toLocaleTimeString(fmt.locale, { timeZone: fmt.timezone, hour: "numeric", minute: "2-digit" }) : ""}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{it.at ? it.at.toLocaleTimeString(fmt.locale, { timeZone: fmt.timezone, hour: "numeric", minute: "2-digit" }) : ""}</span>
                         </div>
                         <p className="line-clamp-2 text-muted-foreground">{it.text}</p>
-                        <StatusBadge status={it.status} className="mt-1 text-[10px]" />
+                        <StatusBadge status={it.status} className="mt-1 text-xs" />
                       </li>
                     ))}
                   </ul>

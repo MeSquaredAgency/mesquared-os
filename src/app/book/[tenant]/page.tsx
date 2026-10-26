@@ -59,7 +59,7 @@ export default async function BookPage({ params, searchParams }: { params: Promi
           <input type="hidden" name="lead" value={leadId ?? ""} />
           <label className="flex flex-col gap-1.5 text-sm font-medium">
             When suits you best for a call?
-            <input name="when" placeholder="e.g. tomorrow morning, or any afternoon this week" className="h-11 rounded-md border bg-background px-3 text-base" maxLength={120} />
+            <input name="when" placeholder="e.g. tomorrow morning, or any afternoon this week" className="h-11 rounded-xl border bg-card px-3 text-base" maxLength={120} />
           </label>
           <Button type="submit" className="h-11 text-base">
             Ask for a call back

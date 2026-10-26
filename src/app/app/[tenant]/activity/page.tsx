@@ -21,7 +21,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ tenan
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{COPY.activityLog}</h1>
+        <h1 className="page-title">{COPY.activityLog}</h1>
         <p className="text-sm text-muted-foreground">Everything handled for you, newest first.</p>
       </div>
       <Card aria-labelledby="activity-title">
@@ -41,7 +41,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ tenan
                 <li key={r.id} className="flex items-start justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <p className="text-sm">{r.summary}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey} · {formatDateTime(r.createdAt, fmt)}
                     </p>
                   </div>

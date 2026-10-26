@@ -350,7 +350,7 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           </ul>
           {isAdmin && operators.length > 0 && (
             <div className="mt-2 flex gap-2">
-              <select className="h-8 rounded-md border bg-background px-2 text-xs" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} aria-label="Operator">
+              <select className="h-8 rounded-xl border bg-card px-2 text-xs" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} aria-label="Operator">
                 {operators.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name ?? o.email}
@@ -387,7 +387,7 @@ function PeoplePanel({ tenant, roles, people, operators, isAdmin, pending, run }
           )}
           <Input type="email" placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} aria-label="Email" />
           <Input placeholder="Name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} aria-label="Name" />
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={invite.roleId} onChange={(e) => setInvite({ ...invite, roleId: e.target.value })} aria-label="Role">
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm" value={invite.roleId} onChange={(e) => setInvite({ ...invite, roleId: e.target.value })} aria-label="Role">
             {roles.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name} — {r.permissions.map((x) => humanize(x).toLowerCase()).join(", ") || "no permissions"}
@@ -541,7 +541,7 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
           {["*", ...OPPORTUNITY_TYPES].map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">
               <span>{t === "*" ? "Everything" : humanize(t)}</span>
-              <select className="h-8 w-56 rounded-md border bg-background px-2 text-xs" value={rules[t] ?? ""} onChange={(e) => setRules({ ...rules, [t]: e.target.value })}>
+              <select className="h-8 w-56 rounded-xl border bg-card px-2 text-xs" value={rules[t] ?? ""} onChange={(e) => setRules({ ...rules, [t]: e.target.value })}>
                 <option value="">Operators only</option>
                 {members.map((m) => (
                   <option key={m.userId} value={m.userId}>

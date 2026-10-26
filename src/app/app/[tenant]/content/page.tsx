@@ -48,7 +48,7 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Content</h1>
+        <h1 className="page-title">Content</h1>
         <p className="text-sm text-muted-foreground">
           Drafts for {wb.connectedPlatforms.map((p) => PLATFORM_LABEL[p]).join(", ") || "your channels"}, the calendar, your channel numbers and the inbox. Approve what goes live; the rest is handled.
         </p>

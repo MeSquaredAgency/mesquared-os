@@ -118,7 +118,7 @@ function AdsPanel({ tenantId, fmt, adAccounts, pacing, pending, run }: { tenantI
           <CardDescription>Read-only access: spend and results only. Tokens are encrypted and never shown again.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as "META" | "GOOGLE_ADS" })} aria-label="Platform">
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value as "META" | "GOOGLE_ADS" })} aria-label="Platform">
             <option value="META">Meta (Facebook & Instagram)</option>
             <option value="GOOGLE_ADS">Google Ads</option>
           </select>
@@ -217,7 +217,7 @@ function FinancePanel({ tenantId, fmt, integrations, invoices, pending, run, app
           <CardDescription>Read-only. Square and Stripe also push payments in real time through their webhook; paste the signing secret for that.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
-          <select className="h-9 rounded-md border bg-background px-3 text-sm" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as "SQUARE" | "STRIPE" | "XERO" })} aria-label="Provider">
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as "SQUARE" | "STRIPE" | "XERO" })} aria-label="Provider">
             <option value="XERO">Xero</option>
             <option value="SQUARE">Square</option>
             <option value="STRIPE">Stripe</option>

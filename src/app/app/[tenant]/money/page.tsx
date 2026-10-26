@@ -28,7 +28,7 @@ export default async function MoneyPage({ params }: { params: Promise<{ tenant: 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Money</h1>
+        <h1 className="page-title">Money</h1>
         <p className="text-sm text-muted-foreground">What came in, what it cost to get, and what is still owed to {tenant.name}.</p>
       </div>
       {home.money && <MoneyHeadline money={home.money} pacing={pacing} fmt={fmt} />}

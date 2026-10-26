@@ -36,7 +36,7 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
         )}
         <label className="flex flex-col gap-1 text-sm font-medium">
           Template
-          <select className="h-9 rounded-md border bg-background px-3 text-sm font-normal" value={form.templateKey} onChange={(e) => setForm({ ...form, templateKey: e.target.value })}>
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm font-normal" value={form.templateKey} onChange={(e) => setForm({ ...form, templateKey: e.target.value })}>
             {templates.map((t) => (
               <option key={t.key} value={t.key}>
                 {t.name}
@@ -54,7 +54,7 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           Region and timezone
-          <select className="h-9 rounded-md border bg-background px-3 text-sm font-normal" value={form.preset} onChange={(e) => setForm({ ...form, preset: Number(e.target.value) })}>
+          <select className="h-9 rounded-xl border bg-card px-3 text-sm font-normal" value={form.preset} onChange={(e) => setForm({ ...form, preset: Number(e.target.value) })}>
             {regions.map((r, i) => (
               <option key={r.label} value={i}>
                 {r.label} · {r.currency}

@@ -114,7 +114,7 @@ export function OperationsPanels({ tenantId, fmt, bookings, requests, reviews, l
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <FileQuestion className="size-3.5" aria-hidden="true" /> Chase something new
               </p>
-              <select className="h-8 rounded-md border bg-background px-2 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
+              <select className="h-8 rounded-xl border bg-card px-2 text-sm" value={newReq.leadId} onChange={(e) => setNewReq((n) => ({ ...n, leadId: e.target.value }))} aria-label="Who">
                 <option value="">Who…</option>
                 {leads.map((l) => (
                   <option key={l.id} value={l.id}>

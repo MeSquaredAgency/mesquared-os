@@ -35,7 +35,7 @@ export function LeadRows({ rows, fmt, stageNames }: RowsProps) {
               <Badge variant={l.ticketType === "GREEN" ? "green" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
             </p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{l.message ?? "No message"}</p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {humanize(l.source)} · <span suppressHydrationWarning>{formatDateTime(l.createdAt, fmt)}</span> · {classifierLabel(l.qualifiedBy)}
               {l.stageId && stageNames[l.stageId] && <> · {stageNames[l.stageId]}</>}
             </p>

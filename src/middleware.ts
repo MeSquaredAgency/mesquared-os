@@ -42,5 +42,5 @@ export async function middleware(req: NextRequest) {
 // two public surfaces leads and customers land on: tracked links (/r/<code>) and the
 // booking fallback page (/book/<tenant>). New pages are therefore private by default.
 export const config = {
-  matcher: ["/((?!api/|_next/|r/|book/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)"],
+  matcher: ["/((?!api/|_next/|r/|book/|brand/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)"],
 };

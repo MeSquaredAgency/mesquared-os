@@ -23,7 +23,7 @@ export default async function OpportunitiesPage({ params }: { params: Promise<{ 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{COPY.missedOpportunities}</h1>
+        <h1 className="page-title">{COPY.missedOpportunities}</h1>
         <p className="text-sm text-muted-foreground">Everything we’ve spotted slipping, and what came back.</p>
       </div>
       <MissedOpportunities missed={{ open, atRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0), recoveredCents }} fmt={fmt} limit={50} />
@@ -39,9 +39,9 @@ export default async function OpportunitiesPage({ params }: { params: Promise<{ 
               {closed.map((m) => (
                 <li key={m.id} className="flex items-start justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type}</p>
+                    <p className="kicker">{MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type}</p>
                     <p className="text-sm">{m.summary}</p>
-                    <p className="text-[11px] text-muted-foreground">{m.resolvedAt ? timeAgo(m.resolvedAt) : timeAgo(m.detectedAt)}</p>
+                    <p className="text-xs text-muted-foreground">{m.resolvedAt ? timeAgo(m.resolvedAt) : timeAgo(m.detectedAt)}</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span className="text-sm font-semibold tabular-nums">{formatMoney(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents, fmt.currency, fmt.locale)}</span>

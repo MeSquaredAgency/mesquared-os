@@ -1,46 +1,53 @@
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar } from "@/components/shell/me2-person";
+import { Section } from "@/components/shell/section";
+import { Button } from "@/components/ui/button";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { COPY } from "@/lib/copy";
 import type { PortalHome } from "@/lib/types";
 import { timeAgo } from "@/lib/utils";
 
-/** The quiet summary of admin work done without the client, opening into the full activity log. */
+/**
+ * What got done without the client, told the way the brand talks: as notes
+ * from your Me² person in a chat window, not as a system log. The full
+ * activity log is one click away.
+ */
 export function HandledForYou({ handled, activityHref }: { handled: PortalHome["handled"]; activityHref: string }) {
+  const runs = handled.runs.slice(0, 6);
   return (
-    <Card aria-labelledby="handled-title" className="bg-sidebar">
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle id="handled-title" className="flex items-center gap-2">
-            <Sparkles className="size-4 text-muted-foreground" aria-hidden="true" />
-            {COPY.handledForYou}
-          </CardTitle>
-          <CardDescription className="mt-1">
-            {handled.countToday} thing{handled.countToday === 1 ? "" : "s"} today, {handled.countWeek} this week, without needing you.
-          </CardDescription>
+    <Section
+      id="handled-title"
+      title={COPY.handledForYou}
+      lede={`${handled.countToday} thing${handled.countToday === 1 ? "" : "s"} today, ${handled.countWeek} this week, without needing you.`}
+      action={
+        <Button asChild variant="outline" size="sm">
+          <Link href={activityHref}>Full {COPY.activityLog.toLowerCase()}</Link>
+        </Button>
+      }
+    >
+      <div className="max-w-2xl rounded-[30px] bg-card p-5 shadow-[var(--shadow-card)]">
+        <div className="mb-3 flex items-center gap-3">
+          <Avatar name={null} />
+          <div className="leading-tight">
+            <p className="text-sm font-semibold">Your Me² person</p>
+            <p className="text-xs text-muted-foreground">People, backed by AI</p>
+          </div>
         </div>
-        <Link href={activityHref} className="text-xs text-primary hover:underline">
-          Full {COPY.activityLog.toLowerCase()}
-        </Link>
-      </CardHeader>
-      <CardContent>
-        {handled.runs.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">Nothing yet. Once intake and automations are connected, what gets done for you appears here.</p>
+        {runs.length === 0 ? (
+          <p className="py-3 text-sm text-muted-foreground">Nothing yet. Once intake and automations are connected, what gets done for you appears here.</p>
         ) : (
-          <ul className="divide-y">
-            {handled.runs.map((r) => (
-              <li key={r.id} className="flex items-start justify-between gap-3 py-2">
-                <div className="min-w-0">
-                  <p className="text-sm">{r.summary}</p>
-                  <p className="text-[11px] text-muted-foreground">{AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey}</p>
-                </div>
-                <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(r.createdAt)}</span>
+          <ol className="flex flex-col gap-2">
+            {runs.map((r) => (
+              <li key={r.id} className="flex flex-col items-start gap-1">
+                <p className="max-w-[86%] rounded-[19px] rounded-bl-[6px] bg-secondary px-4 py-2.5 text-sm leading-snug">{r.summary}</p>
+                <p className="text-xs text-muted-foreground">
+                  {AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey} · {timeAgo(r.createdAt)}
+                </p>
               </li>
             ))}
-          </ul>
+          </ol>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Section>
   );
 }

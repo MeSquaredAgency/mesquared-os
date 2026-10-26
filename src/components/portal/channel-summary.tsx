@@ -39,7 +39,7 @@ export function ChannelSummaryCard({ summaries, fmt }: { summaries: ChannelSumma
                     <td className="py-2 pr-3">
                       {n(s.followers, fmt.locale)}
                       {s.followersChange !== null && s.followersChange !== 0 && (
-                        <Badge variant={s.followersChange > 0 ? "green" : "red"} className="ml-1.5 text-[10px]">
+                        <Badge variant={s.followersChange > 0 ? "green" : "red"} className="ml-1.5 text-xs">
                           {s.followersChange > 0 ? "+" : ""}
                           {s.followersChange}
                         </Badge>
