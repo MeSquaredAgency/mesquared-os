@@ -503,6 +503,11 @@ export const memoryRepository: Repository = {
     return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
   },
 
+  async findTenantByChannelAccount(platform, externalAccountId) {
+    const c = store().channels.find((x) => x.platform === platform && x.isActive && (x.externalAccountId === externalAccountId || x.settings.igUserId === externalAccountId));
+    return c ? (store().tenants.find((t) => t.id === c.tenantId) ?? null) : null;
+  },
+
   async findBookingById(tenantId, bookingId) {
     return store().bookings.find((b) => b.id === bookingId && b.tenantId === tenantId) ?? null;
   },
