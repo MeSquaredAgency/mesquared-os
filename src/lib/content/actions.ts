@@ -8,6 +8,7 @@ import { repository } from "@/lib/data";
 import { localInputToDate } from "@/lib/utils";
 import { emit } from "@/lib/events";
 import { saveChannelCredentials } from "@/lib/social/credentials";
+import { metaIntegrationAccountId, subscribePageToApp } from "@/lib/social/meta-connect";
 import { replyToConversation } from "@/lib/social/inbox";
 import { publishPost } from "@/lib/social/publish";
 import { syncChannelMetrics } from "@/lib/social/metrics";
@@ -230,6 +231,11 @@ const connectSchema = z.object({
  * Connects a channel from the console: the operator pastes the account id
  * and a token obtained through the platform's own developer flow. The token is
  * encrypted on the tenant's integration row; it is never echoed back.
+ *
+ * Facebook and Instagram share one META integration keyed by the page id
+ * (webhooks resolve the tenant by it), so an Instagram connect keeps the
+ * page id there and a Facebook connect also subscribes the page to the app's
+ * webhooks. `npm run tenant:connect-meta` does both surfaces in one step.
  */
 export async function connectChannelAction(tenantId: string, input: z.input<typeof connectSchema>): Promise<ActionResult> {
   try {
@@ -239,12 +245,25 @@ export async function connectChannelAction(tenantId: string, input: z.input<type
     if (!parsed.success) return { ok: false, message: "Platform, account id and an access token are needed." };
     const d = parsed.data;
     const platform = d.platform as SocialPlatform;
-    await saveChannelCredentials(tenantId, platform, { accessToken: d.accessToken, refreshToken: d.refreshToken || null }, { externalAccountId: d.externalAccountId, label: d.displayName || null });
-    const integration = await repository.findIntegration(tenantId, platform === "INSTAGRAM" || platform === "FACEBOOK" ? "META" : platform);
-    await repository.upsertChannel(tenantId, { platform, externalAccountId: d.externalAccountId, displayName: d.displayName || null, integrationId: integration?.id ?? null, settings: d.igUserId ? { igUserId: d.igUserId } : {} });
-    await repository.recordAutomationRun(tenantId, { typeKey: "social_sync", outcome: "COMPLETED", summary: `Connected ${d.displayName || d.externalAccountId} on ${platform.replace("_", " ").toLowerCase()}.` });
+    const isMeta = platform === "INSTAGRAM" || platform === "FACEBOOK";
+    const igUserId = platform === "INSTAGRAM" ? d.igUserId || d.externalAccountId : null;
+    const integrationAccountId = await metaIntegrationAccountId(tenantId, platform, d.externalAccountId);
+    await saveChannelCredentials(
+      tenantId,
+      platform,
+      { accessToken: d.accessToken, refreshToken: d.refreshToken || null, ...(platform === "FACEBOOK" ? { pageId: d.externalAccountId } : {}), ...(igUserId ? { igUserId } : {}) },
+      { externalAccountId: integrationAccountId, label: d.displayName || null },
+    );
+    const integration = await repository.findIntegration(tenantId, isMeta ? "META" : platform);
+    await repository.upsertChannel(tenantId, { platform, externalAccountId: d.externalAccountId, displayName: d.displayName || null, integrationId: integration?.id ?? null, settings: igUserId ? { igUserId } : {} });
+    let note = "";
+    if (platform === "FACEBOOK" && process.env.SOCIAL_MODE !== "log") {
+      const sub = await subscribePageToApp(d.externalAccountId, d.accessToken);
+      note = sub.ok ? " The page is subscribed to the app's webhooks." : ` Saved, but the page could not be subscribed to webhooks: ${sub.error}`;
+    }
+    await repository.recordAutomationRun(tenantId, { typeKey: "social_sync", outcome: "COMPLETED", summary: `Connected ${d.displayName || d.externalAccountId} on ${platform.replace("_", " ").toLowerCase()}.${note}` });
     refresh(ctx.tenant);
-    return { ok: true, message: "Channel connected. The next sync will pull its inbox and numbers." };
+    return { ok: true, message: `Channel connected. The next sync will pull its inbox and numbers.${note}` };
   } catch (error) {
     return fail(error);
   }

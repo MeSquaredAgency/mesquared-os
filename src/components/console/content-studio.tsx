@@ -331,10 +331,9 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
               </option>
             ))}
           </select>
-          <Input placeholder={form.platform === "GOOGLE_BUSINESS" ? "accounts/123/locations/456" : form.platform === "LINKEDIN" ? "urn:li:organization:123" : "Account or page id"} value={form.externalAccountId} onChange={(e) => setForm({ ...form, externalAccountId: e.target.value })} aria-label="Account id" />
-          {form.platform === "INSTAGRAM" && <Input placeholder="Instagram business account id (if different)" value={form.igUserId} onChange={(e) => setForm({ ...form, igUserId: e.target.value })} aria-label="Instagram user id" />}
+          <Input placeholder={form.platform === "GOOGLE_BUSINESS" ? "accounts/123/locations/456" : form.platform === "LINKEDIN" ? "urn:li:organization:123" : form.platform === "INSTAGRAM" ? "Instagram business account id" : form.platform === "FACEBOOK" ? "Facebook page id" : "Account id"} value={form.externalAccountId} onChange={(e) => setForm({ ...form, externalAccountId: e.target.value })} aria-label="Account id" />
           <Input placeholder="Display name" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} aria-label="Display name" />
-          <Input type="password" placeholder="Access token" value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} aria-label="Access token" autoComplete="off" />
+          <Input type="password" placeholder={form.platform === "INSTAGRAM" ? "Page access token of the linked Facebook page" : form.platform === "FACEBOOK" ? "Page access token (long-lived)" : "Access token"} value={form.accessToken} onChange={(e) => setForm({ ...form, accessToken: e.target.value })} aria-label="Access token" autoComplete="off" />
           {["GOOGLE_BUSINESS", "YOUTUBE", "TIKTOK"].includes(form.platform) && <Input type="password" placeholder="Refresh token (optional)" value={form.refreshToken} onChange={(e) => setForm({ ...form, refreshToken: e.target.value })} aria-label="Refresh token" autoComplete="off" />}
           <Button
             disabled={pending || !form.externalAccountId || form.accessToken.length < 8}

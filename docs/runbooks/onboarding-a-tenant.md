@@ -70,7 +70,10 @@ currency. The values drive the money figures the client sees.
   *content* key.
 - Connect the integrations the client uses (Meta lead forms, Cal.com, Twilio
   number, Google Business Profile, Facebook and Instagram pages, ad accounts,
-  finance provider). Credentials are encrypted per integration row.
+  finance provider). Credentials are encrypted per integration row. The
+  Facebook page and its Instagram account connect in one step with
+  `npm run tenant:connect-meta -- <slug>` from a Graph API Explorer token;
+  see `docs/runbooks/meta-app.md`.
 - Real estate: switch **Inventory** on (it is, by template) and either import
   the listings or rent roll from CSV under Settings → **Inventory**, or connect
   the property management software (PropertyMe: an OAuth token with the

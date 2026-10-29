@@ -16,9 +16,51 @@ Every tenant's page, Instagram account and ad account connects through it.
   `messages`. The GET handshake can be checked with
   `curl "https://os.mesquaredagency.com/api/v1/webhooks/meta?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=12345"`,
   which must print `12345`.
+- The app-level Webhooks subscription is not enough on its own: Meta only
+  delivers a page's events once that page has subscribed the app
+  (`POST /{page-id}/subscribed_apps`). Connecting a page, below, does that.
 - Settings → Basic: app domain `os.mesquaredagency.com`, privacy policy
   `https://mesquaredagency.com/privacy`, data deletion instructions
   `https://os.mesquaredagency.com/legal/data-deletion`.
+
+## Connecting a page and its Instagram account
+
+One page access token serves both Facebook and Instagram; it is stored once,
+encrypted, on the workspace's META integration, keyed by the page id (that is
+how a lead form, comment or message webhook finds the workspace). Use a page
+token derived from a long-lived user token: those never expire. A page token
+taken straight from Graph API Explorer's default short-lived token dies with
+it, within about an hour.
+
+The script does the whole thing from one short-lived user token:
+
+1. Sign in to https://developers.facebook.com/tools/explorer as an admin of
+   the page (for APN, an APN page admin). Choose the app in *Meta App*, choose
+   *User Token*, tick every permission in the use-case table above, then
+   *Generate Access Token* and accept the dialog, granting the page and the
+   Instagram account. Copy the token.
+2. From the repository, with `DATABASE_URL` pointing at production
+   (`.env.neon.local`):
+
+   ```bash
+   META_APP_ID=1142218158486204 META_APP_SECRET=... META_USER_TOKEN=... npm run tenant:connect-meta -- apn-real-estate
+   ```
+
+   It exchanges the token for a long-lived one, lists the pages that admin
+   manages (with several, it prints them and asks for the page id), takes
+   that page's never-expiring token, subscribes the page to the app's
+   `leadgen`, `feed` and `messages` webhooks, confirms the token's expiry
+   and scopes with `debug_token`, and saves the page and its linked
+   Instagram business account on the workspace. It prints ids, names,
+   scopes and expiry, never a token. Re-running replaces the token.
+3. Console → `/console/<slug>` → Content and social → Channels shows both
+   channels. **Sync now** pulls the first numbers.
+
+Without the script, the console's **Connect a channel** form takes the same
+page token twice: once as Facebook with the page id (this also subscribes the
+page to the webhooks), once as Instagram with the Instagram business account
+id (found with `GET /{page-id}?fields=instagram_business_account`). The
+Instagram connect keeps the page id on the integration row.
 
 ## Use cases and permissions
 
@@ -39,8 +81,9 @@ Meta wants each permission exercised from the app while it is in development
 mode. Use APN's own page with the reviewer account added as a tester, or a
 test page. In the console (`/console/<slug>`, Content and social):
 
-1. Channels → Connect a channel: Facebook page with a page token generated
-   from the app. Then Instagram with the business account id.
+1. Connect the page and its Instagram account as described above
+   (`npm run tenant:connect-meta`). Exercises `pages_show_list`,
+   `pages_manage_metadata`.
 2. Channels → Sync now. Exercises `pages_read_engagement`, `read_insights`,
    `instagram_basic`, `instagram_manage_insights`, `pages_read_user_content`.
 3. Material → Add material → Save and draft. Drafts → Approve → Queue →

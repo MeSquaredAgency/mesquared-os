@@ -36,9 +36,12 @@ at the end.
    `os.mesquaredagency.com`, privacy policy
    `https://mesquaredagency.com/privacy`, data deletion instructions
    `https://os.mesquaredagency.com/legal/data-deletion` (after step 1). You.
-3. **Connect APN's Facebook page and Instagram account** in the console with
-   a token from the app, signed in as an APN page admin. This is the first
-   step of the testing script in the runbook. You with me.
+3. **Connect APN's Facebook page and Instagram account.** You generate one
+   user token in Graph API Explorer signed in as an APN page admin;
+   `npm run tenant:connect-meta -- apn-real-estate` turns it into the
+   never-expiring page token, subscribes the page to the webhooks and saves
+   both channels (runbook, "Connecting a page and its Instagram account").
+   This is the first step of the testing script. You with me.
 4. **Run the testing script** in the runbook so every permission has been
    called from the app in development mode. Record each step; the recordings
    are the App Review screencasts. You with me.
