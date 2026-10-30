@@ -88,21 +88,25 @@ type Run = (fn: () => Promise<{ ok: boolean; message: string }>) => void;
 function MaterialPanel({ tenantId, sources, draftCounts, pending, run, fmt }: { tenantId: string; sources: ContentAssetRecord[]; draftCounts: Record<string, number>; pending: boolean; run: Run; fmt: Props["fmt"] }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const imageOk = imageUrl.trim() === "" || /^https:\/\/\S+$/.test(imageUrl.trim());
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <Section id="material-new-title" level="h3" title="Add material" lede="Paste a voice-note transcript, notes from a job, a review, a listing description. The engine drafts one post per connected channel.">
 <Panel className="py-5 flex flex-col gap-2">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What is this? e.g. Voice note — owners switching managers" aria-label="Material title" />
           <Textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} placeholder="The material itself, in the business's own words." aria-label="Material text" />
+          <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="Photo link, optional (https, JPEG). Instagram posts need one." aria-label="Image URL" aria-invalid={!imageOk} />
           <div className="flex gap-2">
             <Button
-              disabled={pending || title.trim().length < 2 || body.trim().length < 20}
+              disabled={pending || title.trim().length < 2 || body.trim().length < 20 || !imageOk}
               onClick={() =>
                 run(async () => {
-                  const r = await createSourceAction(tenantId, { title, body, generate: true });
+                  const r = await createSourceAction(tenantId, { title, body, generate: true, imageUrl: imageUrl.trim() });
                   if (r.ok) {
                     setTitle("");
                     setBody("");
+                    setImageUrl("");
                   }
                   return r;
                 })
@@ -110,7 +114,7 @@ function MaterialPanel({ tenantId, sources, draftCounts, pending, run, fmt }: { 
             >
               <Sparkles /> Save and draft
             </Button>
-            <Button variant="outline" disabled={pending || title.trim().length < 2 || body.trim().length < 20} onClick={() => run(() => createSourceAction(tenantId, { title, body, generate: false }))}>
+            <Button variant="outline" disabled={pending || title.trim().length < 2 || body.trim().length < 20 || !imageOk} onClick={() => run(() => createSourceAction(tenantId, { title, body, generate: false, imageUrl: imageUrl.trim() }))}>
               Save for the daily batch
             </Button>
           </div>

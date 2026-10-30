@@ -93,6 +93,18 @@ describe("content engine", () => {
     assert.ok(!runs.some((r) => /operator|workspace/i.test(r.summary)), "no internal words");
   });
 
+  it("material with a public image URL carries the image onto every draft and the scheduled post", async () => {
+    const source = await ingestSource(harbor, { kind: "IMAGE", title: "12 Marine Parade, Glenelg", body: "Two bedrooms a block from the beach, freshly painted, available from the first of the month. Inspections on Saturday morning.", fileUrl: "https://example.test/photos/marine-parade.jpg", origin: "operator" });
+    const { drafts } = await generateFromSource(harbor, source.id, { platforms: ["INSTAGRAM", "FACEBOOK"] });
+    assert.equal(drafts.length, 2);
+    assert.ok(drafts.every((d) => d.fileUrl === "https://example.test/photos/marine-parade.jpg"), "the image follows the source onto each draft");
+    const ig = drafts.find((d) => d.targetPlatform === "INSTAGRAM")!;
+    await repository.updateContentAssetStatus(harbor.id, ig.id, "APPROVED");
+    const { post } = await scheduleApproved(harbor, { ...ig, status: "APPROVED" });
+    assert.ok(post, "approval puts the post on the calendar");
+    assert.deepEqual(post.mediaUrls, ["https://example.test/photos/marine-parade.jpg"]);
+  });
+
   it("names and prices in the material make the draft need client sign-off", async () => {
     const source = await ingestSource(summit, { kind: "RAW_TEXT", title: "Jordan's result", body: "Jordan Lee joined in June and finished the 10k on Sunday. Memberships are $29 a week with no lock-in.", origin: "operator" });
     const { drafts } = await generateFromSource(summit, source.id, { platforms: ["INSTAGRAM"] });

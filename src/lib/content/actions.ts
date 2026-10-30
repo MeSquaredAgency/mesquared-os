@@ -43,16 +43,23 @@ const fail = (error: unknown): ActionResult => {
   return { ok: false, message: "Something went wrong. Please try again." };
 };
 
-const sourceSchema = z.object({ title: z.string().trim().min(2).max(200), body: z.string().trim().min(20).max(20_000), generate: z.boolean().default(true) });
+const sourceSchema = z.object({
+  title: z.string().trim().min(2).max(200),
+  body: z.string().trim().min(20).max(20_000),
+  generate: z.boolean().default(true),
+  /** A publicly reachable image (JPEG for Instagram) that goes out with every draft from this material. */
+  imageUrl: z.string().trim().url().startsWith("https://").max(2000).or(z.literal("")).optional(),
+});
 
-/** Operator pastes material (notes, a transcript, a review) and the engine drafts from it. */
-export async function createSourceAction(tenantId: string, input: { title: string; body: string; generate: boolean }): Promise<ActionResult & { sourceId?: string }> {
+/** Operator pastes material (notes, a transcript, a review), optionally with a public photo, and the engine drafts from it. */
+export async function createSourceAction(tenantId: string, input: { title: string; body: string; generate: boolean; imageUrl?: string }): Promise<ActionResult & { sourceId?: string }> {
   try {
     const ctx = await operatorTenant(tenantId);
     if (!ctx) return { ok: false, message: "That workspace isn’t in your portfolio." };
     const parsed = sourceSchema.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Give the material a short title and at least a couple of sentences." };
-    const source = await ingestSource(ctx.tenant, { kind: "RAW_TEXT", title: parsed.data.title, body: parsed.data.body, origin: "operator" });
+    if (!parsed.success) return { ok: false, message: "Give the material a short title, at least a couple of sentences, and (if any) an https image link." };
+    const imageUrl = parsed.data.imageUrl || null;
+    const source = await ingestSource(ctx.tenant, { kind: imageUrl ? "IMAGE" : "RAW_TEXT", title: parsed.data.title, body: parsed.data.body, fileUrl: imageUrl, origin: "operator" });
     let message = "Material saved.";
     if (parsed.data.generate) {
       const result = await generateFromSource(ctx.tenant, source.id);
