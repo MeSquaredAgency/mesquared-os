@@ -569,6 +569,13 @@ export interface Repository {
   upsertIntegration(tenantId: string, data: IntegrationUpsert): Promise<IntegrationSettings>;
   /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
   findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
+  /**
+   * Resolves which active tenant owns an active social channel by the platform's own account id
+   * (an Instagram business account id, a GBP location name). For Instagram the id may sit in
+   * `settings.igUserId` rather than `externalAccountId`; both are matched. Meta's `instagram`
+   * webhooks carry this id, not the Facebook page id the META integration is keyed by.
+   */
+  findTenantByChannelAccount(platform: SocialPlatform, externalAccountId: string): Promise<TenantSummary | null>;
 
   // --- bookings ---------------------------------------------------------------------
   findBookingById(tenantId: string, bookingId: string): Promise<BookingRecord | null>;

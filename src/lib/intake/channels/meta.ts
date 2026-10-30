@@ -44,8 +44,14 @@ export function parseMetaLeadgenEvents(body: unknown): MetaLeadgenEvent[] {
   return out;
 }
 
-/** A comment or Messenger message from a page webhook, in the inbox's shape. */
+/** Which webhook delivered an inbox event. Entry ids on `page` webhooks are Facebook page ids; on `instagram` webhooks they are Instagram business account ids. */
+export type MetaWebhookObject = "page" | "instagram";
+
+/** A comment or message from a page or Instagram webhook, in the inbox's shape. */
 export interface MetaInboxEvent {
+  /** The webhook that delivered it, which decides what `pageId` holds. */
+  object: MetaWebhookObject;
+  /** The entry id: the Facebook page id on `page` webhooks, the Instagram business account id on `instagram` webhooks. */
   pageId: string;
   kind: "COMMENT" | "DM";
   externalId: string;
@@ -66,6 +72,7 @@ export function parseMetaInboxEvents(body: unknown): MetaInboxEvent[] {
   const out: MetaInboxEvent[] = [];
   const root = body as { object?: string; entry?: { id?: string; changes?: { field?: string; value?: Record<string, unknown> }[]; messaging?: Record<string, unknown>[] }[] };
   if ((root?.object !== "page" && root?.object !== "instagram") || !Array.isArray(root.entry)) return out;
+  const object: MetaWebhookObject = root.object;
   for (const entry of root.entry) {
     const pageId = entry.id ? String(entry.id) : null;
     if (!pageId) continue;
@@ -79,13 +86,13 @@ export function parseMetaInboxEvents(body: unknown): MetaInboxEvent[] {
       const text = typeof v.message === "string" ? v.message : typeof v.text === "string" ? v.text : "";
       if (!commentId || !text) continue;
       const postId = String(v.post_id ?? (v.media as { id?: string } | undefined)?.id ?? "");
-      out.push({ pageId, kind: "COMMENT", externalId: commentId, threadId: postId || commentId, authorName: from.name ?? from.username ?? null, authorId: from.id ?? null, text, receivedAt: typeof v.created_time === "number" ? new Date(v.created_time * 1000) : new Date(), postExternalId: postId || null });
+      out.push({ object, pageId, kind: "COMMENT", externalId: commentId, threadId: postId || commentId, authorName: from.name ?? from.username ?? null, authorId: from.id ?? null, text, receivedAt: typeof v.created_time === "number" ? new Date(v.created_time * 1000) : new Date(), postExternalId: postId || null });
     }
     for (const m of entry.messaging ?? []) {
       const sender = (m.sender ?? {}) as { id?: string };
       const message = (m.message ?? {}) as { mid?: string; text?: string; is_echo?: boolean };
       if (!sender.id || sender.id === pageId || message.is_echo || !message.mid || !message.text) continue;
-      out.push({ pageId, kind: "DM", externalId: message.mid, threadId: `dm:${sender.id}`, authorName: null, authorId: sender.id, text: message.text, receivedAt: typeof m.timestamp === "number" ? new Date(m.timestamp) : new Date(), postExternalId: null });
+      out.push({ object, pageId, kind: "DM", externalId: message.mid, threadId: `dm:${sender.id}`, authorName: null, authorId: sender.id, text: message.text, receivedAt: typeof m.timestamp === "number" ? new Date(m.timestamp) : new Date(), postExternalId: null });
     }
   }
   return out;

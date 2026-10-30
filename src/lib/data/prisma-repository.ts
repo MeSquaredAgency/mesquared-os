@@ -508,6 +508,14 @@ export const prismaRepository: Repository = {
     return i ? toTenant(i.tenant) : null;
   },
 
+  async findTenantByChannelAccount(platform, externalAccountId) {
+    const c = await getPrisma().channel.findFirst({
+      where: { platform, isActive: true, tenant: { isActive: true }, OR: [{ externalAccountId }, { settings: { path: ["igUserId"], equals: externalAccountId } }] },
+      include: { tenant: true },
+    });
+    return c ? toTenant(c.tenant) : null;
+  },
+
   async findBookingById(tenantId, bookingId) {
     const b = await getPrisma().booking.findFirst({ where: { id: bookingId, tenantId } });
     return b ? toBooking(b) : null;
