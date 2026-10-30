@@ -311,7 +311,8 @@ function ChannelsPanel({ tenantId, channels, pending, run, fmt }: { tenantId: st
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {s.followers !== null ? `${s.followers.toLocaleString(fmt.locale)} followers` : "no numbers yet"}
-                      {s.reach7d !== null ? ` · reach ${s.reach7d.toLocaleString(fmt.locale)} this week` : ""}
+                      {s.reach7d !== null ? ` · reach ${s.reach7d.toLocaleString(fmt.locale)} this week` : s.views7d !== null ? ` · ${s.views7d.toLocaleString(fmt.locale)} views this week` : ""}
+                      {s.engagements7d !== null ? ` · ${s.engagements7d.toLocaleString(fmt.locale)} engagements` : ""}
                       {s.lastSnapshot ? ` · updated ${formatDateTime(s.lastSnapshot, fmt)}` : ""}
                     </p>
                   </div>

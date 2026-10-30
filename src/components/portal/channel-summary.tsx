@@ -19,7 +19,7 @@ export function ChannelSummaryCard({ summaries, fmt }: { summaries: ChannelSumma
               <tr className="text-left text-xs text-muted-foreground">
                 <th scope="col" className="py-4 pr-4 font-medium">Channel</th>
                 <th scope="col" className="py-4 pr-4 font-medium">Followers</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Reach, 7 days</th>
+                <th scope="col" className="py-4 pr-4 font-medium">Reach or views, 7 days</th>
                 <th scope="col" className="py-4 pr-4 font-medium">Engagements, 7 days</th>
                 <th scope="col" className="py-4 pr-4 font-medium">Posts, 7 days</th>
               </tr>
@@ -40,7 +40,7 @@ export function ChannelSummaryCard({ summaries, fmt }: { summaries: ChannelSumma
                       </Badge>
                     )}
                   </td>
-                  <td className="py-3 pr-4 num">{n(s.reach7d, fmt.locale)}</td>
+                  <td className="py-3 pr-4 num">{n(s.reach7d ?? s.views7d, fmt.locale)}</td>
                   <td className="py-3 pr-4 num">{n(s.engagements7d, fmt.locale)}</td>
                   <td className="py-3 pr-4 num">{s.posts7d}</td>
                 </tr>

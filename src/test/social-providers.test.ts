@@ -281,6 +281,29 @@ describe("meta provider", () => {
     const m = await meta.fetchMetrics!(fb, creds);
     assert.equal(m.followers, 1200);
     assert.equal(m.reach, null);
+    assert.equal(m.impressions, null);
+    assert.equal(m.engagements, null);
+  });
+
+  it("asks for each page insight separately, so one retired metric does not take the others down", async () => {
+    // Meta removed every page impressions/reach metric in late 2025; views (page_media_view) and engagements remain.
+    handler = route({
+      "GET graph.facebook.com/v21.0/page1/insights": (call) => {
+        const metric = new URL(call.url).searchParams.get("metric");
+        if (metric === "page_media_view") return json({ data: [{ name: "page_media_view", period: "day", values: [{ value: 31 }, { value: 40 }] }] });
+        if (metric === "page_post_engagements") return json({ data: [{ name: "page_post_engagements", period: "day", values: [{ value: 2 }] }] });
+        return json({ error: { message: "(#100) The value must be a valid insights metric" } }, 400);
+      },
+      "GET graph.facebook.com/v21.0/page1": () => json({ followers_count: 1918, fan_count: 1918 }),
+    });
+    const m = await meta.fetchMetrics!(fb, creds);
+    assert.equal(m.followers, 1918);
+    assert.equal(m.impressions, 40, "views are stored as impressions");
+    assert.equal(m.engagements, 2);
+    assert.equal(m.reach, null, "Facebook no longer reports page reach");
+    const metrics = callsTo("/page1/insights").map((c) => new URL(c.url).searchParams.get("metric"));
+    assert.deepEqual(metrics.sort(), ["page_media_view", "page_post_engagements"]);
+    for (const c of callsTo("/page1/insights")) assert.equal(c.headers.authorization, "Bearer tok_live_abc");
   });
 
   it("maps Facebook ratings to reviews", async () => {

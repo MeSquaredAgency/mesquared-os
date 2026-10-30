@@ -309,22 +309,30 @@ export function createMetaProvider(options: MetaProviderOptions = {}): SocialPro
     return values.length ? asNumber(values[values.length - 1]?.value) : null;
   }
 
+  /**
+   * Page Insights no longer has any impressions or reach metric (Meta retired
+   * `page_impressions*` in late 2025 and reports "views" instead), so Facebook
+   * reach stays null and views go in `impressions`. Each metric is its own
+   * request: one unknown metric name fails the whole call otherwise.
+   */
   async function fetchFacebookMetrics(channel: ChannelRecord, creds: ChannelCredentials): Promise<MetricsSnapshot> {
     const pageId = channel.externalAccountId;
-    const [page, insights] = await Promise.all([
+    const insight = (metric: string) => graphGet<InsightsResponse>(`${pageId}/insights`, { metric, period: "day" }, creds, `Facebook ${metric} fetch failed`);
+    const [page, views, engagements] = await Promise.all([
       graphGet<{ followers_count?: number; fan_count?: number }>(pageId, { fields: "followers_count,fan_count" }, creds, "Facebook page fetch failed"),
-      graphGet<InsightsResponse>(`${pageId}/insights`, { metric: "page_impressions_unique,page_post_engagements", period: "day" }, creds, "Facebook insights fetch failed"),
+      insight("page_media_view"),
+      insight("page_post_engagements"),
     ]);
     if (!page.ok) console.warn(`[social:meta] facebook page metrics failed: ${page.error}`);
-    if (!insights.ok) console.warn(`[social:meta] facebook insights failed: ${insights.error}`);
+    if (!views.ok) console.warn(`[social:meta] facebook views failed: ${views.error}`);
+    if (!engagements.ok) console.warn(`[social:meta] facebook engagements failed: ${engagements.error}`);
     const followers = page.ok ? asNumber(page.body.followers_count) ?? asNumber(page.body.fan_count) : null;
-    const reach = lastInsightValue(insights, "page_impressions_unique");
     return {
       followers,
-      reach,
-      impressions: reach,
-      engagements: lastInsightValue(insights, "page_post_engagements"),
-      raw: { page: page.ok ? page.body : null, insights: insights.ok ? insights.body : null },
+      reach: null,
+      impressions: lastInsightValue(views, "page_media_view"),
+      engagements: lastInsightValue(engagements, "page_post_engagements"),
+      raw: { page: page.ok ? page.body : null, views: views.ok ? views.body : null, engagements: engagements.ok ? engagements.body : null },
     };
   }
 

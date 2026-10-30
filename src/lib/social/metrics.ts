@@ -38,6 +38,8 @@ export interface ChannelSummary {
   followers: number | null;
   followersChange: number | null;
   reach7d: number | null;
+  /** Views this week, for platforms that report views instead of reach (Facebook pages since late 2025). */
+  views7d: number | null;
   engagements7d: number | null;
   posts7d: number;
   lastSnapshot: Date | null;
@@ -52,13 +54,14 @@ export function summarizeChannels(channels: ChannelRecord[], snapshots: ChannelM
     const latest = mine.at(-1) ?? null;
     const thisWeek = mine.filter((s) => s.date.getTime() >= weekAgo);
     const lastWeek = mine.filter((s) => s.date.getTime() >= twoWeeksAgo && s.date.getTime() < weekAgo);
-    const sum = (rows: ChannelMetricSnapshotRecord[], key: "reach" | "engagements" | "posts") => (rows.some((r) => r[key] !== null) ? rows.reduce((n, r) => n + (r[key] ?? 0), 0) : null);
+    const sum = (rows: ChannelMetricSnapshotRecord[], key: "reach" | "impressions" | "engagements" | "posts") => (rows.some((r) => r[key] !== null) ? rows.reduce((n, r) => n + (r[key] ?? 0), 0) : null);
     const followersLastWeek = lastWeek.at(-1)?.followers ?? null;
     return {
       channel,
       followers: latest?.followers ?? null,
       followersChange: latest?.followers != null && followersLastWeek != null ? latest.followers - followersLastWeek : null,
       reach7d: sum(thisWeek, "reach"),
+      views7d: sum(thisWeek, "impressions"),
       engagements7d: sum(thisWeek, "engagements"),
       posts7d: sum(thisWeek, "posts") ?? 0,
       lastSnapshot: latest?.date ?? null,
