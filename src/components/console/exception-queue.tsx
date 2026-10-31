@@ -6,7 +6,8 @@ import { Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Empty } from "@/components/shell/section";
+import { Notice } from "@/components/ui/notice";
+import { Empty, Meta } from "@/components/shell/section";
 import { closeExceptions, resolveException } from "@/lib/console/actions";
 import type { ExceptionRecord, TenantOption } from "@/lib/types";
 import { timeAgo } from "@/lib/utils";
@@ -16,11 +17,13 @@ interface Props {
   tenants: TenantOption[];
 }
 
+const CHECKBOX = "size-4 shrink-0 accent-[var(--navy)]";
+
 /** The operator queue: everything automation was not confident about, across the portfolio. */
 export function ExceptionQueue({ items, tenants }: Props) {
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkNote, setBulkNote] = useState("");
@@ -34,7 +37,7 @@ export function ExceptionQueue({ items, tenants }: Props) {
   const resolve = (item: ExceptionRecord, recovered: boolean) =>
     startTransition(async () => {
       const result = await resolveException(item.tenantId, item.id, notes[item.id] ?? "", recovered);
-      setNotice(result.message);
+      setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
       if (result.ok) hide([item.id]);
     });
 
@@ -58,7 +61,7 @@ export function ExceptionQueue({ items, tenants }: Props) {
     if (!ok) return;
     startTransition(async () => {
       const result = await closeExceptions(chosen.map((i) => ({ tenantId: i.tenantId, exceptionId: i.id })), bulkNote);
-      setNotice(result.message);
+      setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
       hide(result.closedIds);
       if (result.closedIds.length > 0) setBulkNote("");
     });
@@ -66,16 +69,13 @@ export function ExceptionQueue({ items, tenants }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      {notice && (
-        <p role="status" aria-live="polite" className="rounded-lg bg-muted px-4 py-3 text-sm">
-          {notice}
-        </p>
-      )}
+      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
       {visible.length === 0 ? (
-        <Empty>Queue is clear.</Empty>
+        <Empty>The queue is clear. New exceptions appear here as automations hit something they are not sure about.</Empty>
       ) : (
         <>
-          <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-card px-6 py-3">
+          {/* Selection bar: pick several, close them with one note. */}
+          <div className="surface sticky top-14 z-10 flex flex-wrap items-center gap-3 px-4 py-2.5 md:top-0">
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -85,62 +85,60 @@ export function ExceptionQueue({ items, tenants }: Props) {
                 }}
                 onChange={(e) => toggleAll(e.target.checked)}
                 disabled={pending}
-                className="size-4"
+                className={CHECKBOX}
               />
-              {chosen.length > 0 ? `${chosen.length} selected` : "Select all"}
+              {chosen.length > 0 ? <span className="font-medium">{chosen.length} selected</span> : "Select all"}
             </label>
             {chosen.length > 0 && (
-              <>
-                <Input placeholder="Why you are closing these (optional)" value={bulkNote} onChange={(e) => setBulkNote(e.target.value)} className="max-w-sm" aria-label="Note for the selected items" />
-                <Button variant="outline" onClick={closeChosen} disabled={pending}>
+              <div className="flex flex-1 flex-wrap items-center gap-2 sm:justify-end">
+                <Input placeholder="Why you are closing these (optional)" value={bulkNote} onChange={(e) => setBulkNote(e.target.value)} className="h-8 sm:w-72" aria-label="Note for the selected items" />
+                <Button variant="outline" size="sm" onClick={closeChosen} disabled={pending}>
                   <X /> Close selected
                 </Button>
-                <Button variant="ghost" onClick={() => toggleAll(false)} disabled={pending}>
+                <Button variant="ghost" size="sm" onClick={() => toggleAll(false)} disabled={pending}>
                   Clear
                 </Button>
-              </>
+              </div>
             )}
           </div>
+
           <ul className="flex flex-col gap-3">
             {visible.map((item) => {
               const tenant = tenantById.get(item.tenantId);
               return (
-                <li key={item.id} className="flex gap-4 rounded-xl border bg-card px-6 py-5">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={(e) => toggle(item.id, e.target.checked)}
-                    disabled={pending}
-                    className="mt-1 size-4 shrink-0"
-                    aria-label={`Select: ${item.reason}`}
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      {tenant && (
-                        <Link href={`/console/${tenant.slug}`} className="kicker text-sm text-foreground hover:underline">
-                          {tenant.name}
-                        </Link>
+                <li key={item.id} className="surface flex gap-4 p-5">
+                  <input type="checkbox" checked={selected.has(item.id)} onChange={(e) => toggle(item.id, e.target.checked)} disabled={pending} className={`${CHECKBOX} mt-1`} aria-label={`Select: ${item.reason}`} />
+                  <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:gap-8">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <Meta
+                        parts={[
+                          tenant ? (
+                            <Link href={`/console/${tenant.slug}`} className="font-medium text-foreground hover:underline">
+                              {tenant.name}
+                            </Link>
+                          ) : null,
+                          timeAgo(item.createdAt),
+                          item.confidence !== null ? `${Math.round(item.confidence * 100)}% confident` : null,
+                        ]}
+                      />
+                      <p className="text-md font-medium">{item.reason}</p>
+                      {item.suggestedAction && (
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">Suggested:</span> {item.suggestedAction}
+                        </p>
                       )}
-                      <span className="text-muted-foreground">· {timeAgo(item.createdAt)}</span>
-                      {item.confidence !== null && (
-                        <Badge variant="outline" title="Automation confidence">
-                          {Math.round(item.confidence * 100)}% confident
-                        </Badge>
-                      )}
-                      {item.escalatedToUserId && <Badge variant="secondary">Escalated to client</Badge>}
+                      {item.escalatedToUserId && <Badge variant="secondary">Escalated to the client</Badge>}
                     </div>
-                    <div>
-                      <p className="text-lg leading-snug">{item.reason}</p>
-                      {item.suggestedAction && <p className="mt-1 text-base text-muted-foreground">Suggested: {item.suggestedAction}</p>}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Input placeholder="What you did (optional)" value={notes[item.id] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [item.id]: e.target.value }))} className="max-w-sm" aria-label="Resolution note" />
-                      <Button onClick={() => resolve(item, true)} disabled={pending}>
-                        <Check /> Recovered
-                      </Button>
-                      <Button variant="outline" onClick={() => (typeof window === "undefined" || window.confirm("Close this without recovering it? The missed opportunity is written off.")) && resolve(item, false)} disabled={pending}>
-                        <X /> Close
-                      </Button>
+                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:flex-col lg:items-stretch">
+                      <Input placeholder="What you did (optional)" value={notes[item.id] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [item.id]: e.target.value }))} className="sm:w-64" aria-label="Resolution note" />
+                      <div className="flex gap-2">
+                        <Button onClick={() => resolve(item, true)} disabled={pending} className="flex-1">
+                          <Check /> Recovered
+                        </Button>
+                        <Button variant="outline" onClick={() => (typeof window === "undefined" || window.confirm("Close this without recovering it? The missed opportunity is written off.")) && resolve(item, false)} disabled={pending}>
+                          <X /> Close
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </li>

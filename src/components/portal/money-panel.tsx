@@ -8,7 +8,7 @@ export function MoneyPanel({ money, fmt }: { money: MoneySummary; fmt: FormatCon
   const ratio = money.adSpendMonthCents > 0 ? money.revenueMonthCents / money.adSpendMonthCents : null;
   return (
     <Section id="money-title" title={COPY.money} lede="What came in this month, what the ads cost, and what each lead cost you.">
-      <StatStrip columns={4}>
+      <StatStrip columns={4} label="Money this month">
         <Stat label="Revenue this month" value={formatMoney(money.revenueMonthCents, fmt.currency, fmt.locale)} tone="green" />
         <Stat label="Ad spend this month" value={formatMoney(money.adSpendMonthCents, fmt.currency, fmt.locale)} hint={money.adSpendMonthCents === 0 ? "No ad accounts connected" : undefined} />
         <Stat label="Cost per lead" value={money.costPerLeadCents === null ? "–" : formatMoney(money.costPerLeadCents, fmt.currency, fmt.locale)} hint={`${money.leadsMonth} lead${money.leadsMonth === 1 ? "" : "s"} this month`} />

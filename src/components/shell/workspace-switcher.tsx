@@ -1,31 +1,40 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Building2, ChevronsUpDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronsUpDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { TenantOption } from "@/lib/types";
-import { readableTextOn } from "@/lib/utils";
+import { cn, readableTextOn } from "@/lib/utils";
+
+/** The business's own mark: its colour, its initial. */
+function Mark({ tenant, className }: { tenant: TenantOption; className?: string }) {
+  const color = tenant.primaryColor ?? "#1b3853";
+  return (
+    <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold", className)} style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
+      {tenant.name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
+}
 
 /** Navigates between workspaces the user can open. The workspace lives in the URL, never in a cookie. */
 export function WorkspaceSwitcher({ current, options, basePath }: { current: TenantOption; options: TenantOption[]; /** e.g. "/app"; the slug is appended. */ basePath: string }) {
   const router = useRouter();
-  const color = current.primaryColor ?? "#1f2a44";
   const single = options.length <= 1;
 
   const trigger = (
-    <Button variant="outline" className="h-12 w-full justify-between rounded-xl bg-card px-3 hover:border-border hover:bg-accent" aria-label={`Business: ${current.name}${single ? "" : ". Switch business"}`} disabled={single}>
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
-          <Building2 className="size-3.5" />
-        </span>
-        <span className="flex min-w-0 flex-col items-start leading-tight">
-          <span className="truncate text-sm font-medium">{current.name}</span>
-          <span className="text-xs text-muted-foreground">Business</span>
-        </span>
+    <button
+      type="button"
+      className={cn("flex h-11 w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-sidebar-active px-2 text-left outline-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", !single && "hover:border-border-strong")}
+      aria-label={`Business: ${current.name}${single ? "" : ". Switch business"}`}
+      disabled={single}
+    >
+      <Mark tenant={current} />
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm font-medium">{current.name}</span>
+        <span className="truncate text-2xs text-sidebar-muted">{single ? "Your business" : `${options.length} businesses`}</span>
       </span>
-      {!single && <ChevronsUpDown className="size-4 text-muted-foreground" aria-hidden="true" />}
-    </Button>
+      {!single && <ChevronsUpDown className="size-4 shrink-0 text-sidebar-muted" aria-hidden="true" />}
+    </button>
   );
 
   if (single) return trigger;
@@ -34,11 +43,11 @@ export function WorkspaceSwitcher({ current, options, basePath }: { current: Ten
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel>Businesses</DropdownMenuLabel>
+        <DropdownMenuLabel>Switch business</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={current.slug} onValueChange={(slug) => router.push(`${basePath}/${slug}`)}>
           {options.map((t) => (
             <DropdownMenuRadioItem key={t.id} value={t.slug}>
-              <span className="size-2.5 rounded-full" style={{ backgroundColor: t.primaryColor ?? "var(--muted-foreground)" }} aria-hidden="true" />
+              <Mark tenant={t} className="size-5 rounded-sm text-[10px]" />
               <span className="flex-1 truncate">{t.name}</span>
             </DropdownMenuRadioItem>
           ))}

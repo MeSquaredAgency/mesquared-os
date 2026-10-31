@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
-import { Empty, Panel, Section } from "@/components/shell/section";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { Empty, Section } from "@/components/shell/section";
 import { PLATFORM_LABEL } from "@/components/shell/platform";
 import type { ChannelSummary } from "@/lib/social/metrics";
 import type { FormatContext } from "@/lib/utils";
@@ -13,41 +14,43 @@ export function ChannelSummaryCard({ summaries, fmt }: { summaries: ChannelSumma
       {summaries.length === 0 ? (
         <Empty>No channels connected yet. Ask Me² to connect your pages.</Empty>
       ) : (
-        <Panel className="overflow-x-auto py-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-4 pr-4 font-medium">Channel</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Followers</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Reach or views, 7 days</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Engagements, 7 days</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Posts, 7 days</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y border-t">
+        <div className="surface overflow-hidden">
+          <Table className="min-w-[560px]">
+            <THead>
+              <TR className="hover:bg-transparent">
+                <TH>Channel</TH>
+                <TH numeric>Followers</TH>
+                <TH numeric>Reach or views, 7 days</TH>
+                <TH numeric>Engagements, 7 days</TH>
+                <TH numeric>Posts, 7 days</TH>
+              </TR>
+            </THead>
+            <TBody>
               {summaries.map((s) => (
-                <tr key={s.channel.id}>
-                  <td className="py-3 pr-4">
+                <TR key={s.channel.id}>
+                  <TD>
                     <p className="font-medium">{PLATFORM_LABEL[s.channel.platform]}</p>
                     <p className="text-xs text-muted-foreground">{s.channel.displayName ?? s.channel.externalAccountId}</p>
-                  </td>
-                  <td className="py-3 pr-4 num">
-                    {n(s.followers, fmt.locale)}
-                    {s.followersChange !== null && s.followersChange !== 0 && (
-                      <Badge variant={s.followersChange > 0 ? "green" : "red"} className="ml-2">
-                        {s.followersChange > 0 ? "+" : ""}
-                        {s.followersChange}
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4 num">{n(s.reach7d ?? s.views7d, fmt.locale)}</td>
-                  <td className="py-3 pr-4 num">{n(s.engagements7d, fmt.locale)}</td>
-                  <td className="py-3 pr-4 num">{s.posts7d}</td>
-                </tr>
+                  </TD>
+                  <TD numeric>
+                    <span className="inline-flex items-center justify-end gap-2">
+                      {n(s.followers, fmt.locale)}
+                      {s.followersChange !== null && s.followersChange !== 0 && (
+                        <Badge variant={s.followersChange > 0 ? "green" : "red"}>
+                          {s.followersChange > 0 ? "+" : ""}
+                          {s.followersChange}
+                        </Badge>
+                      )}
+                    </span>
+                  </TD>
+                  <TD numeric>{n(s.reach7d ?? s.views7d, fmt.locale)}</TD>
+                  <TD numeric>{n(s.engagements7d, fmt.locale)}</TD>
+                  <TD numeric>{s.posts7d}</TD>
+                </TR>
               ))}
-            </tbody>
-          </table>
-        </Panel>
+            </TBody>
+          </Table>
+        </div>
       )}
     </Section>
   );

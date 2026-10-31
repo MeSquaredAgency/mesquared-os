@@ -4,9 +4,8 @@ import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { MoneyPanel } from "@/components/portal/money-panel";
 import { NeedsYou } from "@/components/portal/needs-you";
-import { Hero } from "@/components/shell/hero";
 import { Me2Person } from "@/components/shell/me2-person";
-import { Stat, StatStrip } from "@/components/shell/section";
+import { PageHeader, Stat, StatStrip } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -34,17 +33,22 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
   const waiting = home.needsYou.length;
 
   return (
-    <div className="flex flex-col gap-12">
-      <Hero kicker={today} title={headline(waiting, user.name)} lede={`Everything else at ${tenant.name} is handled, with a person checking the work. Here’s where things stand.`} aside={<Me2Person tenantId={tenant.id} />}>
-        {waiting > 0 && (
-          <Button asChild>
-            <Link href={`${base}/leads`}>See who’s waiting</Link>
-          </Button>
-        )}
-        <Button asChild variant="outline">
-          <Link href={`${base}/activity`}>What we handled</Link>
-        </Button>
-      </Hero>
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        eyebrow={`${tenant.name} · ${today}`}
+        title={headline(waiting, user.name)}
+        lede={waiting > 0 ? "Everything else is handled, with a person checking the work." : "Everything is handled, with a person checking the work. Here’s where things stand."}
+        actions={
+          <>
+            <Me2Person tenantId={tenant.id} />
+            {waiting > 0 && (
+              <Button asChild>
+                <Link href="#needs-you-title">See who’s waiting</Link>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <StatStrip label="This month at a glance" columns={3}>
         <Stat label={COPY.atRiskLabel} value={formatMoney(home.missed.atRiskCents, fmt.currency, fmt.locale)} tone={home.missed.atRiskCents > 0 ? "red" : "neutral"} hint={`${home.missed.open.length} open`} />
