@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
-import { Empty, Panel, Section, Stat, StatStrip } from "@/components/shell/section";
+import { Table, TBody, TD, TFoot, TH, THead, TR } from "@/components/ui/table";
+import { Empty, Section, Stat, StatStrip } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import type { AttributionReport } from "@/lib/attribution/report";
 import type { PacingStatus } from "@/lib/ads/sync";
@@ -28,27 +29,25 @@ export function InvoicesCard({ invoices, fmt, title = "Invoices", description = 
       {invoices.length === 0 ? (
         <Empty>No invoices yet. Connect Xero, Square or Stripe and they appear here.</Empty>
       ) : (
-        <Panel>
-          <ul className="divide-y">
-            {invoices.slice(0, 12).map((i) => (
-              <li key={i.id} className="flex items-center justify-between gap-4 py-4">
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <p className="truncate text-base">
-                    {i.number ? `#${i.number}` : "Invoice"} · {i.customerName ?? i.customerEmail ?? "customer"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {i.dueAt ? `${i.status === "PAID" ? "paid" : "due"} ${formatDateTime(i.paidAt ?? i.dueAt, fmt).replace(/,.*$/, "")}` : ""}
-                    {i.remindersSent ? ` · ${i.remindersSent} reminder${i.remindersSent === 1 ? "" : "s"} sent` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-base num">{formatMoney(i.status === "PAID" ? i.amountCents : i.amountDueCents, i.currency, fmt.locale)}</span>
-                  <StatusBadge status={i.status} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+        <ul className="surface divide-y px-5">
+          {invoices.slice(0, 12).map((i) => (
+            <li key={i.id} className="flex items-center justify-between gap-4 py-3.5">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="truncate text-sm">
+                  {i.number ? `#${i.number}` : "Invoice"} · {i.customerName ?? i.customerEmail ?? "customer"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {i.dueAt ? `${i.status === "PAID" ? "paid" : "due"} ${formatDateTime(i.paidAt ?? i.dueAt, fmt).replace(/,.*$/, "")}` : ""}
+                  {i.remindersSent ? ` · ${i.remindersSent} reminder${i.remindersSent === 1 ? "" : "s"} sent` : ""}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="text-sm font-medium num">{formatMoney(i.status === "PAID" ? i.amountCents : i.amountDueCents, i.currency, fmt.locale)}</span>
+                <StatusBadge status={i.status} />
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </Section>
   );
@@ -61,50 +60,52 @@ export function AttributionCard({ report, fmt }: { report: AttributionReport; fm
       {report.rows.length === 0 ? (
         <Empty>No leads in this period yet.</Empty>
       ) : (
-        <Panel className="overflow-x-auto py-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground">
-                <th scope="col" className="py-4 pr-4 font-medium">Channel</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Spend</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Leads</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Booked</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Won</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Revenue</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Cost / lead</th>
-                <th scope="col" className="py-4 pr-4 font-medium">Revenue / $</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y border-t">
+        <div className="surface overflow-hidden">
+          <Table className="min-w-[760px]">
+            <THead>
+              <TR className="hover:bg-transparent">
+                <TH>Channel</TH>
+                <TH numeric>Spend</TH>
+                <TH numeric>Leads</TH>
+                <TH numeric>Booked</TH>
+                <TH numeric>Won</TH>
+                <TH numeric>Revenue</TH>
+                <TH numeric>Cost / lead</TH>
+                <TH numeric>Revenue / $</TH>
+              </TR>
+            </THead>
+            <TBody>
               {report.rows.map((r) => (
-                <tr key={r.key}>
-                  <td className="py-3 pr-4">
+                <TR key={r.key}>
+                  <TD>
                     <span className="font-medium capitalize">{r.source.replace(/_/g, " ")}</span>
                     {r.campaign && <span className="text-muted-foreground"> · {r.campaign}</span>}
-                  </td>
-                  <td className="py-3 pr-4 num">{m(r.spendCents)}</td>
-                  <td className="py-3 pr-4 num">{r.leads}</td>
-                  <td className="py-3 pr-4 num">{r.booked}</td>
-                  <td className="py-3 pr-4 num">{r.won}</td>
-                  <td className="py-3 pr-4 num">{m(r.revenueCents)}</td>
-                  <td className="py-3 pr-4 num">{m(r.costPerLeadCents)}</td>
-                  <td className="py-3 pr-4 num">{r.roas === null ? "–" : `${r.roas.toFixed(1)}×`}</td>
-                </tr>
+                  </TD>
+                  <TD numeric>{m(r.spendCents)}</TD>
+                  <TD numeric>{r.leads}</TD>
+                  <TD numeric>{r.booked}</TD>
+                  <TD numeric>{r.won}</TD>
+                  <TD numeric>{m(r.revenueCents)}</TD>
+                  <TD numeric>{m(r.costPerLeadCents)}</TD>
+                  <TD numeric>{r.roas === null ? "–" : `${r.roas.toFixed(1)}×`}</TD>
+                </TR>
               ))}
-              <tr className="font-medium">
-                <td className="py-3 pr-4">All channels</td>
-                <td className="py-3 pr-4 num">{m(report.totals.spendCents)}</td>
-                <td className="py-3 pr-4 num">{report.totals.leads}</td>
-                <td className="py-3 pr-4 num">{report.totals.booked}</td>
-                <td className="py-3 pr-4 num">{report.totals.won}</td>
-                <td className="py-3 pr-4 num">{m(report.totals.revenueCents)}</td>
-                <td className="py-3 pr-4 num">{m(report.totals.costPerLeadCents)}</td>
-                <td className="py-3 pr-4 num">{report.totals.roas === null ? "–" : `${report.totals.roas.toFixed(1)}×`}</td>
-              </tr>
-            </tbody>
-          </table>
-          {report.unattributed > 0 && <p className="border-t py-3 text-sm text-muted-foreground">{report.unattributed} lead{report.unattributed === 1 ? "" : "s"} arrived with no campaign on them (direct, phone or email).</p>}
-        </Panel>
+            </TBody>
+            <TFoot>
+              <TR className="hover:bg-transparent">
+                <TD>All channels</TD>
+                <TD numeric>{m(report.totals.spendCents)}</TD>
+                <TD numeric>{report.totals.leads}</TD>
+                <TD numeric>{report.totals.booked}</TD>
+                <TD numeric>{report.totals.won}</TD>
+                <TD numeric>{m(report.totals.revenueCents)}</TD>
+                <TD numeric>{m(report.totals.costPerLeadCents)}</TD>
+                <TD numeric>{report.totals.roas === null ? "–" : `${report.totals.roas.toFixed(1)}×`}</TD>
+              </TR>
+            </TFoot>
+          </Table>
+          {report.unattributed > 0 && <p className="border-t px-5 py-3 text-xs text-muted-foreground">{report.unattributed} lead{report.unattributed === 1 ? "" : "s"} arrived with no campaign on them (direct, phone or email).</p>}
+        </div>
       )}
     </Section>
   );
@@ -117,37 +118,37 @@ export function WebsiteCard({ site, fmt }: { site: SiteSummary; fmt: FormatConte
       {site.days.length === 0 ? (
         <Empty>No website numbers yet. Add the beacon snippet to the site and they appear within a day.</Empty>
       ) : (
-        <div className="flex flex-col gap-5">
-          <StatStrip columns={4}>
+        <div className="flex flex-col gap-3">
+          <StatStrip columns={4} label="Website, last 7 days">
             <Stat label="Visits" value={n(site.sessions7d)} hint={site.sessionsChange !== null ? `${site.sessionsChange > 0 ? "+" : ""}${site.sessionsChange}% vs the week before` : undefined} />
             <Stat label="Page views" value={n(site.pageviews7d)} />
             <Stat label="Forms started" value={n(site.formStarts7d)} />
             <Stat label="Forms sent" value={n(site.formSubmits7d)} hint={site.formConversion !== null ? `${Math.round(site.formConversion * 100)}% of starts` : undefined} tone="green" />
           </StatStrip>
-          <Panel className="grid gap-6 py-5 sm:grid-cols-2">
-            <div>
-              <p className="kicker mb-2 text-xs">Top pages</p>
+          <div className="surface grid gap-6 p-5 sm:grid-cols-2">
+            <div className="min-w-0">
+              <p className="eyebrow mb-2">Top pages</p>
               <ul className="text-sm">
                 {Object.entries(site.topPages).map(([p, v]) => (
                   <li key={p} className="flex justify-between gap-3 py-1">
                     <span className="truncate">{p}</span>
-                    <span className="text-muted-foreground num">{n(v)}</span>
+                    <span className="shrink-0 text-muted-foreground num">{n(v)}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div>
-              <p className="kicker mb-2 text-xs">Where visitors came from</p>
+            <div className="min-w-0">
+              <p className="eyebrow mb-2">Where visitors came from</p>
               <ul className="text-sm">
                 {Object.entries(site.topSources).map(([s, v]) => (
                   <li key={s} className="flex justify-between gap-3 py-1">
                     <span className="truncate capitalize">{s}</span>
-                    <span className="text-muted-foreground num">{n(v)}</span>
+                    <span className="shrink-0 text-muted-foreground num">{n(v)}</span>
                   </li>
                 ))}
               </ul>
             </div>
-          </Panel>
+          </div>
         </div>
       )}
     </Section>

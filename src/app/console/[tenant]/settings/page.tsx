@@ -21,9 +21,19 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-8">
       <PageHeader
-        kicker={tenant.name}
+        eyebrow={
+          <>
+            <Link href="/console" className="hover:text-foreground hover:underline">
+              Portfolio
+            </Link>
+            <span aria-hidden="true">/</span>
+            <Link href={`/console/${tenant.slug}`} className="hover:text-foreground hover:underline">
+              {tenant.name}
+            </Link>
+          </>
+        }
         title="Settings"
         lede="Everything about this client is configuration here, never code. Changes apply straight away."
         actions={

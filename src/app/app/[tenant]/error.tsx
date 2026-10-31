@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function PortalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
@@ -9,16 +9,14 @@ export default function PortalError({ error, reset }: { error: Error & { digest?
     console.error("[portal]", error);
   }, [error]);
   return (
-    <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-full bg-red-soft text-red-text">
-        <AlertTriangle className="size-6" />
-      </span>
+    <div role="alert" className="surface mx-auto mt-10 flex max-w-md flex-col items-start gap-4 p-6">
+      <p className="eyebrow">Something went wrong</p>
       <div>
-        <h1 className="text-lg">Something went wrong</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Try again. If it keeps happening, check the server log.</p>
-        {error.digest && <p className="mt-2 text-xs text-muted-foreground">Reference: {error.digest}</p>}
+        <h1 className="section-title">This page didn’t load</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Try again in a moment. If it keeps happening, tell your Me² person.</p>
+        {error.digest && <p className="mt-2 text-xs text-muted-foreground num">Reference: {error.digest}</p>}
       </div>
-      <Button onClick={reset} variant="outline">
+      <Button onClick={reset} variant="outline" size="sm">
         <RotateCcw /> Try again
       </Button>
     </div>

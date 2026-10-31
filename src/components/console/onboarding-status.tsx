@@ -9,10 +9,11 @@ export const ONBOARDING_STATUS_LABEL: Record<OnboardingStatus, string> = {
   CANCELLED: "Withdrawn",
 };
 
-const VARIANT: Record<OnboardingStatus, "outline" | "secondary" | "green" | "muted" | "default"> = {
+/** Same meanings as every other status chip: in flight navy, waiting on us amber, done green, finished muted. */
+const VARIANT: Record<OnboardingStatus, "outline" | "secondary" | "green" | "muted" | "amber"> = {
   INVITED: "outline",
   IN_PROGRESS: "secondary",
-  SUBMITTED: "default",
+  SUBMITTED: "amber",
   PROVISIONED: "green",
   CANCELLED: "muted",
 };

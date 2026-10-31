@@ -28,11 +28,11 @@ export default async function MoneyPage({ params }: { params: Promise<{ tenant: 
   const month = now.toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, month: "long" });
 
   return (
-    <div className="flex flex-col gap-12">
-      <PageHeader kicker="Money" title={`${month} so far`} lede={`What came in, what it cost to get, and what is still owed to ${tenant.name}.`} />
+    <div className="flex flex-col gap-8">
+      <PageHeader eyebrow="Money" title={`${month} so far`} lede={`What came in, what it cost to get, and what is still owed to ${tenant.name}.`} />
       {home.money && <MoneyHeadline money={home.money} pacing={pacing} fmt={fmt} />}
       <AttributionCard report={report} fmt={fmt} />
-      <div className="grid gap-12 xl:grid-cols-2 xl:gap-8">
+      <div className="grid gap-8 xl:grid-cols-2 xl:gap-6">
         <InvoicesCard invoices={invoices.sort((a, b) => (a.status === "OVERDUE" ? -1 : 0) - (b.status === "OVERDUE" ? -1 : 0))} fmt={fmt} />
         <WebsiteCard site={summarizeSite(site, now)} fmt={fmt} />
       </div>

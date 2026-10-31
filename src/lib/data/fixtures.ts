@@ -3,6 +3,7 @@ import { hashApiKey } from "@/lib/crypto";
 import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/apply";
 import { healthFitnessTemplate } from "@/lib/templates/health-fitness";
 import { realEstateTemplate } from "@/lib/templates/real-estate";
+import { dayBucketInZone } from "@/lib/utils";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
@@ -197,10 +198,14 @@ export const demoAdAccounts: AdAccountRecord[] = [
   { id: "ad_2", tenantId: "tenant_harbor", platform: "GOOGLE_ADS", externalAccountId: "1234567890", name: "Harbor Realty — Google", currency: "AUD", monthlyBudgetCents: 40_000, isActive: true, lastSyncAt: ago(60 * 5), lastError: null, settings: {} },
 ];
 
-/** Thirty days of daily spend on two Meta campaigns and one Google campaign, roughly on budget. */
+/**
+ * Thirty days of daily spend on two Meta campaigns and one Google campaign,
+ * roughly on budget. Days are the tenant's calendar dates (ad platforms report
+ * in the account's timezone), so the newest row is always "today" in Adelaide
+ * and the month's spend is never empty on the first of the month.
+ */
 export const demoAdSpend: AdSpendSnapshotRecord[] = Array.from({ length: 30 }, (_, n) => {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
+  const d = dayBucketInZone("Australia/Adelaide");
   d.setUTCDate(d.getUTCDate() - n);
   return [
     { id: `as_m1_${n}`, tenantId: "tenant_harbor", adAccountId: "ad_1", platform: "META" as const, date: d, campaignId: "c_landlords", campaignName: "Landlord leads — Adelaide", spendCents: 1400 + (n % 5) * 60, impressions: 1900 + n * 7, clicks: 38 + (n % 4), platformLeads: n % 3 === 0 ? 1 : 0 },
@@ -476,7 +481,7 @@ export const demoPosts: SocialPostRecord[] = [
 
 export const demoTransactions: TransactionRecord[] = [
   { id: "txn_1", tenantId: "tenant_harbor", contactId: "ct_4", leadId: null, provider: "MANUAL", providerId: "comm_01", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_250_000, currency: "AUD", note: "Sales commission — 4 Harbour View", occurredAt: ago(60 * 24 * 6) },
-  { id: "txn_2", tenantId: "tenant_harbor", contactId: null, leadId: null, provider: "MANUAL", providerId: "mgmt_oct", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_840_000, currency: "AUD", note: "Management fees — October", occurredAt: ago(60 * 24 * 2) },
+  { id: "txn_2", tenantId: "tenant_harbor", contactId: null, leadId: null, provider: "MANUAL", providerId: "mgmt_oct", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_840_000, currency: "AUD", note: "Management fees — this month", occurredAt: new Date() },
   { id: "txn_3", tenantId: "tenant_summit", contactId: "ct_6", leadId: "lead_5", provider: "SQUARE", providerId: "sq_pay_04", kind: "PAYMENT", status: "COMPLETED", amountCents: 29_000, currency: "AUD", note: "Trial week", occurredAt: ago(60) },
   { id: "txn_4", tenantId: "tenant_summit", contactId: null, leadId: null, provider: "SQUARE", providerId: "sq_pay_05", kind: "PAYMENT", status: "COMPLETED", amountCents: 1_160_000, currency: "AUD", note: "Memberships — this month", occurredAt: ago(60 * 24 * 5) },
 ];

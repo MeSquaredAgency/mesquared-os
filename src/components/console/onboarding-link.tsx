@@ -11,9 +11,9 @@ export function OnboardingLinkCard({ url, label, contactEmail }: { url: string; 
   const subject = `Your Me² onboarding questionnaire`;
   const body = `Hi,\n\nHere is the link to your Me² onboarding questionnaire for ${label}. It takes about 30 minutes and saves as you go, so you can stop and come back with the same link:\n\n${full}\n\nAny questions, just reply to this email.\n`;
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <div className="flex flex-col gap-3 border-t pt-4">
       <p className="text-sm font-medium">The client’s link (shown once)</p>
-      <code className="block overflow-x-auto rounded-lg bg-accent px-3 py-2 text-sm">{full}</code>
+      <code className="scrollbar-none block overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs whitespace-nowrap">{full}</code>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"

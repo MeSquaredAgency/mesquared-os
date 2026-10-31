@@ -1,5 +1,5 @@
 import { LeadRows, LiveLeads } from "@/components/portal/lead-rows";
-import { PageHeader, Panel } from "@/components/shell/section";
+import { PageHeader } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
@@ -31,15 +31,15 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
   const rows = (await repository.listRecentLeads(tenant.id, limit)).filter((l) => viewAll || l.assigneeId === user.id || l.assigneeId === null).map(toLiveLeadRow);
 
   return (
-    <div className="flex flex-col gap-10">
-      <PageHeader kicker="Leads" title={viewAll ? "Everyone who has enquired" : "Your leads"} lede={viewAll ? "Every enquiry, newest first, with how we read it and where it is up to." : "Your leads and any not yet assigned, newest first."} />
-      <Panel>
+    <div className="flex flex-col gap-8">
+      <PageHeader eyebrow="Leads" title={viewAll ? "Everyone who has enquired" : "Your leads"} lede={viewAll ? "Every enquiry, newest first, with how we read it and where it is up to." : "Your leads and any not yet assigned, newest first."} actions={<span className="text-xs text-muted-foreground">{rows.length} lead{rows.length === 1 ? "" : "s"}</span>} />
+      <div className="surface px-5">
         {sealed ? (
           <LiveLeads key={sealed.queryFingerprint} tenantSlug={slug} userId={user.id} realtimeUrl={realtimeUrl()} sealedQuery={sealed} rows={rows} fmt={fmt} stageNames={stageNames} />
         ) : (
           <LeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
         )}
-      </Panel>
+      </div>
     </div>
   );
 }

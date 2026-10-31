@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { headers } from "next/headers";
 import { clientIpFromHeaders } from "@/lib/auth/client-ip";
@@ -49,10 +50,10 @@ export default async function BookPage({ params, searchParams }: { params: Promi
 
   // The customer's page carries the business's name, never Me²'s.
   return (
-    <main data-theme="paper" className="flex min-h-screen items-center justify-center bg-background p-5 text-foreground">
-      <div className="flex w-full max-w-md flex-col gap-6 rounded-2xl border bg-card p-7 shadow-[var(--shadow-card)] sm:p-9">
-        <div className="flex flex-col gap-3">
-          <p className="kicker">{tenant.branding.fromName ?? tenant.name}</p>
+    <main data-theme="paper" className="flex min-h-screen items-center justify-center bg-background p-4 text-foreground">
+      <div className="surface flex w-full max-w-md flex-col gap-6 p-6 shadow-card sm:p-8">
+        <div className="flex flex-col gap-2">
+          <p className="eyebrow">{tenant.branding.fromName ?? tenant.name}</p>
           <h1 className="page-title">{done ? "Thank you" : "Let’s find a time"}</h1>
         </div>
         {done ? (
@@ -60,14 +61,13 @@ export default async function BookPage({ params, searchParams }: { params: Promi
         ) : (
           <form action={requestCallback} className="flex flex-col gap-5">
             <input type="hidden" name="lead" value={leadId ?? ""} />
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              When suits you best for a call?
-              <Input name="when" placeholder="e.g. tomorrow morning, or any afternoon this week" maxLength={120} />
-            </label>
+            <Field label="When suits you best for a call?">
+              <Input name="when" placeholder="e.g. tomorrow morning, or any afternoon this week" maxLength={120} className="h-11 text-base" />
+            </Field>
             <Button type="submit" size="lg">
               Ask for a call back
             </Button>
-            <p className="text-sm text-muted-foreground">You’ll hear from {tenant.name} directly. Reply to any message from us if you’d rather not be contacted.</p>
+            <p className="text-xs text-muted-foreground">You’ll hear from {tenant.name} directly. Reply to any message from us if you’d rather not be contacted.</p>
           </form>
         )}
       </div>

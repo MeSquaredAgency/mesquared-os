@@ -2,7 +2,7 @@ import { ChannelSummaryCard } from "@/components/portal/channel-summary";
 import { ContentApprovals } from "@/components/portal/content-approvals";
 import { ContentCalendar } from "@/components/portal/content-calendar";
 import { PortalInbox } from "@/components/portal/portal-inbox";
-import { Empty, PageHeader, Panel, Section } from "@/components/shell/section";
+import { Empty, PageHeader, Section } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { PLATFORM_LABEL } from "@/components/shell/platform";
 import { getPortalContext } from "@/lib/auth/access";
@@ -47,45 +47,43 @@ export default async function ContentPage({ params }: { params: Promise<{ tenant
   }
 
   return (
-    <div className="flex flex-col gap-12">
+    <div className="flex flex-col gap-8">
       <PageHeader
-        kicker="Content"
+        eyebrow="Content"
         title={waiting === 0 ? "Nothing waiting for you" : `${waiting} draft${waiting === 1 ? "" : "s"} waiting for your say`}
         lede={`Drafts for ${wb.connectedPlatforms.map((p) => PLATFORM_LABEL[p]).join(", ") || "your channels"}, the calendar, your channel numbers and the inbox. Approve what goes live; the rest is handled.`}
       />
       <ContentApprovals tenantSlug={slug} assets={wb.assets} fileLinks={fileLinks} canApprove={canApprove} isMember={access.via === "member"} />
       <ContentCalendar days={calendar} fmt={fmt} />
-      <div className="grid gap-12 xl:grid-cols-2 xl:gap-8">
+      <div className="grid gap-8 xl:grid-cols-2 xl:gap-6">
         <ChannelSummaryCard summaries={summaries} fmt={fmt} />
         <Section id="decided-title" title="Decided" lede="Approved drafts are on the calendar; sent-back ones went to Me² to rework.">
           {decided.length === 0 ? (
             <Empty>No decisions yet.</Empty>
           ) : (
-            <Panel>
-              <ul className="divide-y">
-                {decided.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-4 py-4">
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <p className="truncate text-base">{a.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {humanize(a.kind)}
-                        {a.targetPlatform ? ` · ${PLATFORM_LABEL[a.targetPlatform]}` : ""}
-                        {a.scheduledFor ? ` · ${formatDateTime(a.scheduledFor, fmt)}` : ""}
-                        {fileLinks[a.id] && (
-                          <>
-                            {" · "}
-                            <a className="underline underline-offset-4" href={fileLinks[a.id]} target="_blank" rel="noreferrer">
-                              Download file
-                            </a>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <StatusBadge status={a.status} />
-                  </li>
-                ))}
-              </ul>
-            </Panel>
+            <ul className="surface divide-y px-5">
+              {decided.map((a) => (
+                <li key={a.id} className="flex items-center justify-between gap-4 py-3.5">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <p className="truncate text-sm">{a.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {humanize(a.kind)}
+                      {a.targetPlatform ? ` · ${PLATFORM_LABEL[a.targetPlatform]}` : ""}
+                      {a.scheduledFor ? ` · ${formatDateTime(a.scheduledFor, fmt)}` : ""}
+                      {fileLinks[a.id] && (
+                        <>
+                          {" · "}
+                          <a className="underline underline-offset-4" href={fileLinks[a.id]} target="_blank" rel="noreferrer">
+                            Download file
+                          </a>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <StatusBadge status={a.status} />
+                </li>
+              ))}
+            </ul>
           )}
         </Section>
       </div>

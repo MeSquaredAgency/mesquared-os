@@ -36,7 +36,7 @@ import type {
   UserRecord,
   WebEventRecord,
 } from "@/lib/types";
-import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/apply";
 import {
   TenantMismatchError,
@@ -1484,7 +1484,7 @@ export const memoryRepository: Repository = {
     const revenueMonthCents = s.transactions
       .filter((t) => t.tenantId === tenantId && t.status === "COMPLETED" && t.currency === opts.currency && t.occurredAt.getTime() >= monthStart)
       .reduce((sum, t) => sum + t.amountCents, 0);
-    const adSpendMonthCents = await this.sumAdSpend(tenantId, new Date(monthStart), undefined, opts.currency);
+    const adSpendMonthCents = await this.sumAdSpend(tenantId, monthBucketInZone(opts.timezone), undefined, opts.currency);
     const expensesMonthCents = s.transactions.filter((t) => t.tenantId === tenantId && t.kind === "EXPENSE" && t.status === "COMPLETED" && t.occurredAt.getTime() >= monthStart).reduce((sum, t) => sum + t.amountCents, 0);
     const openInvoices = s.invoices.filter((i) => i.tenantId === tenantId && (i.status === "SENT" || i.status === "OVERDUE"));
     const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
@@ -1524,9 +1524,8 @@ export const memoryRepository: Repository = {
       const dayStart = startOfDayInZone(tenant.timezone, now).getTime();
       const { respond, book } = await this.listLeadsPastSla(tenant.id, now);
       const open = s.missed.filter((m) => m.tenantId === tenant.id && OPEN_MISSED.has(m.status));
-      const monthStart = startOfMonthInZone(tenant.timezone, now);
       const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
-      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthStart), budgetCents } : null;
+      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now)), budgetCents } : null;
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const base = {
         tenant,

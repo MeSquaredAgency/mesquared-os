@@ -1,16 +1,17 @@
 @import "tailwindcss";
 
 /*
- * Me² design system (the "Me²" Design System artifact), applied to the app.
+ * MeSquared OS — product UI tokens.
  *
- * Two tones. Paper is the default and the client portal: warm paper ground,
- * cream cards, ink text. Abyss is the operator console: deep navy ground,
- * raised navy cards, mist text. A surface sets `data-theme` and every token
- * below follows; components use the semantic names only.
+ * The brand (Instrument Sans, warm paper, deep navy, one coral square) is
+ * applied as a working tool, not a website: every content area is paper
+ * with cream cards so it reads in daylight and on a phone; the operator
+ * console is told apart by a navy sidebar, the client portal by a light one.
  *
- * Coral is a signal, not a fill: the 8px square on primary buttons and
- * kickers, focus rings, nothing larger. Green and red are reserved for money
- * direction and risk. Every text token below passes 4.5:1 on its ground.
+ * Coral is a signal, never a fill: the 8px square on primary buttons and
+ * eyebrows, the active-nav mark, focus rings. Green and red are reserved for
+ * money direction and risk; navy-blue marks things in flight; amber marks
+ * things to watch. Every text token passes 4.5:1 on its ground.
  */
 :root,
 [data-theme="paper"] {
@@ -25,8 +26,8 @@
   --mist: #f4efe7;
   --haze: #a49c92;
   --slate: #5b5650;
-  --paper: #f7f2ea;
-  --paper-2: #eee6da;
+  --paper: #f6f1e9;
+  --paper-2: #ece5d8;
   --cream: #fffdf9;
 
   --background: var(--paper);
@@ -40,31 +41,50 @@
   --primary-hover: var(--navy);
   --secondary: var(--paper-2);
   --secondary-foreground: var(--ink);
-  --muted: var(--paper-2);
-  --muted-foreground: var(--slate);
-  --accent: var(--paper-2);
+  --muted: #efe9de;
+  --muted-foreground: #5d5851;
+  --subtle-foreground: #7a746c;
+  --accent: #f0eadf;
   --accent-foreground: var(--ink);
-  /* The coral square on this ground, and the one that sits on a primary button's fill. */
   --brand: var(--coral-deep);
   --brand-on-primary: var(--coral);
   --destructive: var(--coral-deep);
-  --border: #1b232c24;
-  --input: #1b232c6e;
+  --border: #1b232c1f;
+  --border-strong: #1b232c3d;
+  --input: #1b232c5c;
   --ring: var(--coral-deep);
+
   --green: #2e7d5b;
-  --green-text: #2a6b4e;
-  --green-soft: #dcefe3;
+  --green-text: #266449;
+  --green-soft: #ddefe4;
   --red: #c4502f;
   --red-text: #a6412a;
-  --red-soft: #f7dfd6;
-  --sidebar: #f1ebe0;
+  --red-soft: #f8e0d7;
+  --amber: #b4731a;
+  --amber-text: #7f4f0c;
+  --amber-soft: #f7e8cf;
+  --blue: var(--navy);
+  --blue-text: #1b3853;
+  --blue-soft: #e2e9f1;
 
-  --radius: 10px;
-  --radius-panel: 18px;
-  --radius-card: 24px;
-  --shadow-card: 0 1px #1b232c0a, 0 36px 90px -30px #5b402852, 0 14px 30px -20px #1b232c38;
+  --sidebar: #efe8dc;
+  --sidebar-foreground: var(--ink);
+  --sidebar-muted: #6b655d;
+  --sidebar-active: var(--cream);
+  --sidebar-hover: #fffdf980;
+  --sidebar-border: #1b232c1a;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --shadow-card: 0 1px 2px #1b232c0a, 0 8px 24px -16px #1b232c33;
+  --shadow-pop: 0 2px 6px #1b232c14, 0 20px 48px -20px #1b232c47;
 }
 
+/* The dark tone: the console sidebar and the login panel. */
 [data-theme="abyss"] {
   color-scheme: dark;
 
@@ -72,7 +92,7 @@
   --foreground: var(--mist);
   --card: var(--abyss-2);
   --card-foreground: var(--mist);
-  --popover: var(--abyss-2);
+  --popover: #1f2d3b;
   --popover-foreground: var(--mist);
   --primary: var(--mist);
   --primary-foreground: var(--abyss);
@@ -80,24 +100,40 @@
   --secondary: #f4efe714;
   --secondary-foreground: var(--mist);
   --muted: #f4efe70f;
-  --muted-foreground: var(--haze);
+  --muted-foreground: #b3aba0;
+  --subtle-foreground: #8e877d;
   --accent: #f4efe714;
   --accent-foreground: var(--mist);
   --brand: var(--coral);
   --brand-on-primary: var(--coral-deep);
   --destructive: var(--coral-deep);
-  --border: #f4efe721;
+  --border: #f4efe71f;
+  --border-strong: #f4efe73d;
   --input: #f4efe752;
   --ring: var(--coral);
+
   --green: #6fc39a;
   --green-text: #8fd3b0;
   --green-soft: #1f3b31;
   --red: var(--coral);
   --red-text: #f0a08a;
   --red-soft: #3a261f;
-  --sidebar: #0e1721;
+  --amber: #e2a94d;
+  --amber-text: #f0c37a;
+  --amber-soft: #3d2f17;
+  --blue: #8fb3d9;
+  --blue-text: #a9c6e6;
+  --blue-soft: #1e3247;
 
-  --shadow-card: 0 40px 100px -30px #000000b3, inset 0 1px #f4efe717, inset 0 0 0 1px #f4efe70f;
+  --sidebar: var(--abyss);
+  --sidebar-foreground: var(--mist);
+  --sidebar-muted: #a49c92;
+  --sidebar-active: #f4efe714;
+  --sidebar-hover: #f4efe70a;
+  --sidebar-border: #f4efe71a;
+
+  --shadow-card: 0 1px #f4efe70f inset, 0 12px 32px -20px #00000099;
+  --shadow-pop: 0 2px 8px #00000066, 0 24px 56px -20px #000000b3;
 }
 
 /* `dark:` utilities follow the tone, never the operating system. */
@@ -119,12 +155,14 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-brand: var(--brand);
   --color-brand-on-primary: var(--brand-on-primary);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-green: var(--green);
@@ -133,28 +171,49 @@
   --color-red: var(--red);
   --color-red-text: var(--red-text);
   --color-red-soft: var(--red-soft);
+  --color-amber: var(--amber);
+  --color-amber-text: var(--amber-text);
+  --color-amber-soft: var(--amber-soft);
+  --color-blue: var(--blue);
+  --color-blue-text: var(--blue-text);
+  --color-blue-soft: var(--blue-soft);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-border: var(--sidebar-border);
   --color-navy: var(--navy);
+  --color-abyss: var(--abyss);
   --color-cream: var(--cream);
   --color-coral: var(--coral);
+  --color-coral-deep: var(--coral-deep);
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: var(--radius);
-  --radius-xl: var(--radius-panel);
-  --radius-2xl: var(--radius-card);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
 
-  /* A type scale the audience can read on a phone: nothing on screen below 13px. */
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+
+  /* A type scale the audience can read on a phone: nothing on screen below 12px, and 12px only for table labels. */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.4;
   --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.5;
-  --text-sm: 0.9375rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.875rem;
   --text-sm--line-height: 1.5;
-  --text-base: 1rem;
-  --text-base--line-height: 1.6;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.55;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5;
   --text-lg: 1.125rem;
-  --text-lg--line-height: 1.4;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.3;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.3125rem;
+  --text-xl--line-height: 1.25;
   --text-2xl: 1.625rem;
   --text-2xl--line-height: 1.15;
   --text-3xl: 2rem;
@@ -167,30 +226,33 @@
   }
   html {
     font-size: 16px;
+    -webkit-text-size-adjust: 100%;
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-feature-settings: "cv11", "ss01", "tnum";
   }
-  /* Headings are condensed and tight, never bold. */
   h1,
   h2,
-  h3 {
-    font-weight: 520;
-    font-stretch: 88%;
-    letter-spacing: -0.02em;
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
-  /* Functional icons are thin single strokes, and sparse. */
   svg.lucide {
     stroke-width: 1.75;
   }
   ::selection {
     background: var(--coral-deep);
     color: #ffffff;
+  }
+  summary {
+    cursor: pointer;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -205,78 +267,95 @@
 }
 
 @layer components {
-  /* A raised dark panel: the abyss-2 → abyss sweep with the one allowed glow, coral at 20% in a corner. */
-  .panel-dark {
-    background:
-      radial-gradient(70% 60% at 100% 0%, rgb(231 120 92 / 0.18), transparent 65%),
-      linear-gradient(160deg, var(--abyss-2), var(--abyss));
-    box-shadow:
-      0 40px 100px -30px #000000b3,
-      inset 0 1px #f4efe717,
-      inset 0 0 0 1px #f4efe70f;
-  }
-  /* Display type: the hero line only. Condensed, tight, never bold. */
+  /* Display type: the login panel only. Condensed, tight, never bold. */
   .display {
-    font-size: clamp(2.25rem, 4.2vw, 3.75rem);
-    line-height: 0.95;
-    letter-spacing: -0.045em;
-    font-weight: 520;
-    font-stretch: 88%;
+    font-size: clamp(2.25rem, 4vw, 3.5rem);
+    line-height: 0.98;
+    letter-spacing: -0.04em;
+    font-weight: 540;
+    font-stretch: 90%;
     text-wrap: balance;
-  }
-  /* A number that carries a section: at risk, recovered, handled. */
-  .display-sm {
-    font-size: clamp(1.75rem, 2.6vw, 2.5rem);
-    line-height: 1;
-    letter-spacing: -0.03em;
-    font-weight: 520;
-    font-stretch: 88%;
-    font-variant-numeric: tabular-nums;
-  }
-  /* One per section, balance-wrapped. */
-  .headline {
-    font-size: clamp(1.375rem, 2vw, 1.75rem);
-    line-height: 1.1;
-    letter-spacing: -0.035em;
-    font-weight: 520;
-    font-stretch: 88%;
-    text-wrap: balance;
-  }
-  /* The line under a headline. */
-  .lede {
-    max-width: 44ch;
-    font-size: 1.0625rem;
-    line-height: 1.5;
-    color: var(--muted-foreground);
   }
   /* The page heading: one per screen. */
   .page-title {
-    font-size: clamp(1.75rem, 3vw, 2.5rem);
-    line-height: 1.1;
-    letter-spacing: -0.03em;
-    font-weight: 520;
-    font-stretch: 88%;
+    font-size: clamp(1.5rem, 2.2vw, 1.75rem);
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    font-weight: 600;
     text-wrap: balance;
   }
+  /* One per section. */
+  .section-title {
+    font-size: 1.0625rem;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+  /* The line under a title. */
+  .lede {
+    max-width: 60ch;
+    font-size: var(--text-base);
+    line-height: 1.55;
+    color: var(--muted-foreground);
+    text-wrap: pretty;
+  }
   /* A small label above a block, with the coral square. Sentence case, never uppercase. */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .eyebrow::before {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    background: var(--brand);
+  }
+  /* Kept for older call sites; same look as .eyebrow. */
   .kicker {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    font-size: var(--text-sm);
-    line-height: 1.5;
+    gap: 8px;
+    font-size: var(--text-xs);
+    line-height: 1.4;
     font-weight: 500;
     color: var(--muted-foreground);
   }
   .kicker::before {
     content: "";
     flex: none;
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     background: var(--brand);
+  }
+  /* A number that carries a tile. */
+  .stat-value {
+    font-size: 1.5rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
   /* Money and counts line up. */
   .num {
     font-variant-numeric: tabular-nums;
+  }
+  /* A hairline card: the one level of containment the app uses. */
+  .surface {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  /* Hide the scrollbar on horizontal pill rows without losing the scroll. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }

@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
-import { startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, startOfMonthInZone } from "@/lib/utils";
 import type { AdAccountRecord, AdPlatform, TenantSummary } from "@/lib/types";
 import { adsProviderFor, hasRealAdsProvider, type AdsCredentials } from "./providers";
 import { registerBuiltInAdsProviders } from "./providers/builtin";
@@ -89,7 +89,7 @@ export async function pacingStatus(tenant: TenantSummary, now = new Date()): Pro
   const budgetCents = accounts.reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
   if (budgetCents === 0) return null;
   const monthStart = startOfMonthInZone(tenant.timezone, now);
-  const spentCents = await repository.sumAdSpend(tenant.id, monthStart);
+  const spentCents = await repository.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now));
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysElapsed = Math.max(1, Math.min(daysInMonth, Math.floor((now.getTime() - monthStart.getTime()) / 86_400_000) + 1));
   const expectedCents = Math.round((budgetCents * daysElapsed) / daysInMonth);

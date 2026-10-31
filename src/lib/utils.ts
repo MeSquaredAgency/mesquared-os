@@ -139,6 +139,30 @@ export function formatLocalInput(local: string, locale: string) {
   );
 }
 
+/** YYYY-MM-DD of `now` in the given timezone. */
+function localDateParts(timeZone: string, now: Date): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return { year: get("year"), month: get("month"), day: get("day") };
+}
+
+/**
+ * Day-bucketed records (ad spend, site roll-ups) are keyed by the calendar date
+ * at UTC midnight, whatever the tenant's timezone. "Today" and "this month" for
+ * those records are therefore the tenant's calendar date and month as UTC
+ * midnights, not the instants `startOfDayInZone` / `startOfMonthInZone` give.
+ */
+export function dayBucketInZone(timeZone: string, now: Date = new Date()): Date {
+  const { year, month, day } = localDateParts(timeZone, now);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+/** The first day of the tenant's current month as a UTC-midnight day bucket. */
+export function monthBucketInZone(timeZone: string, now: Date = new Date()): Date {
+  const { year, month } = localDateParts(timeZone, now);
+  return new Date(Date.UTC(year, month - 1, 1));
+}
+
 /** Midnight at the start of the current month in the given timezone, as a UTC instant. */
 export function startOfMonthInZone(timeZone: string, now: Date = new Date()): Date {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
