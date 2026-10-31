@@ -1,6 +1,6 @@
 import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
-import { TEAM_PERMISSIONS, type OnboardingAnswers, type TaskRow, type TeamRow, type ToolRow } from "@/lib/onboarding/form";
+import { INDUSTRIES, TEAM_PERMISSIONS, type OnboardingAnswers, type TaskRow, type TeamRow, type ToolRow } from "@/lib/onboarding/form";
 import { slugify } from "@/lib/tenants/provision";
 import { REGION_PRESETS } from "@/lib/tenants/regions";
 import type { TenantSettingsInput } from "@/lib/tenants/settings";
@@ -34,9 +34,12 @@ export interface ParsedQuestionnaire {
   checks: { section: string; label: string; checked: boolean }[];
 }
 
+/** Answers the drafting reads: the questions above, plus two only the online form asks. */
+export type ValueKey = QuestionKey | "currency" | "businessTypeOther";
+
 /** One client's answers, whichever way they came in. */
 export interface QuestionnaireData {
-  values: Partial<Record<QuestionKey | "currency", string>>;
+  values: Partial<Record<ValueKey, string>>;
   /** Sender name and reply-to when they were given as separate answers (the online form). */
   sender?: { name?: string; email?: string };
   team: { name: string; title?: string; email?: string; mobile?: string; permissions: Permission[] }[];
@@ -321,8 +324,11 @@ const CURRENCIES = ["AUD", "NZD", "GBP", "USD", "SGD", "EUR", "CAD"];
 // The draft definition
 // ---------------------------------------------------------------------------
 
+/** The template for a business type: the online form's list first, then the doc's three choices by their start. */
 function templateKeyFor(type: string | undefined): string | undefined {
   const t = normaliseText(type ?? "");
+  const listed = INDUSTRIES.find((i) => normaliseText(i.label) === t);
+  if (listed) return listed.templateKey;
   if (t.startsWith("real estate")) return "real_estate";
   if (t.startsWith("health")) return "health_fitness";
   if (t.startsWith("other")) return "generic";
@@ -403,11 +409,12 @@ const DAY_SHORT: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wedne
 /** The online form (src/lib/onboarding/form.ts): structured answers, composed into the same wording the readers take. */
 export function fromFormAnswers(answers: OnboardingAnswers): QuestionnaireData {
   const values: QuestionnaireData["values"] = {};
-  const set = (key: QuestionKey | "currency", value: string | undefined) => {
+  const set = (key: ValueKey, value: string | undefined) => {
     if (value && value.trim()) values[key] = value.trim();
   };
   for (const key of ["businessName", "legalName", "businessType", "serviceAreas", "addresses", "timezone", "currency", "phone", "greenCriteria", "highIntent", "autoHandled", "requirePhone", "firstResponse", "bookingWindow", "booking", "stages", "quoteQuiet", "customerValue", "reviewUrl", "pastCustomers", "escalateTo", "signedBy", "personality", "voice", "example", "banned", "claims", "footer", "postsPerWeek", "approvals", "consent"] as const) set(key, text(answers, key));
-  set("links", ["website", "facebook", "instagram", "linkedin", "youtube"].map((k) => text(answers, k)).filter(Boolean).join(" "));
+  set("links", ["website", "socialLinks", "facebook", "instagram", "linkedin", "youtube"].map((k) => text(answers, k)).filter(Boolean).join(" "));
+  set("businessTypeOther", text(answers, "businessTypeOther"));
   set("mainContact", ["contactName", "contactRole", "contactEmail", "contactMobile"].map((k) => text(answers, k)).filter(Boolean).join(", "));
   const quietFrom = text(answers, "quietFrom");
   const quietTo = text(answers, "quietTo");
@@ -440,19 +447,24 @@ export function fromFormAnswers(answers: OnboardingAnswers): QuestionnaireData {
 /** Lines for the console about the back-office tasks the client would hand over, from the online form. */
 export function handOverSummary(answers: OnboardingAnswers): string[] {
   const tasks = (answers.tasks ?? {}) as Record<string, TaskRow>;
-  return Object.entries(tasks).filter(([, t]) => t.hand === "Yes" || t.hand === "Maybe").map(([task, t]) => `${task}${t.hours ? ` (${t.hours} h/week)` : ""}: ${t.hand === "Yes" ? "hand over" : "maybe"}`);
+  const fromSheet = Object.entries(tasks).filter(([, t]) => t.hand === "Yes" || t.hand === "Maybe").map(([task, t]) => `${task}${t.hours ? ` (${t.hours} h/week)` : ""}: ${t.hand === "Yes" ? "hand over" : "maybe"}`);
+  // Ticked on the client's form but not yet discussed on the call sheet.
+  const ticked = (Array.isArray(answers.handOver) ? (answers.handOver as string[]) : []).filter((task) => !tasks[task]?.hand).map((task) => `${task}: hand over`);
+  return [...fromSheet, ...ticked];
 }
 
 export function draftTenantDefinition(input: QuestionnaireData | ParsedQuestionnaire): { definition: TenantDefinitionDraft; review: string[] } {
   const data = "answers" in input ? fromMarkdown(input) : input;
   const review: string[] = [];
-  const a = (key: QuestionKey | "currency") => data.values[key]?.trim() || undefined;
+  const a = (key: ValueKey) => data.values[key]?.trim() || undefined;
 
   // Workspace basics.
   const tradingName = a("businessName") ?? splitList(a("legalName"))[0];
   if (!tradingName) review.push("No business name: set \"name\" before provisioning.");
   const templateKey = templateKeyFor(a("businessType")) ?? "generic";
   if (!templateKeyFor(a("businessType"))) review.push(`Business type not chosen; drafted on the generic template. Pick real_estate, health_fitness or generic.`);
+  else if (a("businessType") === "Other") review.push(`Business type: other${a("businessTypeOther") ? ` ("${a("businessTypeOther")}")` : ""}. Drafted on the general template.`);
+  else if (templateKey === "generic" && INDUSTRIES.some((i) => i.label === a("businessType"))) review.push(`Business type: ${a("businessType")}. There is no dedicated template for it yet, so it is drafted on the general template.`);
   const preset = presetFor(a("timezone")) ?? presetFor(a("addresses")) ?? REGION_PRESETS[0];
   if (!presetFor(a("timezone")) && !presetFor(a("addresses"))) review.push(`Time zone not recognised ("${a("timezone") ?? "blank"}"); drafted as ${preset.label}. Check region, timezone, locale and currency.`);
   const currency = CURRENCIES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(a("currency") ?? a("timezone") ?? "")) ?? preset.currency;

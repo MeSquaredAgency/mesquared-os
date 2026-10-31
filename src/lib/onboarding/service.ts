@@ -37,8 +37,8 @@ export async function createOnboardingLink(input: { label: string; contactEmail?
   const now = input.now ?? new Date();
   const token = newToken();
   const created = await repository.createOnboarding({ tokenHash: hashToken(token), label, contactEmail, createdById: input.createdById, expiresAt: new Date(now.getTime() + LINK_DAYS * DAY_MS) });
-  // Start the client off with what we already know.
-  const record = (await repository.updateOnboarding(created.id, { answers: { businessName: label, ...(contactEmail ? { contactEmail } : {}) } })) ?? created;
+  // Start the client off with what we already know, and the usual quiet hours (they can change them).
+  const record = (await repository.updateOnboarding(created.id, { answers: { businessName: label, ...(contactEmail ? { contactEmail } : {}), quietFrom: "20:00", quietTo: "08:00" } })) ?? created;
   return { record, token };
 }
 
@@ -59,13 +59,17 @@ export const isEditable = (record: OnboardingRecord) => record.status === "INVIT
 
 export type SaveResult = { ok: true; savedAt: Date; answers: OnboardingAnswers } | { ok: false; reason: "not_found" | "expired" | "withdrawn" | "locked" | "too_large" };
 
-/** Saves the client's answers so far. Anything the form does not define is dropped. */
+/**
+ * Saves the client's answers so far. Only the client form's own fields are
+ * taken from the browser; whatever an operator has added on the call sheet is
+ * kept as it is.
+ */
 export async function saveOnboardingAnswers(token: string, raw: unknown, now = new Date()): Promise<SaveResult> {
   if (JSON.stringify(raw ?? {}).length > MAX_ANSWER_BYTES) return { ok: false, reason: "too_large" };
   const opened = await openOnboarding(token, now);
   if (!opened.ok) return opened;
   if (!isEditable(opened.record)) return { ok: false, reason: "locked" };
-  const answers = sanitizeAnswers(raw);
+  const answers = { ...sanitizeAnswers(opened.record.answers), ...sanitizeAnswers(raw, "client") };
   await repository.updateOnboarding(opened.record.id, { answers, status: "IN_PROGRESS", ...(opened.record.startedAt ? {} : { startedAt: now }) });
   return { ok: true, savedAt: now, answers };
 }
@@ -107,6 +111,18 @@ async function mustFind(id: string): Promise<OnboardingRecord> {
   const record = await repository.findOnboardingById(id);
   if (!record) throw new Error("That questionnaire no longer exists.");
   return record;
+}
+
+/**
+ * The operator's intake call sheet: merges the fields they changed into the
+ * record. Every field can be set here, including the client's own answers.
+ */
+export async function saveCallSheet(id: string, changed: unknown): Promise<OnboardingRecord> {
+  if (JSON.stringify(changed ?? {}).length > MAX_ANSWER_BYTES) throw new Error("That's more than the call sheet can hold; shorten the longest answers.");
+  const record = await mustFind(id);
+  if (record.status === "PROVISIONED" || record.status === "CANCELLED") throw new Error("This questionnaire is closed; change the workspace in its Settings instead.");
+  const answers = { ...sanitizeAnswers(record.answers), ...sanitizeAnswers(changed) };
+  return (await repository.updateOnboarding(id, { answers })) ?? record;
 }
 
 /** A fresh link for the same questionnaire; the old one stops working at once. */
