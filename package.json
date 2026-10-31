@@ -25,6 +25,7 @@
     "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts",
     "inventory:import": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/import-inventory.ts",
     "tenant:connect-inventory": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/connect-inventory.ts",
+    "tenant:from-questionnaire": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/questionnaire-to-tenant.ts",
     "tenant:connect-meta": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/connect-meta.ts"
   },
   "engines": {

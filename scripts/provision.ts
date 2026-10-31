@@ -18,8 +18,19 @@
  *   "addresses": ["Adelaide: ..."], "social": { "facebook": "https://...", "instagram": "https://..." },
  *   "people": [{ "email": "...", "name": "...", "role": "owner", "title": "Director", "mobile": "04..", "photo": "https://..." }],
  *   "operators": ["ops@..."],
- *   "admins": [{ "email": "ops@...", "name": "..." }]
+ *   "admins": [{ "email": "ops@...", "name": "..." }],
+ *   "sla": { "firstResponseMinutes": 5, "bookingWindowHours": 48, "quietHours": { "start": 20, "end": 8 } },
+ *   "qualification": { "greenCriteria": ["..."], "highIntentServices": ["..."], "autoHandled": ["..."], "requirePhone": true },
+ *   "brand": { "voice": "...", "examples": ["..."], "bannedPhrases": ["..."], "claimsPolicy": "..." },
+ *   "opportunityValues": { "NOT_BOOKED": 1800 },
+ *   "content": { "postsPerWeek": 3, "slots": [{ "day": 1, "hour": 9 }] },
+ *   "reviewUrl": "https://g.page/r/...", "switchOff": { "modules": ["inventory"], "automations": ["reactivation"] },
+ *   "escalation": [{ "when": "NOT_BOOKED", "email": "..." }]
  * }
+ *
+ * The keys from "sla" down are optional business settings (src/lib/tenants/settings.ts);
+ * opportunity values are whole currency units. `npm run tenant:from-questionnaire`
+ * drafts the whole file from a completed onboarding questionnaire.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,8 +40,9 @@ import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { normalizePhone } from "@/lib/intake/schema";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import { inviteMember, provisionTenant, slugify } from "@/lib/tenants/provision";
+import { applyTenantSettings, tenantSettingsSchema, type TenantSettingsInput } from "@/lib/tenants/settings";
 
-interface Definition {
+interface Definition extends TenantSettingsInput {
   templateKey: string;
   name: string;
   slug?: string;
@@ -60,6 +72,9 @@ assert.ok(file, "usage: npm run tenant:provision -- tenants/<slug>.json");
 const def = JSON.parse(readFileSync(file, "utf8")) as Definition;
 const template = TEMPLATE_BY_KEY[def.templateKey];
 assert.ok(template, `unknown template ${def.templateKey}`);
+// Check the business settings before anything is created, so a typo never leaves a half-made workspace.
+const settings = tenantSettingsSchema.safeParse(def);
+assert.ok(settings.success, `invalid settings: ${settings.success ? "" : settings.error.issues.map((i) => `${i.path.join(".")} (${i.message})`).join("; ")}`);
 console.log(`Provisioning "${def.name}" against the ${dataMode} repository`);
 
 // 1. Platform admins (also operators), created only with a known password.
@@ -116,6 +131,9 @@ for (const person of def.people ?? []) {
   const result = await inviteMember(tenant.id, { email: person.email, name: person.name, roleId: role.id, profile: { title: person.title ?? null, phone: person.mobile ?? null, photoUrl: person.photo ?? null } });
   console.log(`  person   ${person.email} → ${role.name}${result.created ? " (created; reset the password from Settings → People to hand it over)" : ""}`);
 }
+
+// 3b. Business settings: service levels, qualification, brand, values, posting rhythm, escalation.
+for (const line of await applyTenantSettings(tenant.id, settings.data)) console.log(`  settings ${line}`);
 
 // 4. Operators.
 for (const email of def.operators ?? []) {
