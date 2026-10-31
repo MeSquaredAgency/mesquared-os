@@ -38,11 +38,14 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
   if (!access) notFound();
   const tenant = access.tenant;
 
-  const [home, config, portfolio, readiness] = await Promise.all([
-    repository.getPortalHome(tenant.id, { timezone: tenant.timezone, currency: tenant.currency, onlyAssigneeId: null, canViewFinances: true }),
-    repository.getTenantConfig(tenant.id),
+  // The header needs the config, the portfolio row and the launch checks on every tab; the full portal home (a dozen
+  // queries) only on the overview. The other tabs fetch just the "needs you" leads for the tab count.
+  const config = await repository.getTenantConfig(tenant.id);
+  const [portfolio, readiness, home, needsYouLeads] = await Promise.all([
     repository.getPortfolio([tenant]),
-    tenantReadiness(tenant).then(readinessSummary),
+    tenantReadiness(tenant, config).then(readinessSummary),
+    tab === "overview" ? repository.getPortalHome(tenant.id, { timezone: tenant.timezone, currency: tenant.currency, onlyAssigneeId: null, canViewFinances: true }) : null,
+    tab === "overview" ? null : repository.listNeedsYou(tenant.id, { onlyAssigneeId: null, limit: 8 }),
   ]);
   const row = portfolio[0];
   const health = row?.health ?? null;
@@ -50,7 +53,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
   const base = `/console/${tenant.slug}`;
   const failingIntegrations = config.integrations.filter((i) => i.status === "NEEDS_ATTENTION" || i.status === "DISCONNECTED").length;
   const contentDue = row?.contentDue ?? 0;
-  const needsPerson = home.needsYou.length + home.missed.open.length;
+  const needsPerson = (home ? home.needsYou.length : (needsYouLeads?.length ?? 0)) + (row?.missedOpen ?? 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,7 +109,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
         />
       </PageHeader>
 
-      {tab === "overview" && (
+      {tab === "overview" && home && (
         <div className="flex flex-col gap-8">
           <NeedsYou leads={home.needsYou} fmt={fmt} />
           <MissedOpportunities missed={home.missed} fmt={fmt} />

@@ -38,6 +38,11 @@ or shown the truth. Severity is about client impact, not code.
 - **Finance totals wrong**: webhooks are per workspace integration id; check
   the provider dashboard shows deliveries succeeding. Re-sync is idempotent on
   provider ids.
+- **"This page didn't load"**: take the reference from the error page and
+  search the Worker log for it, or for `[request-error]` (see "Reading the
+  logs" in [cloudflare.md](cloudflare.md)); the log line has the route and
+  the real message. A burst of `[db] retrying` lines alongside means the
+  database connection, not the page, is the problem.
 
 ## Talking to the client
 
