@@ -7,10 +7,12 @@ setting; never add a branch for them.
 
 ## 0. Or do it from a file
 
-For a real client, start from their completed onboarding questionnaire:
-`npm run tenant:from-questionnaire -- <exported.md>` drafts the definition
-and a review list ([onboarding-questionnaire.md](onboarding-questionnaire.md)).
-Or write a definition under `tenants/` by hand (ignored by git; see
+For a real client, start from their onboarding questionnaire
+([onboarding-questionnaire.md](onboarding-questionnaire.md)): send them a link
+from Console → **Onboarding**, and when they send it back, **Create workspace**
+does steps 1 to 3 below from their answers. If they filled in the Claude Docs
+version instead, `npm run tenant:from-questionnaire -- <exported.md>` drafts
+the definition and a review list. Or write a definition under `tenants/` by hand (ignored by git; see
 the comment at the top of `scripts/provision.ts` for the shape). Then run:
 
 ```bash

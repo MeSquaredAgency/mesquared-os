@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import type {
   AdAccountRecord,
+  OnboardingRecord,
   AdSpendSnapshotRecord,
   ApiKeyRecord,
   AutomationRunRecord,
@@ -113,6 +114,7 @@ interface MemoryStore {
   operatorAssignments: { userId: string; tenantId: string }[];
   heartbeats: Record<string, Date>;
   buckets: Record<string, { count: number; windowStart: Date }>;
+  onboardings: (OnboardingRecord & { tokenHash: string })[];
 }
 
 /** Keeps demo memory bounded if a long-running dev server receives a lot of traffic. */
@@ -128,6 +130,7 @@ function store(): MemoryStore {
       memberships: [...demoMemberships],
       heartbeats: {},
       buckets: {},
+      onboardings: [],
       operatorAssignments: [...demoOperatorAssignments],
       users: [...getDemoUsers()],
       contacts: [...demoContacts],
@@ -165,6 +168,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.memberships ??= [...demoMemberships];
   g.__msqMemoryStore.heartbeats ??= {};
   g.__msqMemoryStore.buckets ??= {};
+  g.__msqMemoryStore.onboardings ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -184,6 +188,13 @@ function assignedTo(leadId: string | null | undefined, onlyAssigneeId: string | 
   return store().leads.find((l) => l.id === leadId)?.assigneeId === onlyAssigneeId;
 }
 const id = (prefix: string) => `${prefix}_${randomUUID().slice(0, 8)}`;
+
+/** Onboarding rows keep the link's token hash; nothing outside the repository ever sees it. */
+function withoutToken(row: OnboardingRecord & { tokenHash: string }): OnboardingRecord {
+  const copy: Partial<OnboardingRecord & { tokenHash: string }> = { ...row, answers: structuredClone(row.answers) };
+  delete copy.tokenHash;
+  return copy as OnboardingRecord;
+}
 
 const publicUser = (u: UserRecord & { passwordHash: string }): UserRecord => ({
   id: u.id,
@@ -1199,6 +1210,36 @@ export const memoryRepository: Repository = {
 
   async rateLimitClear(key) {
     delete store().buckets[key];
+  },
+
+  async createOnboarding(data) {
+    const s = store();
+    if (s.onboardings.some((o) => o.tokenHash === data.tokenHash)) throw new Error("token already in use");
+    const now = new Date();
+    const row = { id: id("onb"), tokenHash: data.tokenHash, label: data.label, contactEmail: data.contactEmail ?? null, status: "INVITED" as const, answers: {}, createdById: data.createdById ?? null, tenantId: null, startedAt: null, submittedAt: null, provisionedAt: null, expiresAt: data.expiresAt, createdAt: now, updatedAt: now };
+    pushBounded(s.onboardings, row);
+    return withoutToken(row);
+  },
+
+  async findOnboardingByTokenHash(tokenHash) {
+    const row = store().onboardings.find((o) => o.tokenHash === tokenHash);
+    return row ? withoutToken(row) : null;
+  },
+
+  async findOnboardingById(onboardingId) {
+    const row = store().onboardings.find((o) => o.id === onboardingId);
+    return row ? withoutToken(row) : null;
+  },
+
+  async listOnboardings(opts = {}) {
+    return [...store().onboardings].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, opts.limit ?? 200).map(withoutToken);
+  },
+
+  async updateOnboarding(onboardingId, patch) {
+    const row = store().onboardings.find((o) => o.id === onboardingId);
+    if (!row) return null;
+    Object.assign(row, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { updatedAt: new Date() });
+    return withoutToken(row);
   },
 
   async upsertMembership(tenantId, userId, roleId, profile) {

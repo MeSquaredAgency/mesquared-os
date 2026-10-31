@@ -39,6 +39,8 @@ import { getPrisma } from "@/lib/prisma";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
+  OnboardingRecord,
+  OnboardingStatus,
   ApiKeyRecord,
   AutomationRunRecord,
   BookingRecord,
@@ -94,6 +96,11 @@ const toFormSession = (f: FormSession): FormSessionRecord => ({ id: f.id, tenant
 
 const json = (v: unknown) => v as Prisma.InputJsonValue;
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** The token hash stays in the database: the record handed out never carries it. */
+function toOnboarding(row: { id: string; label: string; contactEmail: string | null; status: OnboardingStatus; answers: unknown; createdById: string | null; tenantId: string | null; startedAt: Date | null; submittedAt: Date | null; provisionedAt: Date | null; expiresAt: Date; createdAt: Date; updatedAt: Date }): OnboardingRecord {
+  return { id: row.id, label: row.label, contactEmail: row.contactEmail, status: row.status, answers: obj(row.answers), createdById: row.createdById, tenantId: row.tenantId, startedAt: row.startedAt, submittedAt: row.submittedAt, provisionedAt: row.provisionedAt, expiresAt: row.expiresAt, createdAt: row.createdAt, updatedAt: row.updatedAt };
+}
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 /** Only touch `lastUsedAt` on API keys this often, to avoid a write per request. */
@@ -1155,6 +1162,34 @@ export const prismaRepository: Repository = {
 
   async rateLimitClear(key) {
     await getPrisma().rateLimitBucket.deleteMany({ where: { key } });
+  },
+
+  async createOnboarding(data) {
+    const row = await getPrisma().onboardingSubmission.create({ data: { tokenHash: data.tokenHash, label: data.label, contactEmail: data.contactEmail ?? null, createdById: data.createdById ?? null, expiresAt: data.expiresAt } });
+    return toOnboarding(row);
+  },
+
+  async findOnboardingByTokenHash(tokenHash) {
+    const row = await getPrisma().onboardingSubmission.findUnique({ where: { tokenHash } });
+    return row ? toOnboarding(row) : null;
+  },
+
+  async findOnboardingById(id) {
+    const row = await getPrisma().onboardingSubmission.findUnique({ where: { id } });
+    return row ? toOnboarding(row) : null;
+  },
+
+  async listOnboardings(opts = {}) {
+    const rows = await getPrisma().onboardingSubmission.findMany({ orderBy: { updatedAt: "desc" }, take: opts.limit ?? 200 });
+    return rows.map(toOnboarding);
+  },
+
+  async updateOnboarding(id, patch) {
+    const data = { ...(patch.answers !== undefined ? { answers: json(patch.answers) } : {}), ...(patch.status !== undefined ? { status: patch.status } : {}), ...(patch.tokenHash !== undefined ? { tokenHash: patch.tokenHash } : {}), ...(patch.expiresAt !== undefined ? { expiresAt: patch.expiresAt } : {}), ...(patch.startedAt !== undefined ? { startedAt: patch.startedAt } : {}), ...(patch.submittedAt !== undefined ? { submittedAt: patch.submittedAt } : {}), ...(patch.provisionedAt !== undefined ? { provisionedAt: patch.provisionedAt } : {}), ...(patch.tenantId !== undefined ? { tenantId: patch.tenantId } : {}) };
+    const result = await getPrisma().onboardingSubmission.updateMany({ where: { id }, data });
+    if (result.count === 0) return null;
+    const row = await getPrisma().onboardingSubmission.findUnique({ where: { id } });
+    return row ? toOnboarding(row) : null;
   },
 
   async upsertMembership(tenantId, userId, roleId, profile) {

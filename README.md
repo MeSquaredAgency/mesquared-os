@@ -351,11 +351,13 @@ Postgres; `npm run db:parity` provisions a throwaway workspace to prove it.
 Runbooks live in `docs/runbooks/` and the launch gate is
 `docs/launch-checklist.md`.
 
-That definition can be drafted from the client's completed onboarding
-questionnaire: export the doc as Markdown and run
-`npm run tenant:from-questionnaire -- <file.md>`. It writes
-`tenants/<slug>.json` with a review list of anything it could not read and the
-console steps still to do (`docs/runbooks/onboarding-questionnaire.md`).
+New clients usually start with the online onboarding questionnaire: Console →
+**Onboarding** makes a private link (`/onboarding/<token>`, no account
+needed, saves as they go), and once the client sends it, **Create workspace**
+provisions from their answers with a review list of what still needs a
+person. A client who filled in the Claude Docs version instead goes through
+`npm run tenant:from-questionnaire -- <file.md>`, which drafts the same
+definition into `tenants/<slug>.json` (`docs/runbooks/onboarding-questionnaire.md`).
 
 ## Hosting on Cloudflare Workers
 

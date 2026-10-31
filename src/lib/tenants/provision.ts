@@ -31,6 +31,9 @@ export interface ProvisionInput {
   requiredFooter?: string | null;
 }
 
+/** Console pages that sit beside /console/<workspace>: a workspace with one of these addresses would be unreachable. */
+const RESERVED_SLUGS = new Set(["new", "queue", "onboarding"]);
+
 export function slugify(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
 }
@@ -40,6 +43,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
   if (!template) throw new Error(`Unknown template ${input.templateKey}`);
   const slug = slugify(input.slug || input.name);
   if (slug.length < 3) throw new Error("The workspace address needs at least three characters.");
+  if (RESERVED_SLUGS.has(slug)) throw new Error(`"${slug}" is a console page; choose another workspace address.`);
   const tenant = await repository.createTenant({
     slug,
     name: input.name.trim(),
@@ -125,15 +129,5 @@ export async function issueApiKey(tenantId: string, label: string, scopes: ApiKe
   return { key, raw };
 }
 
-export const REGION_PRESETS: { region: string; timezone: string; locale: string; currency: string; label: string }[] = [
-  { region: "AU", timezone: "Australia/Adelaide", locale: "en-AU", currency: "AUD", label: "Australia (Adelaide)" },
-  { region: "AU", timezone: "Australia/Sydney", locale: "en-AU", currency: "AUD", label: "Australia (Sydney / Melbourne)" },
-  { region: "AU", timezone: "Australia/Brisbane", locale: "en-AU", currency: "AUD", label: "Australia (Brisbane)" },
-  { region: "AU", timezone: "Australia/Perth", locale: "en-AU", currency: "AUD", label: "Australia (Perth)" },
-  { region: "NZ", timezone: "Pacific/Auckland", locale: "en-NZ", currency: "NZD", label: "New Zealand" },
-  { region: "GB", timezone: "Europe/London", locale: "en-GB", currency: "GBP", label: "United Kingdom" },
-  { region: "US", timezone: "America/New_York", locale: "en-US", currency: "USD", label: "United States (Eastern)" },
-  { region: "US", timezone: "America/Los_Angeles", locale: "en-US", currency: "USD", label: "United States (Pacific)" },
-  { region: "KH", timezone: "Asia/Phnom_Penh", locale: "en-AU", currency: "USD", label: "Cambodia" },
-  { region: "SG", timezone: "Asia/Singapore", locale: "en-SG", currency: "SGD", label: "Singapore" },
-];
+/** Kept in a client-safe module so forms can list them; re-exported here for existing callers. */
+export { REGION_PRESETS } from "./regions";

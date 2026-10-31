@@ -126,6 +126,34 @@ export interface EscalationRule {
   notifyUserId: string;
 }
 
+/** Where a client's onboarding questionnaire is: sent, being filled in, handed back, turned into a workspace, or withdrawn. */
+export type OnboardingStatus = "INVITED" | "IN_PROGRESS" | "SUBMITTED" | "PROVISIONED" | "CANCELLED";
+
+/**
+ * A client onboarding questionnaire, sent before the client's workspace
+ * exists, so it is platform-level rather than tenant data. The client opens it
+ * with a private link whose token is stored only as a hash (never on the
+ * record). `answers` are the client's own words: validated against the form,
+ * never logged.
+ */
+export interface OnboardingRecord {
+  id: string;
+  /** What the operator called it, usually the business name. */
+  label: string;
+  contactEmail: string | null;
+  status: OnboardingStatus;
+  answers: Record<string, unknown>;
+  createdById: string | null;
+  /** The workspace made from it, once provisioned. */
+  tenantId: string | null;
+  startedAt: Date | null;
+  submittedAt: Date | null;
+  provisionedAt: Date | null;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface TenantSummary {
   id: string;
   slug: string;
