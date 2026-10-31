@@ -43,7 +43,8 @@ once committed to GitHub by mistake (commit `5c9a638`); it was rolled on
 | `wrangler.jsonc` | Worker name, `nodejs_compat`, static assets, self-reference service binding, the minute cron, a 5-minute CPU limit for the tick |
 | `open-next.config.ts` | OpenNext adapter config (no incremental cache: every page is per-tenant and dynamic) |
 | `cloudflare/worker.ts` | Entry point: OpenNext's fetch handler plus a `scheduled` handler that POSTs the tick to the app with `JOB_SECRET` |
-| `src/lib/prisma.ts` | Picks the database driver: Prisma's engine on Node, the `pg` adapter on Workers (or `DATABASE_DRIVER=pg`), the Neon serverless driver with `DATABASE_DRIVER=neon` |
+| `src/lib/prisma.ts` | Picks the database driver: Prisma's engine on Node, the `pg` adapter on Workers (or `DATABASE_DRIVER=pg`), the Neon serverless driver with `DATABASE_DRIVER=neon`. On Workers the client and its pool belong to one request (see "Database connections" below) and read queries retry transient connection failures |
+| `src/instrumentation.ts` | `onRequestError`: logs every server error that reaches an error boundary as `[request-error]` with the route, the digest shown to the person and the real message |
 | `next.config.ts` | `.prisma/client` kept external so OpenNext can patch it; `initOpenNextCloudflareForDev()` |
 
 Scripts: `npm run cf:build` (Next build plus the worker bundle), `npm run
@@ -81,6 +82,45 @@ cf:preview` (build and run on `http://localhost:8787`), `npm run cf:deploy`.
    automation runs. The Neon `ops` Function is then redundant: remove its
    trigger in `neon.ts` or leave it off.
 6. Open `/api/v1/health`: `dataMode` must be `postgres`.
+
+## Database connections
+
+A Workers socket may only be used by the request that opened it. A `pg` pool
+shared by every request in an isolate hands a connection opened for one page
+to the next page (the browser prefetches every sidebar and tab link, so several
+requests run at once) and fails with `Cannot perform I/O on behalf of a
+different request`, or loses the connection when the first request finishes.
+That was the usual cause of "This page didn't load" (31 October 2026).
+
+So on Workers `getPrisma()` returns a client per request, keyed on OpenNext's
+request context (an AsyncLocalStorage store, new for each request) and
+dropped with it: a pool of five connections through Hyperdrive, a ten-second
+connect timeout so a hung connect fails instead of hanging the page, and idle
+connections closed after five seconds. Read queries (`findMany`, `count`,
+`aggregate`, …) retry up to three times on a transient failure (dropped
+socket, pooler closed the connection, database restarting; the list is in
+`src/lib/data/transient.ts`), each retry logged as `[db] retrying …`. Writes
+are never retried: a create that reached the server before the socket dropped
+must not run twice.
+
+The console and portal error boundaries retry a failed page once by
+themselves (at most once per error every 30 seconds) before showing the
+message and the reference.
+
+## Reading the logs
+
+Observability is on for the worker, so the dashboard keeps logs: Workers &
+Pages → `mesquared-os` → Logs. Search for `[request-error]` to see every page
+or action that failed, with the route and the real message (Next.js only
+shows the person a digest); searching for the digest from the "Reference"
+line on the error page finds the one failure they saw. `[db] retrying` shows
+connection failures that were absorbed; many of them in a short time mean
+Hyperdrive or Neon is struggling even though pages still load.
+
+`npx wrangler tail mesquared-os --status error` streams live errors. It needs
+a token with Workers Tail permission (or `wrangler login`); the token in
+`.env.cloudflare.local` on the laptop is the rolled one from October 2026 and
+no longer authenticates, so replace it before relying on it.
 
 ## Local preview
 

@@ -1,4 +1,5 @@
 import { dataMode, repository } from "@/lib/data";
+import type { TenantConfig } from "@/lib/data/repository";
 import type { ReadinessCheck, TenantSummary } from "@/lib/types";
 
 /**
@@ -6,9 +7,10 @@ import type { ReadinessCheck, TenantSummary } from "@/lib/types";
  * deployment, so "are we ready?" is never a feeling. Required items map to
  * the spec's success test: every lead answered in minutes, missed
  * opportunities visible, a week of content approvable, ad spend tied to leads.
+ * Pass the tenant config when the caller already has it, to save the queries.
  */
-export async function tenantReadiness(tenant: TenantSummary): Promise<ReadinessCheck[]> {
-  const [config, people, keys, channels, adAccounts] = await Promise.all([repository.getTenantConfig(tenant.id), repository.listTenantPeople(tenant.id), repository.listApiKeys(tenant.id), repository.listChannels(tenant.id, { activeOnly: true }), repository.listAdAccounts(tenant.id, { activeOnly: true })]);
+export async function tenantReadiness(tenant: TenantSummary, knownConfig?: TenantConfig): Promise<ReadinessCheck[]> {
+  const [config, people, keys, channels, adAccounts] = await Promise.all([knownConfig ?? repository.getTenantConfig(tenant.id), repository.listTenantPeople(tenant.id), repository.listApiKeys(tenant.id), repository.listChannels(tenant.id, { activeOnly: true }), repository.listAdAccounts(tenant.id, { activeOnly: true })]);
   const integration = (p: string) => config.integrations.find((i) => i.provider === p);
   const connected = (p: string) => integration(p)?.status === "CONNECTED";
   const twilio = await repository.findIntegration(tenant.id, "TWILIO");
