@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { OnboardingForm, OnboardingSent } from "@/components/onboarding/onboarding-form";
+import { BrandMark } from "@/components/shell/app-shell";
 import { sanitizeAnswers } from "@/lib/onboarding/form";
 import { isEditable, openOnboarding } from "@/lib/onboarding/service";
 
@@ -28,7 +29,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
     return (
       <Frame>
         <Card>
-          <p className="kicker">Me² onboarding</p>
+          <p className="eyebrow">Me² onboarding</p>
           <h1 className="page-title">{closed.title}</h1>
           <p className="lede">{closed.body}</p>
         </Card>
@@ -41,7 +42,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
     return (
       <Frame>
         <Card>
-          <p className="kicker">Me² onboarding</p>
+          <p className="eyebrow">Me² onboarding</p>
           <h1 className="page-title">Your Me² portal is being set up</h1>
           <p className="lede">Thank you for your answers. Your onboarding lead will be in touch with your sign-in details.</p>
         </Card>
@@ -57,20 +58,25 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
   }
 
   return (
-    <Frame wide>
+    <Frame>
       <OnboardingForm token={token} label={record.label} initial={sanitizeAnswers(record.answers, "client")} fresh={record.status === "INVITED"} />
     </Frame>
   );
 }
 
-function Frame({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+/** The public page's own chrome: the brand mark, a paper background, one column. */
+function Frame({ children }: { children: React.ReactNode }) {
   return (
-    <main data-theme="paper" className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 sm:py-12">
-      <div className={wide ? "mx-auto w-full max-w-2xl" : "mx-auto flex min-h-[70vh] w-full max-w-xl items-center"}>{children}</div>
+    <main data-theme="paper" className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pt-6 sm:px-6 sm:pt-8">
+        <BrandMark tone="paper" className="h-6" />
+        <span className="text-xs text-muted-foreground">People, backed by AI.</span>
+      </header>
+      <div className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:px-6 sm:py-10">{children}</div>
     </main>
   );
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="flex w-full flex-col gap-4 rounded-2xl border bg-card p-7 shadow-[var(--shadow-card)] sm:p-9">{children}</div>;
+  return <div className="surface flex w-full flex-col gap-3 p-6 sm:p-9">{children}</div>;
 }

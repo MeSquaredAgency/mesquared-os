@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { CallSheet } from "@/components/console/onboarding-call-sheet";
 import { OnboardingStatusBadge } from "@/components/console/onboarding-status";
 import { PageHeader } from "@/components/shell/section";
@@ -19,18 +20,34 @@ export default async function CallSheetPage({ params }: { params: Promise<{ id: 
   const closed = record.status === "PROVISIONED" || record.status === "CANCELLED";
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <PageHeader
-        kicker="Intake call"
-        title={record.label}
-        lede={closed ? "This questionnaire is closed. Change the workspace in its Settings instead." : "Fill this in during or straight after the call. The client's answers are already in; everything you add feeds the same workspace draft."}
-        actions={
-          <div className="flex items-center gap-3">
+        eyebrow={
+          <>
+            <Link href="/console/onboarding" className="hover:text-foreground hover:underline">
+              Onboarding
+            </Link>
+            <span aria-hidden="true">/</span>
+            <Link href={`/console/onboarding/${record.id}`} className="hover:text-foreground hover:underline">
+              {record.label}
+            </Link>
+            <span aria-hidden="true">/</span>
+            Intake call
+          </>
+        }
+        title={`Call sheet: ${record.label}`}
+        lede={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <OnboardingStatusBadge status={record.status} />
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/console/onboarding/${record.id}`}>Back to review</Link>
-            </Button>
-          </div>
+            <span>{closed ? "This questionnaire is closed. Change the workspace in its Settings instead." : "Fill this in during or straight after the call. The client's answers are already in; everything you add feeds the same workspace draft."}</span>
+          </span>
+        }
+        actions={
+          <Button asChild variant="outline">
+            <Link href={`/console/onboarding/${record.id}`}>
+              <ArrowLeft /> Back to review
+            </Link>
+          </Button>
         }
       />
       <CallSheet id={record.id} initial={sanitizeAnswers(record.answers)} readOnly={closed} />

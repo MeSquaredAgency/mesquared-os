@@ -2,12 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Panel } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
 import { provisionFromOnboardingAction, renewOnboardingLinkAction, reopenOnboardingAction, withdrawOnboardingAction } from "@/lib/onboarding/actions";
 import type { OnboardingStatus } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { OnboardingLinkCard } from "./onboarding-link";
 
 interface Props {
@@ -36,20 +36,15 @@ export function OnboardingActions({ id, label, contactEmail, status, draftSlug, 
     });
 
   return (
-    <Panel className="flex flex-col gap-4 py-5">
-      {notice && (
-        <p role="status" aria-live="polite" className={cn("rounded-lg px-4 py-3 text-sm", notice.ok ? "bg-green-soft text-green-text" : "bg-red-soft text-red-text")}>
-          {notice.text}
-        </p>
-      )}
+    <div className="surface flex flex-col gap-4 p-5">
+      {notice && <Notice tone={notice.ok ? "ok" : "error"}>{notice.text}</Notice>}
       {status === "SUBMITTED" && (
-        <div className="flex flex-col gap-3">
-          <label className="flex max-w-md flex-col gap-1 text-sm font-medium">
-            Workspace address
+        <div className="flex flex-col gap-4">
+          <Field label="Workspace address" className="max-w-md">
             <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="letters, numbers and dashes" />
-          </label>
+          </Field>
           {blockers.length > 0 && (
-            <ul className="flex list-disc flex-col gap-1 rounded-lg bg-red-soft py-3 pr-4 pl-8 text-sm text-red-text">
+            <ul className="flex list-disc flex-col gap-1 rounded-md bg-red-soft py-3 pr-4 pl-8 text-sm text-red-text">
               {blockers.map((b) => (
                 <li key={b}>{b}</li>
               ))}
@@ -68,11 +63,12 @@ export function OnboardingActions({ id, label, contactEmail, status, draftSlug, 
       )}
       {(status === "INVITED" || status === "IN_PROGRESS" || status === "SUBMITTED") && (
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" disabled={pending} onClick={() => run(() => renewOnboardingLinkAction(id))}>
+          <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => renewOnboardingLinkAction(id))}>
             New link
           </Button>
           <Button
             variant="ghost"
+            size="sm"
             disabled={pending}
             onClick={() => {
               if (window.confirm(`Withdraw ${label}'s questionnaire? Their link will stop working.`)) run(() => withdrawOnboardingAction(id));
@@ -83,6 +79,6 @@ export function OnboardingActions({ id, label, contactEmail, status, draftSlug, 
         </div>
       )}
       {link && <OnboardingLinkCard url={link} label={label} contactEmail={contactEmail} />}
-    </Panel>
+    </div>
   );
 }

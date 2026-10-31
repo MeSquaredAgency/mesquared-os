@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FieldInput } from "@/components/onboarding/fields";
-import { Panel } from "@/components/shell/section";
+import { Badge } from "@/components/ui/badge";
 import { saveCallSheetAction } from "@/lib/onboarding/actions";
 import { askedOnCall, CALL_SECTIONS, fieldByKey, fieldVisible, isAnswered, type OnboardingAnswers } from "@/lib/onboarding/form";
 import { cn } from "@/lib/utils";
@@ -62,29 +62,32 @@ export function CallSheet({ id, initial, readOnly }: { id: string; initial: Onbo
   const gaps = KEY_GAPS.map((k) => fieldByKey(k)!).filter((f) => !isAnswered(f, answers[f.key]) && !asked.some((a) => a.key === f.key));
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 bg-background/90 px-1 py-2 backdrop-blur">
-        <nav aria-label="Call sheet sections" className="flex flex-wrap gap-1.5">
+    <div className="flex flex-col gap-6">
+      {/* Section jumps and the save state, kept in view while scrolling a long sheet. */}
+      <div className="sticky top-14 z-10 -mx-4 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur md:top-0 md:-mx-1 md:px-1">
+        <nav aria-label="Call sheet sections" className="scrollbar-none -mx-1 flex gap-1.5 overflow-x-auto px-1 md:flex-wrap md:overflow-visible">
           {CALL_SECTIONS.map((s) => (
-            <a key={s.id} href={`#call-${s.id}`} className="rounded-full border px-3 py-1 text-sm text-muted-foreground hover:border-foreground hover:text-foreground">
+            <a key={s.id} href={`#call-${s.id}`} className="shrink-0 rounded-full border border-border-strong px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground">
               {s.title}
             </a>
           ))}
         </nav>
-        <span role="status" aria-live="polite" className={cn("text-sm text-muted-foreground", status.kind === "error" && "text-red-text")}>
+        <span role="status" aria-live="polite" className={cn("text-xs text-muted-foreground", status.kind === "error" && "text-red-text")}>
           {readOnly ? "Read-only" : status.kind === "saving" ? "Saving…" : status.kind === "saved" ? "Saved" : status.kind === "error" ? status.text : "Saves as you type"}
         </span>
       </div>
 
       {(asked.length > 0 || gaps.length > 0) && (
-        <Panel className="flex flex-col gap-4 py-5">
+        <div className="surface flex flex-col gap-4 p-5">
           {asked.length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium">The client asked to cover these on the call</p>
-              <ul className="flex flex-wrap gap-2">
+              <ul className="flex flex-wrap gap-1.5">
                 {asked.map((f) => (
-                  <li key={f.key} className={cn("rounded-full border px-3 py-1 text-sm", isAnswered(f, answers[f.key]) && "line-through opacity-60")}>
-                    {f.callLabel ?? f.label}
+                  <li key={f.key}>
+                    <Badge variant={isAnswered(f, answers[f.key]) ? "muted" : "amber"} className={cn("whitespace-normal text-left", isAnswered(f, answers[f.key]) && "line-through")}>
+                      {f.callLabel ?? f.label}
+                    </Badge>
                   </li>
                 ))}
               </ul>
@@ -93,32 +96,30 @@ export function CallSheet({ id, initial, readOnly }: { id: string; initial: Onbo
           {gaps.length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium">Still blank and worth asking</p>
-              <ul className="flex flex-wrap gap-2">
+              <ul className="flex flex-wrap gap-1.5">
                 {gaps.map((f) => (
-                  <li key={f.key} className="rounded-full border border-dashed px-3 py-1 text-sm text-muted-foreground">
-                    {f.callLabel ?? f.label}
+                  <li key={f.key}>
+                    <Badge variant="outline" className="whitespace-normal text-left">{f.callLabel ?? f.label}</Badge>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-        </Panel>
+        </div>
       )}
 
-      <fieldset disabled={readOnly} className="flex flex-col gap-8">
+      <fieldset disabled={readOnly} className="flex flex-col gap-6">
         {CALL_SECTIONS.map((section) => (
-          <section key={section.id} id={`call-${section.id}`} aria-labelledby={`call-${section.id}-title`} className="scroll-mt-16">
-            <Panel className="flex flex-col gap-6 py-6">
-              <div className="flex flex-col gap-1">
-                <h2 id={`call-${section.id}-title`} className="text-lg font-medium">
-                  {section.title}
-                </h2>
-                <p className="text-sm text-muted-foreground">{section.intro}</p>
-              </div>
-              {section.fields.filter((f) => fieldVisible(f, answers)).map((field) => (
-                <FieldInput key={field.key} field={field} answers={answers} onChange={update} audience="operator" />
-              ))}
-            </Panel>
+          <section key={section.id} id={`call-${section.id}`} aria-labelledby={`call-${section.id}-title`} className="surface flex scroll-mt-28 flex-col gap-6 p-5 sm:p-6 md:scroll-mt-14">
+            <div className="flex flex-col gap-1">
+              <h2 id={`call-${section.id}-title`} className="section-title">
+                {section.title}
+              </h2>
+              <p className="text-sm text-muted-foreground">{section.intro}</p>
+            </div>
+            {section.fields.filter((f) => fieldVisible(f, answers)).map((field) => (
+              <FieldInput key={field.key} field={field} answers={answers} onChange={update} audience="operator" />
+            ))}
           </section>
         ))}
       </fieldset>
