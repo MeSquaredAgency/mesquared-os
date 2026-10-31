@@ -353,9 +353,9 @@ Runbooks live in `docs/runbooks/` and the launch gate is
 
 New clients usually start with the online onboarding questionnaire: Console →
 **Onboarding** makes a private link (`/onboarding/<token>`, no account
-needed, saves as they go), and once the client sends it, **Create workspace**
-provisions from their answers with a review list of what still needs a
-person. A client who filled in the Claude Docs version instead goes through
+needed, about ten minutes, saves as they go), the operator completes the
+**call sheet** during the intake call, and **Create workspace** provisions
+from both with a review list of what still needs a person. A client who filled in the Claude Docs version instead goes through
 `npm run tenant:from-questionnaire -- <file.md>`, which drafts the same
 definition into `tenants/<slug>.json` (`docs/runbooks/onboarding-questionnaire.md`).
 

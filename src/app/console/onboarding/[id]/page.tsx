@@ -6,7 +6,7 @@ import { PageHeader, Panel, Section } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
-import { describeAnswer, fieldVisible, sanitizeAnswers, STEPS } from "@/lib/onboarding/form";
+import { askedOnCall, CALL_SECTIONS, describeAnswer, fieldVisible, sanitizeAnswers } from "@/lib/onboarding/form";
 import { draftFromOnboarding } from "@/lib/onboarding/service";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import { timeAgo } from "@/lib/utils";
@@ -20,6 +20,7 @@ export default async function OnboardingDetailPage({ params }: { params: Promise
   const record = await repository.findOnboardingById(id);
   if (!record) notFound();
   const answers = sanitizeAnswers(record.answers);
+  const asked = askedOnCall(answers);
   const draft = draftFromOnboarding(record);
   const d = draft.definition;
   const template = TEMPLATE_BY_KEY[d.templateKey];
@@ -48,6 +49,11 @@ export default async function OnboardingDetailPage({ params }: { params: Promise
         actions={
           <div className="flex items-center gap-3">
             <OnboardingStatusBadge status={record.status} />
+            {record.status !== "PROVISIONED" && record.status !== "CANCELLED" && (
+              <Button asChild size="sm" variant={tenant ? "outline" : "default"}>
+                <Link href={`/console/onboarding/${record.id}/call`}>Open the call sheet</Link>
+              </Button>
+            )}
             {tenant && (
               <Button asChild size="sm">
                 <Link href={`/console/${tenant.slug}/settings`}>Open the workspace</Link>
@@ -105,10 +111,10 @@ export default async function OnboardingDetailPage({ params }: { params: Promise
         </Panel>
       </Section>
 
-      <Section id="onboarding-answers" title="Their answers" lede="Everything the client filled in, by section.">
+      <Section id="onboarding-answers" title="Their answers" lede={asked.length ? `Everything so far, from their form and the call sheet. They asked to cover ${asked.length} question${asked.length === 1 ? "" : "s"} on the call: ${asked.map((f) => (f.callLabel ?? f.label).toLowerCase()).join(", ")}.` : "Everything so far, from their form and the call sheet."}>
         <div className="flex flex-col gap-4">
-          {STEPS.map((step) => {
-            const rows = step.fields.filter((f) => fieldVisible(f, answers)).map((f) => [f.label, describeAnswer(f, answers[f.key])] as const).filter(([, v]) => v);
+          {CALL_SECTIONS.map((step) => {
+            const rows = step.fields.filter((f) => fieldVisible(f, answers)).map((f) => [f.callLabel ?? f.label, describeAnswer(f, answers[f.key])] as const).filter(([, v]) => v);
             return (
               <Panel key={step.id} className="py-5">
                 <h3 className="mb-3 font-medium">{step.title}</h3>

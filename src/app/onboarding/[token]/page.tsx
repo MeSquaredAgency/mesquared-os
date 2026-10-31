@@ -51,14 +51,14 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
   if (!isEditable(record)) {
     return (
       <Frame>
-        <OnboardingSent label={record.label} />
+        <OnboardingSent label={record.label} answers={sanitizeAnswers(record.answers)} />
       </Frame>
     );
   }
 
   return (
     <Frame wide>
-      <OnboardingForm token={token} label={record.label} initial={sanitizeAnswers(record.answers)} />
+      <OnboardingForm token={token} label={record.label} initial={sanitizeAnswers(record.answers, "client")} fresh={record.status === "INVITED"} />
     </Frame>
   );
 }
@@ -66,7 +66,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
 function Frame({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <main data-theme="paper" className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 sm:py-12">
-      <div className={wide ? "mx-auto w-full max-w-5xl" : "mx-auto flex min-h-[70vh] w-full max-w-lg items-center"}>{children}</div>
+      <div className={wide ? "mx-auto w-full max-w-2xl" : "mx-auto flex min-h-[70vh] w-full max-w-xl items-center"}>{children}</div>
     </main>
   );
 }

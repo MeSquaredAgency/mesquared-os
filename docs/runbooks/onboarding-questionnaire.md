@@ -7,43 +7,73 @@ pages describe the same things.
 
 There are two ways in. Use the online form unless the client cannot.
 
-## The online form (normal route)
+## The online form and the call sheet (normal route)
+
+The client fills in a short form before their intake call; the operator fills
+in the call sheet during it. Both write to the same questionnaire, so the
+workspace is drafted from everything at once.
 
 1. Console → **Onboarding** (platform admins). Enter the client's business
    name and, optionally, their email, then **Create link**. The link is shown
    once, like an API key: **Copy link** or **Email it** (opens your mail app
    with a short message). It stays open for 60 days.
 2. The client opens `/onboarding/<token>`. No account is needed: the token is
-   the credential and is stored only as a SHA-256 hash. The form is ten short
-   steps, works on a phone, and saves as they type, so they can stop and come
-   back with the same link. Only seven answers are required: business name,
-   type of business, time zone, their name and email, the confirmation tick
-   and their full name.
+   the credential and is stored only as a SHA-256 hash. A welcome screen sets
+   expectations, then four short steps (about ten minutes, mostly taps):
+   - **The basics**: business name, what kind of business (a standard list of
+     about twenty industries, or "Other" and a few words), what they sell,
+     areas served, time zone (guessed from their browser), phone, website,
+     social links, and their own name, email and mobile.
+   - **Your team**: each person's name, email, mobile and what they can do
+     (lead alerts, approving posts, seeing money, managing people, seeing
+     every customer), and who hears when a good lead goes cold.
+   - **Your customers**: the name on messages and the reply-to address, how
+     fast to reply, quiet hours (pre-set to 8pm–8am), texting from a business
+     number, the licence line (asked only of licensed industries), words to
+     avoid and the Google review link.
+   - **Hand it over**: tasks they'd hand over, the one thing to fix first,
+     where to post, and anything to know before the call.
+
+   Only five answers are required: business name, type of business, time
+   zone, their name and their email. Where they are unsure, **Not sure? Ask
+   me on the call** moves the question onto the call sheet. Answers save as
+   they type, and a recap and "what happens next" show once they send it.
 3. When they press **Send to Me²**, the questionnaire shows as **Ready to
    review** in the console, with a count on the Onboarding menu item.
-4. Open it. The page shows the **review list** (answers that could not be
-   read, and the steps the form cannot do), **What will be set up**, the tasks
-   they would hand over (for the Operational Blueprint), the drafted workspace
-   file as JSON, and every answer by section.
-5. Check the workspace address, then **Create workspace**. It applies the
+4. Before or during the intake call, open it and press **Open the call
+   sheet**. It has every section of the full questionnaire (goals, back
+   office, enquiry handling, systems, brand, how you work together,
+   compliance) with the client's answers already in, and lists at the top the
+   questions they left for the call and the important ones still blank. It
+   saves as you type and only sends the fields you changed, so the client
+   editing their own form at the same time never overwrites you, and they
+   cannot change call-sheet answers from their form.
+5. Back on the questionnaire, check the **review list**, **What will be set
+   up** and the workspace address, then **Create workspace**. It applies the
    draft exactly as `npm run tenant:provision` would, invites the team with a
    password nobody sees, assigns you as operator, and opens the workspace's
    Settings. Reset each person's password from Settings → People to hand it
    over.
 6. Finish the console steps in [onboarding-a-tenant.md](onboarding-a-tenant.md)
    (API keys, integrations), using the review list as the checklist, until
-   Launch readiness is green. Use the intake call for anything the client
-   skipped.
+   Launch readiness is green.
 
 Other actions on a questionnaire: **Reopen for the client** (after they sent
 it, so they can change answers with the same link), **New link** (the old link
 stops working at once; use it when a link is lost or was forwarded), and
 **Withdraw** (the link stops opening).
 
-What is kept from the browser is defined in `src/lib/onboarding/form.ts`:
-unknown fields are dropped, every string is bounded, a save is capped at
-100 KB, and saves are rate limited per link and per IP. Answers are never
-logged.
+Business types map onto the three industry templates: real estate and
+property → real estate; health and fitness, and allied health → health and
+fitness; everything else → general. The review list says when a business
+was drafted on the general template. The list lives in `INDUSTRIES` in
+`src/lib/onboarding/form.ts`.
+
+What is kept from the browser is defined in `src/lib/onboarding/form.ts`
+(`CLIENT_STEPS` for the client, `CALL_SECTIONS` for the call sheet, one field
+definition per key): unknown fields are dropped, every string is bounded, a
+save is capped at 100 KB, and client saves are rate limited per link and per
+IP. Answers are never logged.
 
 ## The Claude Docs questionnaire (fallback)
 
@@ -78,8 +108,9 @@ workspace with the same code, so they set up identical workspaces.
 
 ## What each answer sets
 
-The table names the doc's sections. The online form asks the same questions
-in steps of the same names. In the doc, questions are matched by the start of
+The table names the doc's sections. The online form and call sheet ask the
+same questions: the client's short form covers the basics, team and messages,
+and the call sheet covers the rest under the same section names. In the doc, questions are matched by the start of
 their wording (`QUESTIONS` in `src/lib/onboarding/questionnaire.ts`): if you
 reword a question in the master copy, update the matching prefix and the test
 fixture in `src/test/fixtures/onboarding-questionnaire.md`. In the form, a

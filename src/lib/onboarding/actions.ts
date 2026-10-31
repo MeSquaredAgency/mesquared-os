@@ -6,7 +6,7 @@ import { getConsoleContext } from "@/lib/auth/access";
 import { clientIpFromHeaders } from "@/lib/auth/client-ip";
 import { hashApiKey } from "@/lib/crypto";
 import { takeIntakeTokens } from "@/lib/intake/rate-limit";
-import { createOnboardingLink, onboardingUrl, provisionFromOnboarding, renewOnboardingLink, reopenOnboarding, saveOnboardingAnswers, submitOnboarding, withdrawOnboarding } from "./service";
+import { createOnboardingLink, onboardingUrl, provisionFromOnboarding, renewOnboardingLink, reopenOnboarding, saveCallSheet, saveOnboardingAnswers, submitOnboarding, withdrawOnboarding } from "./service";
 
 /**
  * Server actions for the onboarding form. The client-facing two are public
@@ -86,6 +86,17 @@ export async function createOnboardingLinkAction(input: { label: string; contact
     const { record, token } = await createOnboardingLink({ label: input.label, contactEmail: input.contactEmail, createdById: userId });
     refresh();
     return { ok: true, message: `Link created for ${record.label}. Copy it now: it is shown once.`, url: onboardingUrl(token), id: record.id };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function saveCallSheetAction(id: string, changed: unknown): Promise<ActionResult & { savedAt?: string }> {
+  try {
+    await adminId();
+    await saveCallSheet(id, changed);
+    revalidatePath(`/console/onboarding/${id}`);
+    return { ok: true, message: "Saved", savedAt: new Date().toISOString() };
   } catch (error) {
     return failure(error);
   }
