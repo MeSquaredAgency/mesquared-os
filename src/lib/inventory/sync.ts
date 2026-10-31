@@ -50,7 +50,7 @@ export async function runInventorySync(tenant: TenantSummary, now = new Date()):
   const provider = inventoryProviderFor(connection.vendor);
   const result = await provider.fetchListings(connection.creds, { currency: tenant.currency });
   if (!result.ok) {
-    await repository.upsertIntegration(tenant.id, { provider: "PROPERTY_MANAGEMENT", externalAccountId: connection.externalAccountId, status: "NEEDS_ATTENTION", lastError: result.error });
+    await repository.upsertIntegration(tenant.id, { provider: "PROPERTY_MANAGEMENT", externalAccountId: connection.externalAccountId, status: "NEEDS_ATTENTION", lastError: result.error, ...(result.credentials ? { credentialsEnc: encryptSecret(JSON.stringify(result.credentials), connection.integrationId) } : {}) });
     await repository.recordAutomationRun(tenant.id, { typeKey: "inventory_sync", outcome: "FAILED", summary: `Couldn't read listings from ${connection.vendor}: ${result.error}` });
     return { created: 0, updated: 0, skipped: result.error };
   }

@@ -111,9 +111,9 @@ steps in `scripts/parity-check.ts`.
 ## Medium: before the second client
 
 Done on the `review-medium-fixes` branch (26 October 2026) with tests in
-`src/test/review-medium.test.ts`: everything in this list except the two
-larger refactors noted inline, the PropertyMe adapter tests, and the finance
-webhook ingestion test (its refusals are covered).
+`src/test/review-medium.test.ts` and `src/test/propertyme.test.ts`: everything
+in this list, including the settings and money studio props, the PropertyMe
+adapter tests and the finance webhook ingestion test.
 
 - "Assign to the property's manager" picks an arbitrary listing's manager
   when several match, and is gated on a signature preference. Assign only
@@ -147,7 +147,7 @@ webhook ingestion test (its refusals are covered).
   until navigation.
 - `SettingsStudio` and `MoneyStudio` receive more than the client needs
   (full `TenantSummary`, the operator roster, encrypted ad credentials).
-  Still open: a DTO refactor of the settings studio.
+  Done: `SettingsView` and `OperatorOption` in `src/lib/tenants/settings-view.ts`; ad accounts lose their `settings`.
 - Deploy applies migrations before the worker is built, and CI never builds
   the worker, so a bundling failure is first seen after the schema moved.
   Reorder to build, migrate, upload; add `cf:build` to CI. Manual deploys

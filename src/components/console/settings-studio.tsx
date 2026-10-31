@@ -12,11 +12,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
 import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setModuleAction, updateMemberProfileAction } from "@/lib/tenants/actions";
-import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord, TenantSummary, UserRecord } from "@/lib/types";
+import type { OperatorOption, SettingsView } from "@/lib/tenants/settings-view";
+import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord } from "@/lib/types";
 import { cn, formatDateTime, humanize, type FormatContext } from "@/lib/utils";
 
 interface Props {
-  tenant: TenantSummary;
+  tenant: SettingsView;
   isAdmin: boolean;
   fmt: FormatContext;
   readiness: ReadinessCheck[];
@@ -24,7 +25,7 @@ interface Props {
   brand: { voice: string | null; bannedPhrases: string[]; requiredFooter: string; claimsPolicy: string };
   roles: TenantRoleRecord[];
   people: TenantPersonRecord[];
-  operators: UserRecord[];
+  operators: OperatorOption[];
   keys: ApiKeyRecord[];
   modules: TenantModuleRecord[];
   automations: TenantAutomationRecord[];
@@ -114,7 +115,7 @@ function CheckList({ checks }: { checks: ReadinessCheck[] }) {
   );
 }
 
-function ReadinessPanel({ tenant, checks, platform }: { tenant: TenantSummary; checks: ReadinessCheck[]; platform: ReadinessCheck[] }) {
+function ReadinessPanel({ tenant, checks, platform }: { tenant: SettingsView; checks: ReadinessCheck[]; platform: ReadinessCheck[] }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <Section id="readiness-ws-title" title={<>{tenant.name}: workspace</>} lede="The success test: every lead answered in minutes, missed opportunities visible, a week of content approvable, ad spend tied to leads.">

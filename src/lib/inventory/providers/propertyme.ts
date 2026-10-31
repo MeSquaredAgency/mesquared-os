@@ -91,14 +91,21 @@ export const propertyMeProvider: InventoryProvider = {
   async fetchListings(initial): Promise<InventoryFetchResult> {
     let creds = initial;
     let refreshed: InventoryCredentials | undefined;
+    // One refresh per sync, shared by every request that saw the 401: the lists are read in
+    // parallel, and PropertyMe's refresh tokens are single use, so a second refresh would fail.
+    let refreshing: Promise<InventoryCredentials | null> | undefined;
     const get = async <T,>(path: string): Promise<T> => {
-      const call = () => fetch(`${API}${path}`, { headers: { authorization: `Bearer ${creds.accessToken}`, accept: "application/json" } });
-      let res = await call();
-      if (res.status === 401 && !refreshed) {
-        const next = await refresh(creds);
+      const call = (token: string) => fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+      const sent = creds.accessToken;
+      let res = await call(sent);
+      if (res.status === 401) {
+        refreshing ??= refresh(creds).then((next) => {
+          if (next) creds = refreshed = next;
+          return next;
+        });
+        const next = await refreshing;
         if (!next) throw new Error("PropertyMe token expired and could not be refreshed; reconnect the integration.");
-        creds = refreshed = next;
-        res = await call();
+        if (next.accessToken !== sent) res = await call(next.accessToken);
       }
       if (!res.ok) throw new Error(`PropertyMe ${path} returned ${res.status}`);
       return (await res.json()) as T;
@@ -137,7 +144,8 @@ export const propertyMeProvider: InventoryProvider = {
       }
       return { ok: true, items, credentials: refreshed };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      // A refresh may have rotated the tokens before the failure; they must still be stored.
+      return { ok: false, error: error instanceof Error ? error.message : String(error), credentials: refreshed };
     }
   },
 };

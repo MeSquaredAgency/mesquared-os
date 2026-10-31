@@ -18,7 +18,7 @@ export interface InventoryCredentials {
   expiresAt?: string;
 }
 
-export type InventoryFetchResult = { ok: true; items: NewInventoryItem[]; credentials?: InventoryCredentials; note?: string } | { ok: false; error: string };
+export type InventoryFetchResult = { ok: true; items: NewInventoryItem[]; credentials?: InventoryCredentials; note?: string } | { ok: false; error: string; credentials?: InventoryCredentials };
 
 export interface InventoryProvider {
   name: string;
