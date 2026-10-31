@@ -645,6 +645,7 @@ export interface Repository {
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
   listExceptions(tenantIds: string[], opts?: { status?: ExceptionStatus[]; limit?: number }): Promise<ExceptionRecord[]>;
+  /** Resolves an open or in-progress exception; null when it is missing or already resolved. */
   resolveException(tenantId: string, id: string, resolution: string): Promise<ExceptionRecord | null>;
   appendEvent(tenantId: string, type: string, payload?: Record<string, unknown>, causationId?: string | null): Promise<DomainEventRecord>;
   listEvents(tenantId: string, limit?: number): Promise<DomainEventRecord[]>;

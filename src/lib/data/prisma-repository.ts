@@ -813,7 +813,7 @@ export const prismaRepository: Repository = {
   },
 
   async resolveException(tenantId, exId, resolution) {
-    const { count } = await getPrisma().exceptionItem.updateMany({ where: { id: exId, tenantId }, data: { status: "RESOLVED", resolution, resolvedAt: new Date() } });
+    const { count } = await getPrisma().exceptionItem.updateMany({ where: { id: exId, tenantId, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { status: "RESOLVED", resolution, resolvedAt: new Date() } });
     if (count === 0) return null;
     const row = await getPrisma().exceptionItem.findUnique({ where: { id: exId } });
     return row ? toException(row) : null;

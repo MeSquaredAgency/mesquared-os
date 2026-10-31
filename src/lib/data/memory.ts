@@ -851,7 +851,7 @@ export const memoryRepository: Repository = {
   },
 
   async resolveException(tenantId, exId, resolution) {
-    const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId);
+    const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
     if (!ex) return null;
     ex.status = "RESOLVED";
     void resolution;
