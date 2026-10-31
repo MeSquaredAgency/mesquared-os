@@ -7,8 +7,11 @@ setting; never add a branch for them.
 
 ## 0. Or do it from a file
 
-For a real client, write a definition under `tenants/` (ignored by git; see
-the comment at the top of `scripts/provision.ts` for the shape) and run:
+For a real client, start from their completed onboarding questionnaire:
+`npm run tenant:from-questionnaire -- <exported.md>` drafts the definition
+and a review list ([onboarding-questionnaire.md](onboarding-questionnaire.md)).
+Or write a definition under `tenants/` by hand (ignored by git; see
+the comment at the top of `scripts/provision.ts` for the shape). Then run:
 
 ```bash
 npm run tenant:provision -- tenants/<slug>.json
@@ -25,9 +28,11 @@ and prints the readiness score. Listings or a rent roll go in with
 `npm run inventory:import -- <slug> file.csv [source]` (same columns as the
 Settings → Inventory upload; a `manager` column lets rental enquiries be
 answered by the property's own manager). Passwords are never printed: reset each person's
-from Settings → People and hand the one-time password over privately. Steps
-1 to 3 below are what the file does for you; 4 to 6 still happen in the
-console.
+from Settings → People and hand the one-time password over privately. The file can
+also carry the business settings of step 2 (service levels, qualification,
+brand, values), the escalation rules, the posting rhythm, the review link and
+module switch-offs. Steps 1 to 3 below are what the file does for you; 4 to 6
+still happen in the console.
 
 ## 1. Create the workspace
 

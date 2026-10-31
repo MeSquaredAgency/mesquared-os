@@ -351,6 +351,12 @@ Postgres; `npm run db:parity` provisions a throwaway workspace to prove it.
 Runbooks live in `docs/runbooks/` and the launch gate is
 `docs/launch-checklist.md`.
 
+That definition can be drafted from the client's completed onboarding
+questionnaire: export the doc as Markdown and run
+`npm run tenant:from-questionnaire -- <file.md>`. It writes
+`tenants/<slug>.json` with a review list of anything it could not read and the
+console steps still to do (`docs/runbooks/onboarding-questionnaire.md`).
+
 ## Hosting on Cloudflare Workers
 
 The app also builds for Cloudflare Workers through the OpenNext adapter:
