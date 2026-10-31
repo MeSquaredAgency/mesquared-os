@@ -82,6 +82,40 @@ describe("PropertyMe adapter", () => {
     assert.deepEqual(result.items.map((i) => i.externalId), ["a1"], "rentals survive a failing sales list");
   });
 
+  it("refreshes once when every list sees the expired token at the same time", async () => {
+    // PropertyMe's login issues single-use refresh tokens: a second refresh with r1 is refused.
+    const usable = new Set(["r1"]);
+    script = (url, init) => {
+      if (url.hostname === "login.propertyme.com") {
+        const token = new URLSearchParams(String(init?.body)).get("refresh_token") ?? "";
+        if (!usable.delete(token)) return json({ error: "invalid_grant" }, 400);
+        usable.add("r2");
+        return json({ access_token: "fresh", refresh_token: "r2", expires_in: 3600 });
+      }
+      if (new Headers(init?.headers).get("authorization") !== "Bearer fresh") return json({ error: "expired" }, 401);
+      if (url.pathname === "/api/v1/lots/rentals") return json([lot("b1")]);
+      if (url.pathname === "/api/v1/lots/vacancy") return json([lot("b1")]);
+      return json([]);
+    };
+    const result = await propertyMeProvider.fetchListings({ accessToken: "stale", refreshToken: "r1", clientId: "cid", clientSecret: "cs" }, { currency: "AUD" });
+    assert.equal(calls.filter((c) => c.body?.includes("grant_type=refresh_token")).length, 1, "parallel 401s share one refresh");
+    assert.equal(result.ok, true, result.ok ? "" : result.error);
+    if (!result.ok) return;
+    assert.equal(result.credentials?.refreshToken, "r2", "the rotated refresh token comes back to be stored");
+    assert.deepEqual(result.items.map((i) => [i.externalId, i.status]), [["b1", "ACTIVE"]]);
+  });
+
+  it("hands back rotated tokens even when the sync fails after the refresh", async () => {
+    script = (url, init) => {
+      if (url.hostname === "login.propertyme.com") return json({ access_token: "fresh", refresh_token: "r2", expires_in: 3600 });
+      if (new Headers(init?.headers).get("authorization") !== "Bearer fresh") return json({ error: "expired" }, 401);
+      return json({ error: "boom" }, 500);
+    };
+    const result = await propertyMeProvider.fetchListings({ accessToken: "stale", refreshToken: "r1", clientId: "cid", clientSecret: "cs" }, { currency: "AUD" });
+    assert.equal(result.ok, false);
+    assert.equal(result.credentials?.refreshToken, "r2", "r1 is spent, so r2 must be stored or the next sync cannot refresh");
+  });
+
   it("reports an expired token it cannot refresh instead of returning an empty rent roll", async () => {
     script = (url) => (url.pathname === "/api/v1/lots/vacancy" ? json([]) : json({ error: "expired" }, 401));
     const result = await propertyMeProvider.fetchListings({ accessToken: "stale" }, { currency: "AUD" });
