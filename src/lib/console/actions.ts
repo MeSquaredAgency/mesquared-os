@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { closeExceptionsInBulk, settleException } from "@/lib/console/resolve";
 
 export interface ActionResult {
   ok: boolean;
@@ -19,23 +20,31 @@ export async function resolveException(tenantId: string, exceptionId: string, re
   resolution = resolutionSchema.parse(resolution ?? "");
   const { tenants, user } = await getConsoleContext();
   if (!tenants.some((t) => t.tenant.id === tenantId)) return { ok: false, message: "That workspace isn’t in your portfolio." };
-  const ex = await repository.resolveException(tenantId, exceptionId, resolution.trim() || "Resolved");
+  const ex = await settleException(tenantId, exceptionId, resolution, recovered, user.id);
   if (!ex) return { ok: false, message: "That item was already resolved." };
-  if (ex.missedOpportunityId) {
-    const mo = (await repository.listMissedOpportunities(tenantId, { limit: 500 })).find((m) => m.id === ex.missedOpportunityId);
-    await repository.resolveMissedOpportunity(tenantId, ex.missedOpportunityId, recovered ? "RECOVERED" : "EXPIRED", recovered ? (mo?.estimatedValueCents ?? 0) : 0);
-  }
-  await repository.recordAutomationRun(tenantId, {
-    typeKey: "sla_watch",
-    outcome: "COMPLETED",
-    summary: recovered ? `Sorted by the Me² team: ${resolution.trim() || "handled"}.` : `Closed by the Me² team: ${resolution.trim() || "no longer relevant"}.`,
-    leadId: ex.leadId,
-    contactId: ex.contactId,
-    missedOpportunityId: ex.missedOpportunityId,
-  });
-  await emit(tenantId, "exception.resolved", { exceptionId, by: user.id, recovered });
   revalidatePath("/console");
   return { ok: true, message: recovered ? "Marked recovered." : "Closed." };
+}
+
+export interface BulkActionResult extends ActionResult {
+  closedIds: string[];
+}
+
+const bulkSchema = z.array(z.object({ tenantId: z.string().min(1).max(100), exceptionId: z.string().min(1).max(100) })).min(1).max(200);
+
+/** Closes several queue items at once without recovering them; their missed opportunities are written off. */
+export async function closeExceptions(items: { tenantId: string; exceptionId: string }[], resolution: string): Promise<BulkActionResult> {
+  const checked = bulkSchema.safeParse(items);
+  if (!checked.success) return { ok: false, message: "Pick between 1 and 200 items to close.", closedIds: [] };
+  resolution = resolutionSchema.parse(resolution ?? "");
+  const { tenants, user } = await getConsoleContext();
+  const result = await closeExceptionsInBulk(new Set(tenants.map((t) => t.tenant.id)), checked.data, resolution, user.id);
+  if (result.closedIds.length > 0) revalidatePath("/console");
+  const closed = result.closedIds.length;
+  const parts = [`Closed ${closed} item${closed === 1 ? "" : "s"}.`];
+  if (result.alreadyResolved) parts.push(`${result.alreadyResolved} ${result.alreadyResolved === 1 ? "was" : "were"} already resolved.`);
+  if (result.outsidePortfolio) parts.push(`${result.outsidePortfolio} ${result.outsidePortfolio === 1 ? "isn’t" : "aren’t"} in your portfolio and ${result.outsidePortfolio === 1 ? "was" : "were"} left alone.`);
+  return { ok: closed > 0, message: parts.join(" "), closedIds: result.closedIds };
 }
 
 /** Operator marks how an appointment went. Completed triggers the follow-up and review automations; no-show raises a missed opportunity. */
