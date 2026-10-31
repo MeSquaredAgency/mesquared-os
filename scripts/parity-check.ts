@@ -28,6 +28,7 @@ import { connectInventoryVendor, loadInventoryConnection, runInventorySync } fro
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
 import { createOnboardingLink, provisionFromOnboarding, saveCallSheet, saveOnboardingAnswers, submitOnboarding } from "@/lib/onboarding/service";
+import { dayBucketInZone } from "@/lib/utils";
 
 if (process.env.NODE_ENV === "production" && process.env.PARITY_ALLOW_PRODUCTION !== "1") {
   console.error("parity-check writes rehearsal rows (tenants, leads, invoices); refusing to run with NODE_ENV=production. Set PARITY_ALLOW_PRODUCTION=1 to override.");
@@ -270,7 +271,7 @@ await step("money: ad spend, pacing, attribution, invoices, reminders, website r
   const account = await repository.upsertAdAccount(harbor!.id, { platform: "META", externalAccountId: `act_parity_${stamp}`, name: "Parity Meta", currency: "AUD", monthlyBudgetCents: 100_000 });
   const sync = await runAdsSync(harbor!);
   assert.ok(sync.rows > 0, "spend rows recorded through the log provider");
-  assert.equal(await repository.recordAdSpend(harbor!.id, [{ adAccountId: account.id, platform: "META", date: new Date(), campaignId: "demo_campaign_1", campaignName: "Landlord leads", spendCents: 999 }]), 1, "same day+campaign upserts");
+  assert.equal(await repository.recordAdSpend(harbor!.id, [{ adAccountId: account.id, platform: "META", date: dayBucketInZone(harbor!.timezone), campaignId: "demo_campaign_1", campaignName: "Landlord leads", spendCents: 999 }]), 1, "same day+campaign upserts");
   const pacing = await pacingStatus(harbor!);
   assert.ok(pacing && pacing.budgetCents >= 100_000);
   const report = await buildAttributionReport(harbor!, new Date(Date.now() - 30 * 86_400_000));

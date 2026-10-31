@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { safeNext } from "@/lib/auth/redirect";
-import { formatDateTime, formatMoney, humanize, readableTextOn, startOfDayInZone, timeAgo } from "@/lib/utils";
+import { dayBucketInZone, formatDateTime, formatMoney, humanize, monthBucketInZone, readableTextOn, startOfDayInZone, timeAgo } from "@/lib/utils";
 
 describe("safeNext", () => {
   it("allows same-origin paths and rejects everything else", () => {
@@ -26,6 +26,18 @@ describe("formatting helpers", () => {
     const instant = new Date("2026-01-15T03:05:00Z"); // 14:05 in Sydney, 22:05 previous day in New York
     assert.match(formatDateTime(instant, { timezone: "Australia/Sydney", locale: "en-AU" }), /15 Jan.*2:05/);
     assert.match(formatDateTime(instant, { timezone: "America/New_York", locale: "en-US" }), /Jan 14.*10:05/);
+  });
+
+  it("buckets day-keyed records by the tenant's calendar date and month", () => {
+    // 31 Oct 14:00Z is already 1 Nov in Adelaide: today's bucket and the month bucket are both 1 Nov at UTC midnight.
+    const lateOctober = new Date("2026-10-31T14:00:00Z");
+    assert.equal(dayBucketInZone("Australia/Adelaide", lateOctober).toISOString(), "2026-11-01T00:00:00.000Z");
+    assert.equal(monthBucketInZone("Australia/Adelaide", lateOctober).toISOString(), "2026-11-01T00:00:00.000Z");
+    // 1 Nov 03:00Z is still 31 Oct in Los Angeles, so October's buckets are the month.
+    const earlyNovember = new Date("2026-11-01T03:00:00Z");
+    assert.equal(dayBucketInZone("America/Los_Angeles", earlyNovember).toISOString(), "2026-10-31T00:00:00.000Z");
+    assert.equal(monthBucketInZone("America/Los_Angeles", earlyNovember).toISOString(), "2026-10-01T00:00:00.000Z");
+    assert.equal(monthBucketInZone("UTC", earlyNovember).toISOString(), "2026-11-01T00:00:00.000Z");
   });
 
   it("computes start of day in a zone", () => {

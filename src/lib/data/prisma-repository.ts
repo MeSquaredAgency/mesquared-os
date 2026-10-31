@@ -80,7 +80,7 @@ import type {
   UserRecord,
   WebEventRecord,
 } from "@/lib/types";
-import { startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
 
 const toBooking = (b: Booking): BookingRecord => ({ id: b.id, tenantId: b.tenantId, leadId: b.leadId, provider: b.provider, externalId: b.externalId, bookingUrl: b.bookingUrl, startsAt: b.startsAt, endsAt: b.endsAt, status: b.status, confirmedAt: b.confirmedAt, remindedAt: b.remindedAt, followedUpAt: b.followedUpAt, createdAt: b.createdAt });
@@ -1407,7 +1407,7 @@ export const prismaRepository: Repository = {
       db.automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: 6 }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
       db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
-      this.sumAdSpend(tenantId, monthStart, undefined, opts.currency),
+      this.sumAdSpend(tenantId, monthBucketInZone(opts.timezone), undefined, opts.currency),
       db.transaction.aggregate({ where: { tenantId, kind: "EXPENSE", status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.invoice.findMany({ where: { tenantId, status: { in: ["SENT", "OVERDUE"] } }, select: { amountDueCents: true, status: true, dueAt: true } }),
     ]);
@@ -1441,7 +1441,6 @@ export const prismaRepository: Repository = {
     const rows: PortfolioRow[] = [];
     for (const tenant of tenants) {
       const dayStart = startOfDayInZone(tenant.timezone, now);
-      const monthStart = startOfMonthInZone(tenant.timezone, now);
       const [slaBreaches, open, exceptionsOpen, contentDue, integrations, leadsToday, budget, spentCents] = await Promise.all([
         this.countLeadsPastSla(tenant.id, now),
         db.missedOpportunity.findMany({ where: { tenantId: tenant.id, status: { in: OPEN_MISSED } }, select: { estimatedValueCents: true } }),
@@ -1450,7 +1449,7 @@ export const prismaRepository: Repository = {
         db.integration.findMany({ where: { tenantId: tenant.id }, select: { provider: true, status: true, lastError: true } }),
         db.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: dayStart } } }),
         db.adAccount.aggregate({ where: { tenantId: tenant.id, isActive: true }, _sum: { monthlyBudgetCents: true } }),
-        this.sumAdSpend(tenant.id, monthStart, undefined, tenant.currency),
+        this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now), undefined, tenant.currency),
       ]);
       const budgetCents = budget._sum.monthlyBudgetCents ?? 0;
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
