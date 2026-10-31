@@ -27,6 +27,7 @@ import { csvToInventory, findListingMentioned, importInventory, registerInventor
 import { connectInventoryVendor, loadInventoryConnection, runInventorySync } from "@/lib/inventory/sync";
 import { readinessSummary, tenantReadiness } from "@/lib/launch/readiness";
 import { inviteMember, issueApiKey, provisionTenant } from "@/lib/tenants/provision";
+import { createOnboardingLink, provisionFromOnboarding, saveOnboardingAnswers, submitOnboarding } from "@/lib/onboarding/service";
 
 if (process.env.NODE_ENV === "production" && process.env.PARITY_ALLOW_PRODUCTION !== "1") {
   console.error("parity-check writes rehearsal rows (tenants, leads, invoices); refusing to run with NODE_ENV=production. Set PARITY_ALLOW_PRODUCTION=1 to override.");
@@ -320,6 +321,27 @@ await step("launch: provision a workspace, invite, API key, inventory import, re
   await repository.revokeApiKey(fresh.id, issued.key.id);
   assert.equal(await repository.findTenantByApiKeyHash(hashApiKey(issued.raw)), null, "revoked key stops resolving");
   await repository.updateTenant(fresh.id, { isActive: false });
+});
+
+await step("onboarding: private link, save, submit, list, workspace created from the answers", async () => {
+  const email = `parity-onboarding-${stamp}@example.com`;
+  const { record, token } = await createOnboardingLink({ label: `Parity Onboarding ${stamp}`, contactEmail: email, createdById: null });
+  assert.equal("tokenHash" in record, false, "the record never carries the token hash");
+  assert.equal((await repository.findOnboardingByTokenHash(hashApiKey(token)))?.id, record.id, "the link resolves by its hash");
+  const answers = { businessName: `Parity Onboarding ${stamp}`, businessType: "Other", timezone: "Australia/Sydney", contactName: "Parity Client", contactEmail: email, firstResponse: "15 minutes", team: [{ name: "Parity Client", title: "Owner", email, mobile: "", alerts: true, approves: true, finances: true, users: true, allRecords: true }], escalateTo: email, confirm: "yes", signedName: "Parity Client" };
+  assert.ok((await saveOnboardingAnswers(token, answers)).ok);
+  const saved = await repository.findOnboardingById(record.id);
+  assert.equal(saved?.status, "IN_PROGRESS");
+  assert.equal(saved?.answers.firstResponse, "15 minutes", "answers round-trip through JSONB");
+  assert.deepEqual(await submitOnboarding(token, answers), { ok: true });
+  assert.ok((await repository.listOnboardings({ limit: 50 })).some((o) => o.id === record.id && o.status === "SUBMITTED"));
+  const operator = (await repository.listOperators())[0];
+  assert.ok(operator, "an operator exists to assign");
+  const { tenant } = await provisionFromOnboarding(record.id, { operatorUserId: operator.id });
+  assert.equal(tenant.sla.firstResponseMinutes, 15);
+  assert.equal(tenant.escalationRules.length, 2, "escalation names the client's own member");
+  assert.equal((await repository.findOnboardingById(record.id))?.tenantId, tenant.id);
+  await repository.updateTenant(tenant.id, { isActive: false });
 });
 
 console.log(failures === 0 ? "\nAll parity steps passed." : `\n${failures} parity step(s) FAILED.`);

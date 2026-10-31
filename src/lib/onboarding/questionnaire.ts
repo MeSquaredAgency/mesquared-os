@@ -1,15 +1,20 @@
 import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
-import { REGION_PRESETS, slugify } from "@/lib/tenants/provision";
+import { TEAM_PERMISSIONS, type OnboardingAnswers, type TaskRow, type TeamRow, type ToolRow } from "@/lib/onboarding/form";
+import { slugify } from "@/lib/tenants/provision";
+import { REGION_PRESETS } from "@/lib/tenants/regions";
 import type { TenantSettingsInput } from "@/lib/tenants/settings";
 import { MISSED_OPPORTUNITY_TYPES, type MissedOpportunityType, type Permission } from "@/lib/types";
 
 /**
- * Turns the Me² Client Onboarding Questionnaire, exported from Claude Docs as
- * Markdown, into a draft workspace definition for `npm run tenant:provision`.
+ * Turns a client's onboarding answers into a draft workspace definition for
+ * provisioning. The answers arrive one of two ways, both reduced to
+ * QuestionnaireData first: the online form (`fromFormAnswers`) or the Claude
+ * Docs questionnaire exported as Markdown (`fromMarkdown`).
  *
- * Questions are matched by the start of their wording (see QUESTIONS), so a
- * client can add rows, delete rows and type anything in the answer cells.
+ * In the Markdown, questions are matched by the start of their wording (see
+ * QUESTIONS), so a client can add rows, delete rows and type anything in the
+ * answer cells.
  * Nothing is guessed silently: every answer that could not be read, and every
  * step the file cannot do (integrations, ad budgets, pipeline stages), lands
  * in `review` for the operator. The draft holds the client's contact details,
@@ -27,6 +32,18 @@ export interface ParsedQuestionnaire {
   answers: Map<string, string>;
   tables: ParsedTable[];
   checks: { section: string; label: string; checked: boolean }[];
+}
+
+/** One client's answers, whichever way they came in. */
+export interface QuestionnaireData {
+  values: Partial<Record<QuestionKey | "currency", string>>;
+  /** Sender name and reply-to when they were given as separate answers (the online form). */
+  sender?: { name?: string; email?: string };
+  team: { name: string; title?: string; email?: string; mobile?: string; permissions: Permission[] }[];
+  /** Where enquiries come from, with a rough monthly count when given. */
+  channels: { channel: string; perMonth?: string }[];
+  tools: { area: string; tool: string; access?: string }[];
+  socialChannels: string[];
 }
 
 export interface TenantDefinitionDraft extends TenantSettingsInput {
@@ -281,6 +298,8 @@ export function extractPhone(s: string | undefined): string | undefined {
 /** A REGION_PRESETS entry from what the client wrote about their time zone. */
 export function presetFor(s: string | undefined): (typeof REGION_PRESETS)[number] | undefined {
   if (!s) return undefined;
+  const exact = REGION_PRESETS.find((p) => p.timezone.toLowerCase() === s.trim().toLowerCase());
+  if (exact) return exact;
   const t = s.toLowerCase();
   const by = (tz: string) => REGION_PRESETS.find((p) => p.timezone === tz);
   if (/adelaide|south australia|\bsa\b|acst|acdt|darwin/.test(t)) return by("Australia/Adelaide");
@@ -310,11 +329,12 @@ function templateKeyFor(type: string | undefined): string | undefined {
   return undefined;
 }
 
+/** Team-table columns in the Markdown questionnaire, by the start of their header. */
 const PERMISSION_COLUMNS: { prefix: string; permission: Permission }[] = [
   { prefix: "new-lead alerts", permission: "RECEIVE_LEAD_ALERTS" },
   { prefix: "approves", permission: "APPROVE_CONTENT" },
   { prefix: "sees money", permission: "VIEW_FINANCES" },
-  { prefix: "adds or removes users", permission: "MANAGE_USERS" },
+  { prefix: "adds or removes", permission: "MANAGE_USERS" },
   { prefix: "sees every customer", permission: "VIEW_ALL_RECORDS" },
 ];
 
@@ -344,9 +364,89 @@ function opportunityValuesFor(templateKey: string, customerValue: number): Parti
 
 const isNone = (s: string | undefined) => Boolean(s && /^\s*(no|none|nope|not really|n\/a|na)\b/i.test(s));
 
-export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition: TenantDefinitionDraft; review: string[] } {
+/** The exported doc: question rows, the team, channel and systems tables, and the channel checklist. */
+export function fromMarkdown(parsed: ParsedQuestionnaire): QuestionnaireData {
+  const values: QuestionnaireData["values"] = {};
+  for (const key of Object.keys(QUESTIONS) as QuestionKey[]) {
+    const answer = answerFor(parsed, key);
+    if (answer) values[key] = answer;
+  }
+  const team: QuestionnaireData["team"] = [];
+  const teamTable = parsed.tables.find((t) => t.header.some((h) => normaliseText(h).startsWith("new-lead alerts")));
+  if (teamTable) {
+    const col = (prefix: string) => teamTable.header.findIndex((h) => normaliseText(h).startsWith(prefix));
+    for (const row of teamTable.rows) {
+      const name = row[col("name")]?.trim() ?? "";
+      const emailCell = row[col("email")]?.trim() ?? "";
+      if (!name && !emailCell) continue;
+      const titleCell = row[col("job title")] ?? "";
+      const mobile = extractPhone(titleCell);
+      const title = titleCell.replace(PHONE, "").replace(/[,;/|]+\s*$/, "").replace(/^\s*[,;/|]+/, "").trim();
+      team.push({ name, email: extractEmail(emailCell) ?? extractEmail(row.join(" ")), ...(title ? { title } : {}), ...(mobile ? { mobile } : {}), permissions: PERMISSION_COLUMNS.filter((c) => parseYesNo(row[col(c.prefix)]) === true).map((c) => c.permission) });
+    }
+  }
+  const channelTable = parsed.tables.find((t) => normaliseText(t.header[0] ?? "") === "channel");
+  const channels = (channelTable?.rows ?? []).filter((r) => r[0] && (r[1] ?? "").trim() && !isNone(r[1])).map((r) => ({ channel: r[0].trim(), perMonth: r[1].trim() }));
+  const systems = parsed.tables.find((t) => normaliseText(t.header[0] ?? "") === "area");
+  const tools = (systems?.rows ?? []).filter((r) => (r[1] ?? "").trim()).map((r) => ({ area: r[0]?.trim() ?? "", tool: r[1].trim(), access: r[3]?.trim() || undefined }));
+  const socialChannels = parsed.checks.filter((c) => c.section.startsWith("content, social") && c.checked).map((c) => c.label);
+  return { values, team, channels, tools, socialChannels };
+}
+
+const text = (answers: OnboardingAnswers, key: string) => {
+  const v = answers[key];
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+};
+const list = (answers: OnboardingAnswers, key: string) => (Array.isArray(answers[key]) ? (answers[key] as string[]) : []);
+const DAY_SHORT: Record<string, string> = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun" };
+
+/** The online form (src/lib/onboarding/form.ts): structured answers, composed into the same wording the readers take. */
+export function fromFormAnswers(answers: OnboardingAnswers): QuestionnaireData {
+  const values: QuestionnaireData["values"] = {};
+  const set = (key: QuestionKey | "currency", value: string | undefined) => {
+    if (value && value.trim()) values[key] = value.trim();
+  };
+  for (const key of ["businessName", "legalName", "businessType", "serviceAreas", "addresses", "timezone", "currency", "phone", "greenCriteria", "highIntent", "autoHandled", "requirePhone", "firstResponse", "bookingWindow", "booking", "stages", "quoteQuiet", "customerValue", "reviewUrl", "pastCustomers", "escalateTo", "signedBy", "personality", "voice", "example", "banned", "claims", "footer", "postsPerWeek", "approvals", "consent"] as const) set(key, text(answers, key));
+  set("links", ["website", "facebook", "instagram", "linkedin", "youtube"].map((k) => text(answers, k)).filter(Boolean).join(" "));
+  set("mainContact", ["contactName", "contactRole", "contactEmail", "contactMobile"].map((k) => text(answers, k)).filter(Boolean).join(", "));
+  const quietFrom = text(answers, "quietFrom");
+  const quietTo = text(answers, "quietTo");
+  if (quietFrom && quietTo) set("quietHours", `${quietFrom}-${quietTo}`);
+  const inventory = text(answers, "inventory");
+  set("inventory", inventory === "Yes" && text(answers, "inventoryWhere") ? `Yes, ${text(answers, "inventoryWhere")}` : inventory);
+  const sms = text(answers, "smsChoice");
+  set("smsNumber", sms === "existing" ? `Yes, ${text(answers, "smsExisting") ?? ""}` : sms === "new" ? "Yes, please set up a new number" : sms === "none" ? "No" : undefined);
+  const days = list(answers, "postingDays").map((d) => DAY_SHORT[d]).filter(Boolean);
+  const time = text(answers, "postingTime");
+  if (days.length && time) set("postingTimes", days.map((d) => `${d} ${time}`).join(", "));
+  const budgets = [["Meta", text(answers, "adMeta")], ["Google", text(answers, "adGoogle")]].filter(([, v]) => v).map(([k, v]) => `${k} $${v}`);
+  if (budgets.length) set("adBudget", budgets.join(", "));
+
+  const team = (Array.isArray(answers.team) ? (answers.team as TeamRow[]) : [])
+    .filter((r) => r.name.trim() || r.email.trim())
+    .map((r) => ({ name: r.name.trim(), title: r.title.trim() || undefined, email: extractEmail(r.email), mobile: r.mobile.trim() || undefined, permissions: TEAM_PERMISSIONS.filter((p) => r[p.key]).map((p) => p.permission) }));
+  const channelRows = (answers.channels ?? {}) as Record<string, string>;
+  const toolRows = (answers.tools ?? {}) as Record<string, ToolRow>;
+  return {
+    values,
+    sender: { name: text(answers, "senderName"), email: text(answers, "replyTo") },
+    team,
+    channels: Object.entries(channelRows).map(([channel, perMonth]) => ({ channel, perMonth: perMonth.trim() || undefined })),
+    tools: Object.entries(toolRows).filter(([, r]) => r.tool.trim()).map(([area, r]) => ({ area, tool: r.tool.trim(), access: r.access || undefined })),
+    socialChannels: list(answers, "socialChannels"),
+  };
+}
+
+/** Lines for the console about the back-office tasks the client would hand over, from the online form. */
+export function handOverSummary(answers: OnboardingAnswers): string[] {
+  const tasks = (answers.tasks ?? {}) as Record<string, TaskRow>;
+  return Object.entries(tasks).filter(([, t]) => t.hand === "Yes" || t.hand === "Maybe").map(([task, t]) => `${task}${t.hours ? ` (${t.hours} h/week)` : ""}: ${t.hand === "Yes" ? "hand over" : "maybe"}`);
+}
+
+export function draftTenantDefinition(input: QuestionnaireData | ParsedQuestionnaire): { definition: TenantDefinitionDraft; review: string[] } {
+  const data = "answers" in input ? fromMarkdown(input) : input;
   const review: string[] = [];
-  const a = (key: QuestionKey) => answerFor(parsed, key);
+  const a = (key: QuestionKey | "currency") => data.values[key]?.trim() || undefined;
 
   // Workspace basics.
   const tradingName = a("businessName") ?? splitList(a("legalName"))[0];
@@ -355,7 +455,7 @@ export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition
   if (!templateKeyFor(a("businessType"))) review.push(`Business type not chosen; drafted on the generic template. Pick real_estate, health_fitness or generic.`);
   const preset = presetFor(a("timezone")) ?? presetFor(a("addresses")) ?? REGION_PRESETS[0];
   if (!presetFor(a("timezone")) && !presetFor(a("addresses"))) review.push(`Time zone not recognised ("${a("timezone") ?? "blank"}"); drafted as ${preset.label}. Check region, timezone, locale and currency.`);
-  const currency = CURRENCIES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(a("timezone") ?? "")) ?? preset.currency;
+  const currency = CURRENCIES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(a("currency") ?? a("timezone") ?? "")) ?? preset.currency;
 
   const definition: TenantDefinitionDraft = { templateKey, name: tradingName ?? "", slug: tradingName ? slugify(tradingName) : undefined, region: preset.region, timezone: preset.timezone, locale: preset.locale, currency };
 
@@ -378,42 +478,33 @@ export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition
 
   // Sender identity and compliance.
   const sender = a("sender");
-  const replyTo = extractEmail(sender);
+  const replyTo = data.sender ? extractEmail(data.sender.email) : extractEmail(sender);
   if (replyTo) definition.replyTo = replyTo;
-  // The name is whatever comes before the first separator, the email or "replies".
-  const fromName = sender?.split(/[,;\n(]|\s[-–—]\s|\breplies\b|\breply\b/i)[0].replace(EMAIL_ALL, "").replace(/\s+(and|to)\s*$/i, "").trim();
+  // In the doc the name is whatever comes before the first separator, the email or "replies".
+  const fromName = data.sender ? data.sender.name?.trim() : sender?.split(/[,;\n(]|\s[-–—]\s|\breplies\b|\breply\b/i)[0].replace(EMAIL_ALL, "").replace(/\s+(and|to)\s*$/i, "").trim();
   if (fromName) definition.fromName = fromName;
   if (sender && (!replyTo || !fromName)) review.push(`Sender answer "${sender}" did not give both a name and an email: check fromName and replyTo.`);
+  if (data.sender && data.sender.email && !replyTo) review.push(`Reply-to "${data.sender.email}" is not an email address: check replyTo.`);
   if (a("footer")) definition.requiredFooter = a("footer");
   else if (templateKey === "real_estate") review.push("No compliance line given. Real estate needs the licence line on every asset (launch readiness requires it).");
   const signedBy = normaliseText(a("signedBy") ?? "");
   if (signedBy.startsWith("the team member")) definition.signAsAssignee = true;
   else if (signedBy.startsWith("the business")) definition.signAsAssignee = false;
 
-  // People and roles, from the team table.
-  const team = parsed.tables.find((t) => t.header.some((h) => normaliseText(h).startsWith("new-lead alerts")));
+  // People and roles, from the team list.
   const people: NonNullable<TenantDefinitionDraft["people"]> = [];
-  if (team) {
-    const col = (prefix: string) => team.header.findIndex((h) => normaliseText(h).startsWith(prefix));
-    const nameCol = col("name");
-    const titleCol = col("job title");
-    const emailCol = col("email");
-    for (const row of team.rows) {
-      const name = row[nameCol]?.trim();
-      if (!name && !row[emailCol]?.trim()) continue;
-      const email = extractEmail(row[emailCol]) ?? extractEmail(row.join(" "));
-      if (!email) {
-        review.push(`Team member "${name}" has no email address, so no sign-in was drafted for them.`);
-        continue;
-      }
-      const wanted = PERMISSION_COLUMNS.filter((c) => parseYesNo(row[col(c.prefix)]) === true).map((c) => c.permission);
-      const role = roleFor(templateKey, wanted);
-      if (!role.exact) review.push(`${name || email} ticked ${wanted.length ? wanted.join(", ") : "nothing"}; no ${TEMPLATE_BY_KEY[templateKey]?.name ?? "template"} role matches exactly, so they get "${role.name}". Check under Settings → People.`);
-      const titleCell = row[titleCol] ?? "";
-      const mobile = extractPhone(titleCell);
-      const title = titleCell.replace(PHONE, "").replace(/[,;/|]+\s*$/, "").replace(/^\s*[,;/|]+/, "").trim();
-      people.push({ email, name: name || email, role: role.key, ...(title ? { title } : {}), ...(mobile ? { mobile } : {}) });
+  for (const member of data.team) {
+    if (!member.email) {
+      review.push(`Team member "${member.name}" has no email address, so no sign-in was drafted for them.`);
+      continue;
     }
+    if (people.some((p) => p.email === member.email)) {
+      review.push(`${member.email} is listed twice; kept the first.`);
+      continue;
+    }
+    const role = roleFor(templateKey, member.permissions);
+    if (!role.exact) review.push(`${member.name || member.email} ticked ${member.permissions.length ? member.permissions.join(", ") : "nothing"}; no ${TEMPLATE_BY_KEY[templateKey]?.name ?? "template"} role matches exactly, so they get "${role.name}". Check under Settings → People.`);
+    people.push({ email: member.email, name: member.name || member.email, role: role.key, ...(member.title ? { title: member.title } : {}), ...(member.mobile ? { mobile: member.mobile } : {}) });
   }
   if (!people.length) {
     const contact = a("mainContact");
@@ -422,7 +513,7 @@ export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition
       const owner = roleFor(templateKey, ["VIEW_FINANCES", "APPROVE_CONTENT", "RECEIVE_LEAD_ALERTS", "MANAGE_USERS", "VIEW_ALL_RECORDS"]);
       const name = contact!.split(/[,;]/)[0].trim();
       people.push({ email, name: name && !EMAIL.test(name) ? name : email, role: owner.key, ...(extractPhone(contact) ? { mobile: extractPhone(contact) } : {}) });
-      review.push(`The team table is empty; the main contact (${email}) is drafted as "${owner.name}". Add the rest of the team before launch.`);
+      review.push(`The team list is empty; the main contact (${email}) is drafted as "${owner.name}". Add the rest of the team before launch.`);
     } else review.push("No team members with an email address. Launch readiness needs someone who receives lead alerts.");
   }
   if (people.length) definition.people = people;
@@ -487,7 +578,7 @@ export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition
     const firstName = (p: { name: string }) => normaliseText(p.name.split(" ")[0]).replace(/[^a-z'-]/g, "");
     const byName = people.find((p) => p.email === byEmail) ?? people.find((p) => firstName(p).length > 1 && new RegExp(`\\b${firstName(p)}\\b`).test(normaliseText(escalateTo)));
     if (byName) definition.escalation = [{ when: "NOT_BOOKED", email: byName.email }, { when: "QUIET_QUOTE", email: byName.email }];
-    else review.push(`Escalation names "${escalateTo}", who is not in the team table; add them, then set escalation.`);
+    else review.push(`Escalation names "${escalateTo}", who is not in the team list; add them, then set escalation.`);
   }
 
   // The workspace's own SMS number.
@@ -508,14 +599,11 @@ export function draftTenantDefinition(parsed: ParsedQuestionnaire): { definition
   const quoteDays = parseMoney(a("quoteQuiet"));
   if (quoteDays) review.push(`Follow up quotes after ${quoteDays} quiet days: set quietAfterDays on the quote or agreement stage.`);
   if (a("booking")) review.push(`Bookings today: "${a("booking")}". Connect Cal.com over that calendar (recommended readiness item).`);
-  const channelTable = parsed.tables.find((t) => normaliseText(t.header[0] ?? "") === "channel");
-  const activeChannels = channelTable?.rows.filter((r) => r[0] && (r[1] ?? "").trim() && !isNone(r[1])).map((r) => `${r[0].replace(/\s*\(.*\)$/, "")} (${r[1].trim()}/month)`) ?? [];
+  const activeChannels = data.channels.map((c) => `${c.channel.replace(/\s*\(.*\)$/, "")}${c.perMonth ? ` (${c.perMonth}/month)` : ""}`);
   if (activeChannels.length) review.push(`Set up intake for: ${activeChannels.join("; ")}. Issue an intake key for website forms.`);
-  const systems = parsed.tables.find((t) => normaliseText(t.header[0] ?? "") === "area");
-  const tools = systems?.rows.filter((r) => (r[1] ?? "").trim()).map((r) => `${r[1].trim()}${normaliseText(r[3] ?? "") === "yes" ? "" : ` (access: ${r[3]?.trim() || "not answered"})`}`) ?? [];
+  const tools = data.tools.map((t) => `${t.tool}${normaliseText(t.access ?? "") === "yes" ? "" : ` (access: ${t.access || "not answered"})`}`);
   if (tools.length) review.push(`Tools to connect where MeSquared OS has a connector: ${tools.join("; ")}.`);
-  const channels = parsed.checks.filter((c) => c.section.startsWith("content, social") && c.checked).map((c) => c.label);
-  if (channels.length) review.push(`Connect social channels: ${channels.join(", ")} (npm run tenant:connect-meta for Facebook and Instagram).`);
+  if (data.socialChannels.length) review.push(`Connect social channels: ${data.socialChannels.join(", ")} (npm run tenant:connect-meta for Facebook and Instagram).`);
   if (a("adBudget")) review.push(`Ad budgets: "${a("adBudget")}". Set each connected ad account's monthly budget.`);
   if (a("approvals")) review.push(`Posts with prices, people or results are signed off by: "${a("approvals")}". Make sure they have "Approves posts and ads".`);
   if (a("consent")) review.push(`Consent today: "${a("consent")}". Record it before switching on reactivation.`);

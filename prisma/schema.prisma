@@ -1359,3 +1359,37 @@ model RateLimitBucket {
   count       Int      @default(0)
   windowStart DateTime
 }
+
+// ---------------------------------------------------------------------------
+// Client onboarding (before a workspace exists)
+// ---------------------------------------------------------------------------
+
+enum OnboardingStatus {
+  INVITED
+  IN_PROGRESS
+  SUBMITTED
+  PROVISIONED
+  CANCELLED
+}
+
+/// A client's onboarding questionnaire. Platform-level because the client has no workspace yet; `tenantId`
+/// is filled in once one is made from it. The private link's token is stored only as a SHA-256 hash.
+/// `answers` are the client's own words, validated against the form in src/lib/onboarding/form.ts.
+model OnboardingSubmission {
+  id            String           @id @default(cuid())
+  tokenHash     String           @unique
+  label         String
+  contactEmail  String?
+  status        OnboardingStatus @default(INVITED)
+  answers       Json             @default("{}")
+  createdById   String?
+  tenantId      String?
+  startedAt     DateTime?
+  submittedAt   DateTime?
+  provisionedAt DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([status, updatedAt])
+}

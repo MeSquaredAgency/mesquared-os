@@ -1,50 +1,89 @@
 # From onboarding questionnaire to workspace
 
-Every new client fills in the **Me² Client Onboarding Questionnaire** (a Claude
-Docs document, copied per client). Its answers are written to set up the
-client's workspace directly, so the questionnaire, the workspace definition in
-`tenants/<slug>.json` and the console's Settings pages describe the same
-things in the same order.
+Every new client answers the Me² onboarding questionnaire before their
+workspace exists. The answers are written to set the workspace up directly,
+so the questionnaire, the workspace definition and the console's Settings
+pages describe the same things.
 
-## The flow
+There are two ways in. Use the online form unless the client cannot.
 
-1. Send the client their copy of the questionnaire. Nothing in it uses
-   internal words ("tenant", "green", "red"), and it asks for best guesses,
-   not exact figures.
-2. When it comes back, export it: Claude Docs → **Export → Markdown**. Save it
+## The online form (normal route)
+
+1. Console → **Onboarding** (platform admins). Enter the client's business
+   name and, optionally, their email, then **Create link**. The link is shown
+   once, like an API key: **Copy link** or **Email it** (opens your mail app
+   with a short message). It stays open for 60 days.
+2. The client opens `/onboarding/<token>`. No account is needed: the token is
+   the credential and is stored only as a SHA-256 hash. The form is ten short
+   steps, works on a phone, and saves as they type, so they can stop and come
+   back with the same link. Only seven answers are required: business name,
+   type of business, time zone, their name and email, the confirmation tick
+   and their full name.
+3. When they press **Send to Me²**, the questionnaire shows as **Ready to
+   review** in the console, with a count on the Onboarding menu item.
+4. Open it. The page shows the **review list** (answers that could not be
+   read, and the steps the form cannot do), **What will be set up**, the tasks
+   they would hand over (for the Operational Blueprint), the drafted workspace
+   file as JSON, and every answer by section.
+5. Check the workspace address, then **Create workspace**. It applies the
+   draft exactly as `npm run tenant:provision` would, invites the team with a
+   password nobody sees, assigns you as operator, and opens the workspace's
+   Settings. Reset each person's password from Settings → People to hand it
+   over.
+6. Finish the console steps in [onboarding-a-tenant.md](onboarding-a-tenant.md)
+   (API keys, integrations), using the review list as the checklist, until
+   Launch readiness is green. Use the intake call for anything the client
+   skipped.
+
+Other actions on a questionnaire: **Reopen for the client** (after they sent
+it, so they can change answers with the same link), **New link** (the old link
+stops working at once; use it when a link is lost or was forwarded), and
+**Withdraw** (the link stops opening).
+
+What is kept from the browser is defined in `src/lib/onboarding/form.ts`:
+unknown fields are dropped, every string is bounded, a save is capped at
+100 KB, and saves are rate limited per link and per IP. Answers are never
+logged.
+
+## The Claude Docs questionnaire (fallback)
+
+For a client who would rather fill in a document, copy the **Me² Client
+Onboarding Questionnaire** doc and share it.
+
+1. When it comes back, export it: Claude Docs → **Export → Markdown**. Save it
    outside the repository or under `tenants/` (ignored by git); it holds the
    client's contact details.
-3. Draft the definition:
+2. Draft the definition:
 
    ```bash
    npm run tenant:from-questionnaire -- ~/Downloads/questionnaire.md
    ```
 
    This writes `tenants/<slug>.json` (refuses to overwrite one without
-   `--force`) and prints the **review list**, which is also saved at the top of
-   the file as `_review`. Nothing is sent and no database is touched.
-4. Work through `_review`. Each line is either an answer that could not be
-   read (the template's value stays until you fix it) or a step the file
-   cannot do (integrations, ad budgets, pipeline stages). Fix the file, then
-   delete `_review`.
-5. Provision, against whichever database `DATABASE_URL` points at:
+   `--force`) and prints the same review list, also saved at the top of the
+   file as `_review`. Nothing is sent and no database is touched.
+3. Work through `_review`, fix the file, then delete `_review`.
+4. Provision, against whichever database `DATABASE_URL` points at:
 
    ```bash
    npm run tenant:provision -- tenants/<slug>.json
    ```
 
-   It refuses settings that are out of range before creating anything.
-6. Finish the console steps in [onboarding-a-tenant.md](onboarding-a-tenant.md)
-   (operator, API keys, integrations), using the review list as the checklist,
-   until Launch readiness is green. Use the intake call to confirm anything the
-   client marked "not sure".
+   It refuses a definition with problems before creating anything.
+5. Finish the console steps as above.
+
+Both routes reduce the answers to the same structure
+(`QuestionnaireData` in `src/lib/onboarding/questionnaire.ts`) and draft the
+workspace with the same code, so they set up identical workspaces.
 
 ## What each answer sets
 
-Questions are matched by the start of their wording
-(`QUESTIONS` in `src/lib/onboarding/questionnaire.ts`). If you reword a
-question in the master copy, update the matching prefix and the test fixture
-in `src/test/fixtures/onboarding-questionnaire.md`.
+The table names the doc's sections. The online form asks the same questions
+in steps of the same names. In the doc, questions are matched by the start of
+their wording (`QUESTIONS` in `src/lib/onboarding/questionnaire.ts`): if you
+reword a question in the master copy, update the matching prefix and the test
+fixture in `src/test/fixtures/onboarding-questionnaire.md`. In the form, a
+field's `key` is what is matched, so its wording can change freely.
 
 | Questionnaire (section: question) | Definition key | Where it lives in the OS |
 |---|---|---|

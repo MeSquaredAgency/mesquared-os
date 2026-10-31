@@ -61,6 +61,8 @@ import type {
   TransactionKind,
   TransactionRecord,
   TransactionStatus,
+  OnboardingRecord,
+  OnboardingStatus,
   UserRecord,
   WebEventKind,
   WebEventRecord,
@@ -703,6 +705,13 @@ export interface Repository {
   /** The current count without adding to it (0 once the window has passed). */
   rateLimitPeek(key: string, windowMs: number, now?: Date): Promise<number>;
   rateLimitClear(key: string): Promise<void>;
+
+  // Client onboarding questionnaires: platform-level, sent before a workspace exists.
+  createOnboarding(data: { tokenHash: string; label: string; contactEmail?: string | null; createdById?: string | null; expiresAt: Date }): Promise<OnboardingRecord>;
+  findOnboardingByTokenHash(tokenHash: string): Promise<OnboardingRecord | null>;
+  findOnboardingById(id: string): Promise<OnboardingRecord | null>;
+  listOnboardings(opts?: { limit?: number }): Promise<OnboardingRecord[]>;
+  updateOnboarding(id: string, patch: { answers?: Record<string, unknown>; status?: OnboardingStatus; tokenHash?: string; expiresAt?: Date; startedAt?: Date | null; submittedAt?: Date | null; provisionedAt?: Date | null; tenantId?: string | null }): Promise<OnboardingRecord | null>;
   removeMembership(tenantId: string, userId: string): Promise<void>;
   assignOperator(tenantId: string, userId: string): Promise<void>;
   listOperators(): Promise<UserRecord[]>;

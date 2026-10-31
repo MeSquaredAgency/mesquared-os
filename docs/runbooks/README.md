@@ -10,7 +10,7 @@ what is this, how do I check it is healthy, what do I do when it is not.
 | [scheduler.md](scheduler.md) | The minute tick, SLA detection and scheduled sends |
 | [incidents.md](incidents.md) | Something is wrong for a client right now |
 | [onboarding-a-tenant.md](onboarding-a-tenant.md) | Setting up a new client workspace end to end |
-| [onboarding-questionnaire.md](onboarding-questionnaire.md) | Turning a completed onboarding questionnaire into a workspace definition |
+| [onboarding-questionnaire.md](onboarding-questionnaire.md) | Sending a new client the onboarding form and creating their workspace from it |
 | [secrets-and-backups.md](secrets-and-backups.md) | Keys, rotation, database branches and restores |
 
 The launch gate itself is [../launch-checklist.md](../launch-checklist.md).
