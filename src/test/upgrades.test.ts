@@ -259,6 +259,50 @@ describe("a failing event subscriber is not silent", () => {
   });
 });
 
+describe("stages move on completed appointments and payments", () => {
+  const summit = demoTenants[1];
+
+  it("advances the lead, settles a win, and asks for a review once", async () => {
+    const config = await repository.getTenantConfig(summit.id);
+    const pipeline = config.pipelines.find((p) => p.isDefault) ?? config.pipelines[0];
+    const first = pipeline.stages[0];
+    const done = pipeline.stages.find((s) => s.advanceOn === "BOOKING_COMPLETED")!;
+    const won = pipeline.stages.find((s) => s.advanceOn === "PAYMENT_RECEIVED")!;
+    assert.ok(done && won, "the template has stages for both triggers");
+
+    const contact = await repository.upsertContact(summit.id, { firstName: "Stage", lastName: "Mover", email: "stage-mover@example.com", phone: null, company: null });
+    const { lead } = await repository.createLead(summit.id, { ...greenLead, contactId: contact.id, email: contact.email, externalId: "upgrade:stages:1", pipelineId: pipeline.id, stageId: first.id });
+    const wins: string[] = [];
+    subscribe("lead.won", async (e) => {
+      if (e.payload.leadId === lead.id) wins.push(String(e.payload.stageName));
+    });
+
+    // A booking that merely passed its time proves nothing; one a person marked attended moves the pipeline.
+    await emit(summit.id, "booking.completed", { bookingId: "bk_auto", leadId: lead.id, auto: true });
+    assert.equal((await repository.findLeadById(summit.id, lead.id))?.stageId, first.id, "auto-completed bookings do not move it");
+    await emit(summit.id, "booking.completed", { bookingId: "bk_attended", leadId: lead.id });
+    assert.equal((await repository.findLeadById(summit.id, lead.id))?.stageId, done.id);
+
+    await emit(summit.id, "invoice.paid", { invoiceId: "inv_stage", amountCents: 9_900, provider: "MANUAL", contactId: contact.id });
+    const after = await repository.findLeadById(summit.id, lead.id);
+    assert.equal(after?.stageId, won.id);
+    assert.equal(after?.status, "WON");
+    assert.deepEqual(wins, [won.name], "the win is announced once");
+
+    // Paying again does not drag the lead anywhere, and the activity log explains each move.
+    await emit(summit.id, "invoice.paid", { invoiceId: "inv_stage_2", amountCents: 9_900, provider: "MANUAL", contactId: contact.id });
+    assert.equal((await repository.findLeadById(summit.id, lead.id))?.stageId, won.id);
+    const runs = (await repository.listAutomationRuns(summit.id, 100)).filter((r) => r.leadId === lead.id && /moved to/.test(r.summary));
+    assert.equal(runs.length, 2);
+    assert.match(runs.map((r) => r.summary).join(" "), new RegExp(`"${won.name}" after their payment`));
+
+    const reviewOn = config.automations.find((a) => a.typeKey === "review_request")?.enabled;
+    const asks = (await repository.listDueActions(new Date(Date.now() + 48 * HOUR), 500)).filter((a) => a.typeKey === "review_request" && a.dedupeKey.startsWith(`review:${contact.id}:`));
+    if (reviewOn) assert.ok(asks.length >= 1, "a payment or a win queues a review ask");
+    else assert.equal(asks.length, 0);
+  });
+});
+
 describe("paid Meta leads survive a Graph API failure", () => {
   const realFetch = globalThis.fetch;
   let graphCalls = 0;

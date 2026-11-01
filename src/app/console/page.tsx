@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { PortfolioTable } from "@/components/console/portfolio-table";
-import { PageHeader, Section, Stat, StatStrip } from "@/components/shell/section";
+import { Empty, PageHeader, Section, Stat, StatStrip } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
@@ -62,14 +62,41 @@ export default async function ConsolePage() {
       />
 
       <StatStrip label="Across the portfolio" columns={4}>
-        <Stat label="Need a person" value={needsPerson} tone={needsPerson ? "red" : "neutral"} hint={`${totals.breaches} breach${totals.breaches === 1 ? "" : "es"} · ${totals.exceptions} exception${totals.exceptions === 1 ? "" : "s"} · ${totals.failing} failing`} />
+        <Stat
+          label="Need a person"
+          value={
+            totals.exceptions > 0 ? (
+              <Link href="/console/queue" className="underline-offset-4 hover:underline" title="Open the queue">
+                {needsPerson}
+              </Link>
+            ) : (
+              needsPerson
+            )
+          }
+          tone={needsPerson ? "red" : "neutral"}
+          hint={`${totals.breaches} breach${totals.breaches === 1 ? "" : "es"} · ${totals.exceptions} exception${totals.exceptions === 1 ? "" : "s"} · ${totals.failing} failing`}
+        />
         <Stat label="Money at risk" value={formatMoney(totals.atRisk, currency, locale)} tone={totals.atRisk ? "red" : "neutral"} hint={`${totals.missed} open missed opportunit${totals.missed === 1 ? "y" : "ies"}`} />
         <Stat label="Content due" value={totals.content} hint="Drafts waiting on approval" />
         <Stat label="Leads today" value={totals.leads} hint="Across every workspace" />
       </StatStrip>
 
       <Section id="portfolio-title" title="Workspaces" lede="Worst health first. Health is 100 minus deductions for breaches, open missed opportunities, exceptions, failing integrations and ad pacing drift." action={<span className="text-xs text-muted-foreground">{workspaces}</span>}>
-        <PortfolioTable rows={rows} />
+        {rows.length === 0 && user.isPlatformAdmin ? (
+          <Empty
+            action={
+              <Button asChild>
+                <Link href="/console/new">
+                  <Plus /> Set up the first workspace
+                </Link>
+              </Button>
+            }
+          >
+            No workspaces yet. Create one from an industry template, or send a client the onboarding form and it builds itself.
+          </Empty>
+        ) : (
+          <PortfolioTable rows={rows} />
+        )}
       </Section>
     </div>
   );

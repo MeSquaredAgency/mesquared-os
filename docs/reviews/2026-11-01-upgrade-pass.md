@@ -78,13 +78,20 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
 - **"I've called them"** on Needs you: stops the lead's clock, moves it to
   nurturing, recovers its open items and logs who did it.
 
+### Pipelines
+
+- **Stages move on attended appointments and payments**, as the spec says. A
+  stage marked won settles the lead; a win or a payment queues a review ask,
+  throttled to one per person per quarter by a count rather than a scan.
+
 ## Not done (candidates for the next pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
   between the event and the send (today the detector catches it five minutes
   later).
-- Pipeline advancement on payments and completed bookings, and payments shown
-  against the lead.
+- Payments shown against the lead (stages already move on payments and
+  attended appointments, see `src/lib/pipelines/advance.ts`; the transaction
+  row is not yet linked to the lead).
 - An EXPIRED sweep for escalated items nobody closes.
 - Structured JSON logging with tenant and action ids.
 - Visual verification of the UI changes in this pass: the dev server could

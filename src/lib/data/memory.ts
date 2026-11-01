@@ -440,6 +440,29 @@ export const memoryRepository: Repository = {
     return lead;
   },
 
+  async advanceLead(tenantId, leadId, trigger, at) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return null;
+    const pipeline = store().config[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
+    const current = pipeline?.stages.find((s) => s.id === lead.stageId) ?? null;
+    const next = pipeline?.stages.filter((s) => s.advanceOn === trigger).sort((a, b) => a.order - b.order)[0] ?? null;
+    lead.lastActivityAt = at;
+    if (!next || next.id === lead.stageId || (current && next.order <= current.order)) return { lead, moved: false, stageName: current?.name ?? null };
+    lead.stageId = next.id;
+    lead.stageEnteredAt = at;
+    if (next.isWon) lead.status = "WON";
+    else if (next.isLost) lead.status = "LOST";
+    return { lead, moved: true, stageName: next.name };
+  },
+
+  async findLatestOpenLeadForContact(tenantId, contactId) {
+    return (
+      store()
+        .leads.filter((l) => l.tenantId === tenantId && l.contactId === contactId && l.status !== "WON" && l.status !== "LOST" && l.status !== "ARCHIVED")
+        .sort(byNewest)[0] ?? null
+    );
+  },
+
   async unbookLead(tenantId, leadId, bookBy) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (!lead || lead.status !== "BOOKED") return;
@@ -847,6 +870,10 @@ export const memoryRepository: Repository = {
   async updateAutomationRun(tenantId, runId, patch) {
     const run = store().runs.find((r) => r.id === runId && r.tenantId === tenantId);
     if (run) Object.assign(run, { outcome: patch.outcome, summary: patch.summary });
+  },
+
+  async countAutomationRuns(tenantId, opts) {
+    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {

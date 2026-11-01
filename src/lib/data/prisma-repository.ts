@@ -443,6 +443,33 @@ export const prismaRepository: Repository = {
     return toLead(updated);
   },
 
+  async advanceLead(tenantId, leadId, trigger, at) {
+    const db = getPrisma();
+    const lead = await db.lead.findFirst({ where: { id: leadId, tenantId }, include: { stage: true } });
+    if (!lead) return null;
+    const next = lead.pipelineId ? await db.pipelineStage.findFirst({ where: { pipelineId: lead.pipelineId, advanceOn: trigger }, orderBy: { order: "asc" } }) : null;
+    // Only ever forward: a payment after the "won" stage does not drag the lead back.
+    if (!next || next.id === lead.stageId || (lead.stage && next.order <= lead.stage.order)) {
+      const touched = await db.lead.update({ where: { id: lead.id }, data: { lastActivityAt: at } });
+      return { lead: toLead(touched), moved: false, stageName: lead.stage?.name ?? null };
+    }
+    const updated = await db.lead.update({
+      where: { id: lead.id },
+      data: {
+        stageId: next.id,
+        stageEnteredAt: at,
+        lastActivityAt: at,
+        ...(next.isWon ? { status: "WON", wonAt: lead.wonAt ?? at } : next.isLost ? { status: "LOST", lostAt: lead.lostAt ?? at } : {}),
+      },
+    });
+    return { lead: toLead(updated), moved: true, stageName: next.name };
+  },
+
+  async findLatestOpenLeadForContact(tenantId, contactId) {
+    const row = await getPrisma().lead.findFirst({ where: { tenantId, contactId, status: { notIn: ["WON", "LOST", "ARCHIVED"] } }, orderBy: { createdAt: "desc" } });
+    return row ? toLead(row) : null;
+  },
+
   async unbookLead(tenantId, leadId, bookBy) {
     await getPrisma().lead.updateMany({ where: { id: leadId, tenantId, status: "BOOKED" }, data: { status: "BOOKING_SENT", bookedAt: null, bookBy, lastActivityAt: new Date() } });
   },
@@ -851,6 +878,10 @@ export const prismaRepository: Repository = {
 
   async updateAutomationRun(tenantId, runId, patch) {
     await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
+  },
+
+  async countAutomationRuns(tenantId, opts) {
+    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {

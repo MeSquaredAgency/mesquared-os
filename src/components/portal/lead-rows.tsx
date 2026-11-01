@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { createRealtimeClient, type SealedLiveQuery } from "@neon/realtime/client";
 import { RealtimeProvider, useLiveQuery } from "@neon/realtime-react";
@@ -43,6 +43,23 @@ function matchesSearch(l: LiveLeadRow, q: string): boolean {
 export function FilterableLeadRows({ rows, fmt, stageNames, header }: RowsProps & { header?: React.ReactNode }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<LeadView>("all");
+  const searchRef = useRef<HTMLInputElement>(null);
+  // "/" jumps to the search box from anywhere on the page, as in most tools; Escape clears it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape" && target === searchRef.current) {
+        setQuery("");
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const counts = useMemo(() => Object.fromEntries(VIEWS.map((v) => [v.key, rows.filter(v.match).length])) as Record<LeadView, number>, [rows]);
   const active = VIEWS.find((v) => v.key === view) ?? VIEWS[0];
   const shown = useMemo(() => rows.filter((l) => active.match(l) && matchesSearch(l, query.trim())), [rows, active, query]);
@@ -67,7 +84,7 @@ export function FilterableLeadRows({ rows, fmt, stageNames, header }: RowsProps 
         </div>
         <label className="relative block md:w-72">
           <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search leads" aria-label="Search leads" className="h-8 pl-9" />
+          <Input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search leads  ( / )" aria-label="Search leads" aria-keyshortcuts="/" className="h-8 pl-9" />
         </label>
       </div>
       {header}

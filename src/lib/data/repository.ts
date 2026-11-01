@@ -37,6 +37,7 @@ import type {
   MissedOpportunityStatus,
   MissedOpportunityType,
   LeadStatus,
+  StageAdvanceTrigger,
   OpportunityValues,
   PipelineRecord,
   PortalHome,
@@ -582,6 +583,14 @@ export interface Repository {
   setLeadStatus(tenantId: string, leadId: string, status: LeadStatus): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
   markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
+  /**
+   * Moves a lead to the first stage of its pipeline that advances on `trigger` (a completed appointment, a payment,
+   * a signed document). A won or lost stage sets the lead's status and timestamps too. Returns the lead and whether
+   * it moved; null when the lead does not exist.
+   */
+  advanceLead(tenantId: string, leadId: string, trigger: StageAdvanceTrigger, at: Date): Promise<{ lead: LeadRecord; moved: boolean; stageName: string | null } | null>;
+  /** The contact's most recent lead that is still in play (not won, lost or archived). */
+  findLatestOpenLeadForContact(tenantId: string, contactId: string): Promise<LeadRecord | null>;
   /** After a cancellation: back to BOOKING_SENT with a fresh booking window so "never booked" can fire again. */
   unbookLead(tenantId: string, leadId: string, bookBy: Date): Promise<void>;
   assignLead(tenantId: string, leadId: string, assigneeId: string | null): Promise<void>;
@@ -674,6 +683,8 @@ export interface Repository {
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
+  /** How many runs match; the throttles ("one review ask per person per quarter") read this instead of scanning history. */
+  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
