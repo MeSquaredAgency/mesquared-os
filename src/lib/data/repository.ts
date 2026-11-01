@@ -36,6 +36,7 @@ import type {
   MissedOpportunityRecord,
   MissedOpportunityStatus,
   MissedOpportunityType,
+  LeadStatus,
   OpportunityValues,
   PipelineRecord,
   PortalHome,
@@ -228,6 +229,15 @@ export interface NewReview {
 export type ApiKeyScope = "intake" | "content" | "webhooks";
 
 export const API_KEY_SCOPES: readonly ApiKeyScope[] = ["intake", "content", "webhooks"];
+
+export interface SchedulerBacklog {
+  /** Steps whose time has come and have not been claimed. */
+  due: number;
+  /** Seconds the oldest due step has been waiting, or null when nothing is due. */
+  oldestDueAgeSeconds: number | null;
+  /** Steps that failed for good in the last 24 hours (each has an exception in the queue). */
+  failedLast24h: number;
+}
 
 /** The one guard for key scopes read from storage or input: every store and action must use it so no scope is silently dropped. */
 export function isApiKeyScope(value: unknown): value is ApiKeyScope {
@@ -568,6 +578,8 @@ export interface Repository {
    * clock stops, and when `booking` is true the booking window stops too, so the detectors do not raise it again.
    */
   settleLeadSla(tenantId: string, leadId: string, at: Date, opts?: { booking?: boolean }): Promise<void>;
+  /** Moves a lead to a status a person chose (e.g. NURTURING once they are talking to them). Pipeline stages are not touched. */
+  setLeadStatus(tenantId: string, leadId: string, status: LeadStatus): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
   markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
   /** After a cancellation: back to BOOKING_SENT with a fresh booking window so "never booked" can fire again. */
@@ -604,6 +616,8 @@ export interface Repository {
   scheduleAction(tenantId: string, data: NewScheduledAction): Promise<{ record: ScheduledActionRecord; created: boolean }>;
   /** Pending actions across all tenants whose time has come (read-only; the tick claims them with claimAction). */
   listDueActions(now: Date, limit?: number): Promise<ScheduledActionRecord[]>;
+  /** What the health endpoint reports about the queue: how much is overdue, how old the oldest overdue step is, how many steps gave up recently. */
+  schedulerBacklog(now: Date): Promise<SchedulerBacklog>;
   /** Atomically moves a PENDING (or stale RUNNING) action to RUNNING. False when another worker got it first. */
   claimAction(actionId: string, now: Date, leaseMs: number): Promise<boolean>;
   /** DONE/CANCELLED/FAILED finish the action; PENDING re-queues it at `retryAt`. */

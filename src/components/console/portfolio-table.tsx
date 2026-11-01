@@ -3,17 +3,24 @@ import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Empty } from "@/components/shell/section";
-import { healthTone } from "@/lib/health";
+import { healthBreakdown, healthTone, pacingDrift, type HealthDeduction } from "@/lib/health";
 import type { PortfolioRow } from "@/lib/types";
 import { cn, formatMoney, humanize } from "@/lib/utils";
 
 const TONE_LABEL = { good: "Healthy", watch: "Watch", bad: "Needs attention" } as const;
 
-/** The score as a labelled bar, so 68 means something at a glance. */
-export function HealthBar({ score, compact = false }: { score: number; compact?: boolean }) {
+/** "68 of 100: Needs attention. 2 SLA breaches (−20), 1 failing integration (−8)." */
+export function healthTitle(score: number, deductions: HealthDeduction[] = []): string {
+  const head = `${score} of 100: ${TONE_LABEL[healthTone(score)]}`;
+  if (deductions.length === 0) return `${head}. Nothing is counting against it.`;
+  return `${head}. ${deductions.map((d) => `${d.label} (−${d.points})`).join(", ")}.`;
+}
+
+/** The score as a labelled bar, so 68 means something at a glance; hover for where the points went. */
+export function HealthBar({ score, deductions, compact = false }: { score: number; deductions?: HealthDeduction[]; compact?: boolean }) {
   const tone = healthTone(score);
   return (
-    <span className="inline-flex items-center gap-2.5" title={`${score} of 100: ${TONE_LABEL[tone]}`}>
+    <span className="inline-flex items-center gap-2.5" title={healthTitle(score, deductions)}>
       <span className="relative block h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden="true">
         <span className={cn("absolute inset-y-0 left-0 rounded-full", tone === "good" && "bg-green", tone === "watch" && "bg-amber", tone === "bad" && "bg-red")} style={{ width: `${score}%` }} />
       </span>
@@ -27,49 +34,87 @@ function Num({ value, warn = false }: { value: number; warn?: boolean }) {
   return <span className={cn(value === 0 ? "text-subtle-foreground" : warn ? "font-medium text-red-text" : "")}>{value}</span>;
 }
 
-/** The core of the Operator Console: every tenant in the portfolio, worst health first. */
+/** The one line under a workspace name: what is costing it points, or where it is. */
+function RowNote({ row, deductions }: { row: PortfolioRow; deductions: HealthDeduction[] }) {
+  if (deductions.length === 0) {
+    return (
+      <p className="text-xs whitespace-nowrap text-muted-foreground">
+        {humanize(row.tenant.industry)} · {row.tenant.timezone.split("/").pop()?.replace(/_/g, " ")}
+      </p>
+    );
+  }
+  return <p className={cn("text-xs", healthTone(row.health) === "bad" ? "text-red-text" : "text-muted-foreground")}>{deductions.map((d) => d.label).join(" · ")}</p>;
+}
+
+function Pacing({ row }: { row: PortfolioRow }) {
+  const drift = pacingDrift(row.adPacing);
+  if (drift === null || !row.adPacing) return <span className="text-subtle-foreground">–</span>;
+  const spent = row.adPacing.spentCents / Math.max(1, row.adPacing.budgetCents);
+  const expected = row.adPacing.daysElapsed / row.adPacing.daysInMonth;
+  return (
+    <span className={cn(Math.abs(drift) > 0.25 && "font-medium text-amber-text")} title={`Spent ${Math.round(spent * 100)}% of budget with ${Math.round(expected * 100)}% of the month gone`}>
+      {drift > 0 ? "+" : ""}
+      {Math.round(drift * 100)}%
+    </span>
+  );
+}
+
+function Integrations({ row }: { row: PortfolioRow }) {
+  const failing = row.integrations.filter((i) => i.status === "NEEDS_ATTENTION" || i.status === "DISCONNECTED");
+  const pending = row.integrations.filter((i) => i.status === "PENDING");
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {failing.length === 0 && pending.length === 0 ? <Badge variant="green">All connected</Badge> : null}
+      {failing.map((i) => (
+        <Badge key={i.provider} variant="red" title={i.lastError ?? undefined}>
+          {humanize(i.provider)}
+        </Badge>
+      ))}
+      {pending.map((i) => (
+        <Badge key={i.provider} variant="amber">
+          {humanize(i.provider)} pending
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
+/** The core of the Operator Console: every tenant in the portfolio, worst health first. A table on a desk, cards on a phone. */
 export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
   if (rows.length === 0) return <Empty>No workspaces assigned to you yet.</Empty>;
+  const withBreakdown = rows.map((r) => ({ row: r, deductions: healthBreakdown(r), href: `/console/${r.tenant.slug}` }));
   return (
-    <div className="surface overflow-hidden">
-      <Table className="min-w-[960px]">
-        <THead>
-          <TR className="hover:bg-transparent">
-            <TH>Workspace</TH>
-            <TH>Health</TH>
-            <TH numeric>Breaches</TH>
-            <TH numeric>Exceptions</TH>
-            <TH numeric>Missed</TH>
-            <TH numeric>At risk</TH>
-            <TH numeric>Content due</TH>
-            <TH numeric>Ad pacing</TH>
-            <TH>Integrations</TH>
-            <TH numeric>Leads today</TH>
-            <TH>
-              <span className="sr-only">Open</span>
-            </TH>
-          </TR>
-        </THead>
-        <TBody>
-          {rows.map((r) => {
-            const failing = r.integrations.filter((i) => i.status === "NEEDS_ATTENTION" || i.status === "DISCONNECTED");
-            const pending = r.integrations.filter((i) => i.status === "PENDING");
-            const pacing = r.adPacing ? r.adPacing.spentCents / Math.max(1, r.adPacing.budgetCents) : null;
-            const expected = r.adPacing ? r.adPacing.daysElapsed / r.adPacing.daysInMonth : null;
-            const drift = pacing !== null && expected !== null ? pacing - expected : null;
-            const href = `/console/${r.tenant.slug}`;
-            return (
+    <>
+      <div className="surface hidden overflow-hidden md:block">
+        <Table className="min-w-[960px]">
+          <THead>
+            <TR className="hover:bg-transparent">
+              <TH>Workspace</TH>
+              <TH>Health</TH>
+              <TH numeric>Breaches</TH>
+              <TH numeric>Exceptions</TH>
+              <TH numeric>Missed</TH>
+              <TH numeric>At risk</TH>
+              <TH numeric>Content due</TH>
+              <TH numeric>Ad pacing</TH>
+              <TH>Integrations</TH>
+              <TH numeric>Leads today</TH>
+              <TH>
+                <span className="sr-only">Open</span>
+              </TH>
+            </TR>
+          </THead>
+          <TBody>
+            {withBreakdown.map(({ row: r, deductions, href }) => (
               <TR key={r.tenant.id}>
                 <TD>
                   <Link href={href} className="font-medium whitespace-nowrap hover:underline">
                     {r.tenant.name}
                   </Link>
-                  <p className="text-xs whitespace-nowrap text-muted-foreground">
-                    {humanize(r.tenant.industry)} · {r.tenant.timezone.split("/").pop()?.replace(/_/g, " ")}
-                  </p>
+                  <RowNote row={r} deductions={deductions} />
                 </TD>
                 <TD>
-                  <HealthBar score={r.health} />
+                  <HealthBar score={r.health} deductions={deductions} />
                 </TD>
                 <TD numeric>
                   <Num value={r.slaBreaches} warn />
@@ -85,29 +130,10 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
                   <Num value={r.contentDue} />
                 </TD>
                 <TD numeric>
-                  {pacing === null || expected === null || drift === null ? (
-                    <span className="text-subtle-foreground">–</span>
-                  ) : (
-                    <span className={cn(Math.abs(drift) > 0.25 && "font-medium text-amber-text")} title={`Spent ${Math.round(pacing * 100)}% of budget with ${Math.round(expected * 100)}% of the month gone`}>
-                      {drift > 0 ? "+" : ""}
-                      {Math.round(drift * 100)}%
-                    </span>
-                  )}
+                  <Pacing row={r} />
                 </TD>
                 <TD>
-                  <span className="inline-flex flex-wrap items-center gap-1">
-                    {failing.length === 0 && pending.length === 0 ? <Badge variant="green">All connected</Badge> : null}
-                    {failing.map((i) => (
-                      <Badge key={i.provider} variant="red" title={i.lastError ?? undefined}>
-                        {humanize(i.provider)}
-                      </Badge>
-                    ))}
-                    {pending.map((i) => (
-                      <Badge key={i.provider} variant="amber">
-                        {humanize(i.provider)} pending
-                      </Badge>
-                    ))}
-                  </span>
+                  <Integrations row={r} />
                 </TD>
                 <TD numeric>
                   <Num value={r.leadsToday} />
@@ -118,10 +144,50 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
                   </Link>
                 </TD>
               </TR>
-            );
-          })}
-        </TBody>
-      </Table>
-    </div>
+            ))}
+          </TBody>
+        </Table>
+      </div>
+
+      <ul className="flex flex-col gap-3 md:hidden">
+        {withBreakdown.map(({ row: r, deductions, href }) => (
+          <li key={r.tenant.id} className="surface flex flex-col gap-3 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link href={href} className="text-base font-medium hover:underline">
+                  {r.tenant.name}
+                </Link>
+                <RowNote row={r} deductions={deductions} />
+              </div>
+              <HealthBar score={r.health} deductions={deductions} compact />
+            </div>
+            <dl className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <dt className="text-2xs text-muted-foreground">Breaches</dt>
+                <dd>
+                  <Num value={r.slaBreaches} warn />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-2xs text-muted-foreground">Exceptions</dt>
+                <dd>
+                  <Num value={r.exceptionsOpen} warn />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-2xs text-muted-foreground">At risk</dt>
+                <dd className="num">{r.missedAtRiskCents > 0 ? <span className="font-medium text-red-text">{formatMoney(r.missedAtRiskCents, r.tenant.currency, r.tenant.locale)}</span> : <span className="text-subtle-foreground">–</span>}</dd>
+              </div>
+            </dl>
+            <div className="flex items-center justify-between gap-3">
+              <Integrations row={r} />
+              <Link href={href} className="inline-flex items-center gap-1 text-sm font-medium whitespace-nowrap hover:underline">
+                Open <ChevronRight className="size-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

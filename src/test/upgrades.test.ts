@@ -6,6 +6,8 @@ import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { isApiKeyScope } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
+import { healthBreakdown, healthScore } from "@/lib/health";
+import { healthTitle } from "@/components/console/portfolio-table";
 import { ingestMetaLead } from "@/lib/intake/channels/meta-lead";
 import { retryDelayMs, tick } from "@/lib/jobs/tick";
 import { sendMessage } from "@/lib/messaging";
@@ -148,6 +150,38 @@ describe("opt-outs are final", () => {
     const transactional = await sendMessage({ tenant: harbor, contactId: contact.id, channel: "SMS", to: contact.phone!, body: "Thanks for your enquiry", transactional: true });
     assert.equal(transactional.ok, false, "transactional texts stop too once they said stop");
     assert.match(transactional.error ?? "", /opted out/);
+  });
+});
+
+describe("health score explains itself", () => {
+  const base = { tenant: harbor, slaBreaches: 0, missedOpen: 0, exceptionsOpen: 0, missedAtRiskCents: 0, contentDue: 0, adPacing: null, integrations: [], leadsToday: 0 };
+
+  it("lists each deduction in words and sums to the score", () => {
+    const row = { ...base, slaBreaches: 2, exceptionsOpen: 1, integrations: [{ provider: "META" as const, status: "DISCONNECTED" as const, lastError: null }] };
+    const deductions = healthBreakdown(row);
+    assert.deepEqual(
+      deductions.map((d) => [d.label, d.points]),
+      [
+        ["2 SLA breaches", 20],
+        ["1 exception", 4],
+        ["1 failing integration", 8],
+      ],
+    );
+    assert.equal(healthScore(row), 68);
+    assert.match(healthTitle(68, deductions), /68 of 100: Watch\. 2 SLA breaches \(−20\)/);
+  });
+
+  it("caps each dimension so one problem cannot hide another", () => {
+    const row = { ...base, slaBreaches: 50 };
+    assert.equal(healthBreakdown(row)[0].points, 30);
+    assert.equal(healthScore(row), 70);
+    assert.deepEqual(healthBreakdown(base), []);
+    assert.equal(healthScore(base), 100);
+  });
+
+  it("flags pacing from the tenant's month, not the server's", () => {
+    const row = { ...base, adPacing: { spentCents: 90_000, budgetCents: 100_000, daysElapsed: 10, daysInMonth: 30 } };
+    assert.match(healthBreakdown(row)[0].label, /ad spend over plan by 170%/);
   });
 });
 

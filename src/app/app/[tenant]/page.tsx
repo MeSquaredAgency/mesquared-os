@@ -56,7 +56,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
         <Stat label="Handled this week" value={home.handled.countWeek} hint={`${home.handled.countToday} today`} />
       </StatStrip>
 
-      <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} />
+      <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />
       <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />
       {home.money && <MoneyPanel money={home.money} fmt={fmt} />}
       <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={hasPermission(access, "APPROVE_CONTENT")} isMember={access.via === "member"} />

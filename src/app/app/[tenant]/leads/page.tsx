@@ -1,4 +1,4 @@
-import { LeadRows, LiveLeads } from "@/components/portal/lead-rows";
+import { FilterableLeadRows, LiveLeads } from "@/components/portal/lead-rows";
 import { PageHeader } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -37,7 +37,7 @@ export default async function LeadsPage({ params }: { params: Promise<{ tenant: 
         {sealed ? (
           <LiveLeads key={sealed.queryFingerprint} tenantSlug={slug} userId={user.id} realtimeUrl={realtimeUrl()} sealedQuery={sealed} rows={rows} fmt={fmt} stageNames={stageNames} />
         ) : (
-          <LeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
+          <FilterableLeadRows rows={rows} fmt={fmt} stageNames={stageNames} />
         )}
       </div>
     </div>

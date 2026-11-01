@@ -418,6 +418,13 @@ export const memoryRepository: Repository = {
     if (opts.booking && !lead.bookedAt) lead.bookBy = null;
   },
 
+  async setLeadStatus(tenantId, leadId, status) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return;
+    lead.status = status;
+    lead.lastActivityAt = new Date();
+  },
+
   async markLeadBooked(tenantId, leadId, at) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (!lead) return null;
@@ -577,6 +584,12 @@ export const memoryRepository: Repository = {
       .actions.filter((a) => (a.status === "PENDING" || (a.status === "RUNNING" && a.lockedAt && now.getTime() - a.lockedAt.getTime() > 10 * 60_000)) && a.runAt <= now)
       .sort((a, b) => a.runAt.getTime() - b.runAt.getTime())
       .slice(0, limit);
+  },
+
+  async schedulerBacklog(now) {
+    const due = store().actions.filter((a) => a.status === "PENDING" && a.runAt <= now);
+    const oldest = due.reduce<Date | null>((min, a) => (!min || a.runAt < min ? a.runAt : min), null);
+    return { due: due.length, oldestDueAgeSeconds: oldest ? Math.max(0, Math.round((now.getTime() - oldest.getTime()) / 1000)) : null, failedLast24h: store().actions.filter((a) => a.status === "FAILED").length };
   },
 
   async claimAction(actionId, now, leaseMs) {

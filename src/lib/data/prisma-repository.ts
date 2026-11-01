@@ -420,6 +420,10 @@ export const prismaRepository: Repository = {
     if (opts.booking) await db.lead.updateMany({ where: { id: leadId, tenantId, bookedAt: null }, data: { bookBy: null } });
   },
 
+  async setLeadStatus(tenantId, leadId, status) {
+    await getPrisma().lead.updateMany({ where: { id: leadId, tenantId }, data: { status, lastActivityAt: new Date() } });
+  },
+
   async markLeadBooked(tenantId, leadId, at) {
     const db = getPrisma();
     const lead = await db.lead.findFirst({ where: { id: leadId, tenantId } });
@@ -597,6 +601,17 @@ export const prismaRepository: Repository = {
     const stale = new Date(now.getTime() - 10 * 60_000);
     const rows = await getPrisma().scheduledAction.findMany({ where: { runAt: { lte: now }, OR: [{ status: "PENDING" }, { status: "RUNNING", lockedAt: { lt: stale } }] }, orderBy: { runAt: "asc" }, take: limit });
     return rows.map(toAction);
+  },
+
+  async schedulerBacklog(now) {
+    const db = getPrisma();
+    const dueWhere = { status: "PENDING" as const, runAt: { lte: now } };
+    const [due, oldest, failedLast24h] = await Promise.all([
+      db.scheduledAction.count({ where: dueWhere }),
+      db.scheduledAction.findFirst({ where: dueWhere, orderBy: { runAt: "asc" }, select: { runAt: true } }),
+      db.scheduledAction.count({ where: { status: "FAILED", ranAt: { gte: new Date(now.getTime() - 24 * 3_600_000) } } }),
+    ]);
+    return { due, oldestDueAgeSeconds: oldest ? Math.max(0, Math.round((now.getTime() - oldest.runAt.getTime()) / 1000)) : null, failedLast24h };
   },
 
   async claimAction(actionId, now, leaseMs) {
