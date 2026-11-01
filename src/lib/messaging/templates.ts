@@ -261,6 +261,29 @@ export function weeklyDigestEmail(input: WeeklyDigestInput): { subject: string; 
   return { subject: `${tenant.name}: your week (${input.weekLabel})`, body: lines.filter((l): l is string => l !== null).join("\n") };
 }
 
+/** "Margaret replied by text": the staff alert when a lead answers one of our messages. */
+export function replyAlertEmail({ tenant, leadName, channel, text, phone, portalUrl }: { tenant: TenantSummary; leadName: string; channel: "SMS" | "WHATSAPP"; text: string; phone: string | null; portalUrl: string }): { subject: string; body: string } {
+  const how = channel === "SMS" ? "text" : "WhatsApp";
+  return {
+    subject: `${quoteUntrusted(leadName, 60)} replied by ${how}`,
+    body: [
+      `${quoteUntrusted(leadName, 60)} just replied by ${how} to ${tenant.name}.`,
+      "",
+      "They wrote (quoted as received):",
+      `"${quoteUntrusted(text)}"`,
+      "",
+      phone ? `Reply or call: ${phone}` : null,
+      `See the lead: ${portalUrl}`,
+      "",
+      "Nothing goes back to them automatically; this one is yours.",
+      "",
+      staffSignoff(tenant),
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
+}
+
 export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {
   return {
     subject: `${tenant.name}: needs a person — ${summary.slice(0, 60)}`,

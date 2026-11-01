@@ -103,11 +103,11 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
     if (r) note("QUIET_QUOTE", lead.id);
   }
 
-  // 7. Unreplied DMs and comments.
+  // 7. Unreplied DMs, comments, and texts or WhatsApp messages a lead sent back to us.
   const inboxMinutes = setting(settings, "unrepliedInboxMinutes", 120);
   const inboxCutoff = new Date(now.getTime() - inboxMinutes * 60_000);
-  for (const c of await repository.listConversationsAwaitingReply(tenant.id, { channels: ["SOCIAL_DM", "SOCIAL_COMMENT"], olderThan: inboxCutoff })) {
-    const type: MissedOpportunityType = c.channel === "SOCIAL_DM" ? "UNREPLIED_DM" : "UNREPLIED_COMMENT";
+  for (const c of await repository.listConversationsAwaitingReply(tenant.id, { channels: ["SOCIAL_DM", "SOCIAL_COMMENT", "SMS", "WHATSAPP"], olderThan: inboxCutoff })) {
+    const type: MissedOpportunityType = c.channel === "SOCIAL_COMMENT" ? "UNREPLIED_COMMENT" : "UNREPLIED_DM";
     const contact = c.contactId ? await repository.findContactById(tenant.id, c.contactId) : null;
     const who = contact ? leadDisplayName(contact) : "Someone";
     const r = await raiseMissedOpportunity(tenant, {
@@ -115,8 +115,8 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
       leadId: null,
       contactId: c.contactId,
       subjectId: c.id,
-      summary: `${who} sent a ${c.channel === "SOCIAL_DM" ? "message" : "comment"} ${agoPhrase(now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime()))} and hasn't had a reply.`,
-      suggestedAction: "Reply from the inbox. Public comments are seen by everyone who visits the page.",
+      summary: `${who} sent a ${c.channel === "SOCIAL_COMMENT" ? "comment" : c.channel === "SMS" ? "text" : c.channel === "WHATSAPP" ? "WhatsApp message" : "message"} ${agoPhrase(now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime()))} and hasn't had a reply.`,
+      suggestedAction: c.channel === "SMS" || c.channel === "WHATSAPP" ? "They answered one of our messages; call or text them back from your own phone." : "Reply from the inbox. Public comments are seen by everyone who visits the page.",
     });
     if (r) note(type, c.id);
   }

@@ -119,6 +119,11 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   the outbox would have given, without the duplicate-send risk.
 - Settings lists every automation type the registry knows, with its default
   state, so a type added after a workspace was set up can still be switched.
+- **A lead who texts back is heard.** Before, an SMS or WhatsApp reply only
+  landed in the conversation; nobody was told and nothing watched it. Now the
+  assigned person (or everyone with lead alerts) gets the words by email at
+  once, nothing automated answers, and the inbox watch raises it as an
+  unreplied message if nobody replies within the usual window.
 
 ## Not done (candidates for a later pass)
 

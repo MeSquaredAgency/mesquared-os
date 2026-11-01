@@ -4,7 +4,9 @@ import { registerAutomations } from "@/lib/automations/handlers";
 import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { sendWeeklyDigest, weekBounds } from "@/lib/digest/weekly";
+import { emit } from "@/lib/events";
 import { tick } from "@/lib/jobs/tick";
+import { detectForTenant } from "@/lib/opportunities/detect";
 import { assignNewLead, registerPlaybook } from "@/lib/playbook";
 
 /**
@@ -97,6 +99,32 @@ describe("the Monday email", () => {
     assert.ok(run, "the digest leaves a line in the activity log");
     if (result.sent > 0) assert.match(run!.summary, /Sent the weekly summary/);
     else assert.match(run!.summary, /could not be sent/);
+  });
+});
+
+describe("a lead who texts back is heard", () => {
+  it("tells the assigned person with the words, and the inbox watch raises it if nobody replies", async () => {
+    const recipients = await repository.listAlertRecipients(harbor.id);
+    const contact = await repository.upsertContact(harbor.id, { firstName: "Texts", lastName: "Back", email: null, phone: "+61400123123", company: null });
+    const { lead } = await repository.createLead(harbor.id, { ...greenLead, contactId: contact.id, phone: contact.phone, externalId: "b3:reply:1" });
+    await repository.assignLead(harbor.id, lead.id, recipients[0].userId);
+    const { conversationId, messageId } = await repository.recordMessage(harbor.id, { contactId: contact.id, channel: "SMS", direction: "INBOUND", sender: "CONTACT", body: "Yes please, Tuesday works for me", status: "RECEIVED" });
+    await emit(harbor.id, "message.received", { contactId: contact.id, channel: "SMS", conversationId, messageId });
+
+    const run = (await repository.listAutomationRuns(harbor.id, 30)).find((r) => r.contactId === contact.id && /replied by SMS/.test(r.summary));
+    assert.ok(run, "the reply is in the activity log");
+    assert.equal(run!.leadId, lead.id, "tied to their live lead");
+    assert.match(run!.summary, new RegExp(`told ${recipients[0].name ?? recipients[0].email}`), "only the assigned person was told");
+
+    // Three hours later with no answer from us, the inbox watch flags it like an unanswered DM.
+    const convo = await repository.findConversationById(harbor.id, conversationId);
+    assert.ok(convo?.awaitingReply, "the thread is waiting on us");
+    const later = new Date(Date.now() + 3 * 60 * MINUTE);
+    const result = await detectForTenant(harbor, later);
+    const flagged = result.detected.find((d) => d.subjectId === conversationId);
+    assert.equal(flagged?.type, "UNREPLIED_DM");
+    const item = (await repository.listMissedOpportunities(harbor.id, { limit: 50 })).find((m) => m.dedupeKey === `UNREPLIED_DM:${conversationId}`);
+    assert.match(item?.summary ?? "", /sent a text/);
   });
 });
 

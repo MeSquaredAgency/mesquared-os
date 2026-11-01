@@ -201,6 +201,40 @@ export async function onBookingCompleted(tenant: TenantSummary, lead: LeadRecord
   }
 }
 
+/**
+ * A text or WhatsApp reply from a contact. Their latest live lead is touched
+ * (so quiet-quote watching restarts), and the assigned person, or everyone
+ * holding lead alerts when nobody is assigned, gets the words by email with
+ * a link to the lead. Logged in "Handled for you" either way.
+ */
+export async function onContactReplied(tenant: TenantSummary, input: { contactId: string; conversationId: string; channel: "SMS" | "WHATSAPP"; messageId: string | null }) {
+  const contact = await repository.findContactById(tenant.id, input.contactId);
+  if (!contact) return;
+  const messages = await repository.listMessages(tenant.id, input.conversationId, 20);
+  const inbound = messages.filter((m) => m.direction === "INBOUND").sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const message = (input.messageId ? inbound.find((m) => m.id === input.messageId) : null) ?? inbound[0] ?? null;
+  const text = message?.body?.trim() || "(empty)";
+  const lead = await repository.findLatestOpenLeadForContact(tenant.id, contact.id);
+  if (lead) await repository.touchLead(tenant.id, lead.id, new Date());
+  const who = leadDisplayName(contact);
+  const everyone = await repository.listAlertRecipients(tenant.id);
+  const recipients = lead?.assigneeId ? everyone.filter((r) => r.userId === lead.assigneeId) : everyone;
+  const alert = recipients.length ? recipients : everyone;
+  if (alert.length === 0) {
+    await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "ESCALATED", summary: `${who} replied by ${channelName(input.channel)}, but nobody at ${tenant.name} holds lead alerts yet.`, leadId: lead?.id ?? null, contactId: contact.id });
+    return;
+  }
+  const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
+  const mail = templates.replyAlertEmail({ tenant, leadName: who, channel: input.channel, text, phone: contact.phone, portalUrl });
+  const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `${who} replied by ${channelName(input.channel)}; told ${alert.length === 1 ? (alert[0].name ?? alert[0].email) : `${alert.length} people`}.`, leadId: lead?.id ?? null, contactId: contact.id, details: { conversationId: input.conversationId } });
+  let reached = 0;
+  for (const r of alert) {
+    const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+    if (sent.ok) reached++;
+  }
+  if (reached === 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `${who} replied by ${channelName(input.channel)}; the alert couldn't be emailed (email isn't connected for ${tenant.name} yet), so check the inbox.` });
+}
+
 /** A cancelled appointment reopens the booking window and offers another time. */
 export async function onBookingCancelled(tenant: TenantSummary, lead: LeadRecord, bookingId: string) {
   await repository.unbookLead(tenant.id, lead.id, new Date(Date.now() + hours(tenant.sla.bookingWindowHours)));
@@ -466,6 +500,18 @@ export function registerAutomations() {
     const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
     const leadId = typeof e.payload.leadId === "string" ? e.payload.leadId : null;
     await askForReview(e.tenantId, contactId, leadId, `won:${leadId ?? e.id}`);
+  });
+
+  // A lead who texts back is talking to a person now: the assigned person (or everyone with lead alerts) is told at once,
+  // with the words, and nothing automated answers them. The inbox watch raises it if nobody replies in time.
+  subscribe("message.received", async (e) => {
+    const channel = e.payload.channel === "WHATSAPP" ? "WHATSAPP" : e.payload.channel === "SMS" ? "SMS" : null;
+    const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
+    const conversationId = typeof e.payload.conversationId === "string" ? e.payload.conversationId : null;
+    if (!channel || !contactId || !conversationId) return;
+    const tenant = await tenantById(e.tenantId);
+    if (!tenant) return;
+    await onContactReplied(tenant, { contactId, conversationId, channel, messageId: typeof e.payload.messageId === "string" ? e.payload.messageId : null });
   });
 
   subscribe("booking.created", async (e) => {
