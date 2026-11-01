@@ -24,6 +24,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Restore the Next.js build cache
+        # Next keeps its incremental compiler cache in .next/cache; without it every run says "No build cache found" and compiles from scratch.
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx', 'next.config.*') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - run: npx prisma generate
       - name: Validate Prisma schema
         # `prisma validate` requires both datasource env vars to be set, even though it never connects.
