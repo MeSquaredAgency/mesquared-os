@@ -7,6 +7,7 @@ import { ContentStudio } from "@/components/console/content-studio";
 import { MoneyStudio } from "@/components/console/money-studio";
 import { OperationsPanels } from "@/components/console/operations-panels";
 import { HealthBar } from "@/components/console/portfolio-table";
+import { HealthNotes } from "@/components/console/health-notes";
 import { healthBreakdown } from "@/lib/health";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
@@ -112,6 +113,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
 
       {tab === "overview" && home && (
         <div className="flex flex-col gap-8">
+          {row && <HealthNotes deductions={healthBreakdown(row)} base={base} slug={tenant.slug} />}
           <NeedsYou leads={home.needsYou} fmt={fmt} tenantSlug={tenant.slug} />
           <MissedOpportunities missed={home.missed} fmt={fmt} />
           <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
