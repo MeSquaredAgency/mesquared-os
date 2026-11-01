@@ -1,4 +1,5 @@
 import { repository } from "@/lib/data";
+import type { AlertRecipient } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
 import { channelFor, destinationAllowed, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
@@ -16,9 +17,35 @@ import type { LeadRecord, TenantSummary } from "@/lib/types";
  * Every step logs an automation run so "Handled for you" reflects reality,
  * including when nothing could be sent.
  */
-export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadRecord): Promise<void> {
+/**
+ * Who gets a new lead. With `assign: "round_robin"` on the auto-reply
+ * automation, the lead goes to whichever alert recipient has had the fewest
+ * new leads in the last seven days (ties go to the first in the list), and
+ * only that person is alerted. Otherwise nobody is assigned and everyone
+ * holding RECEIVE_LEAD_ALERTS is told, as before.
+ */
+export async function assignNewLead(tenant: TenantSummary, lead: LeadRecord, settings: Record<string, unknown>, recipients: AlertRecipient[]): Promise<{ lead: LeadRecord; alert: AlertRecipient[]; assigned: AlertRecipient | null }> {
+  if (settings.assign !== "round_robin" || recipients.length === 0) return { lead, alert: recipients, assigned: null };
+  if (lead.assigneeId) {
+    const owner = recipients.find((r) => r.userId === lead.assigneeId);
+    return { lead, alert: owner ? [owner] : recipients, assigned: null };
+  }
+  const pool = Array.isArray(settings.assignTo) && settings.assignTo.length ? recipients.filter((r) => (settings.assignTo as unknown[]).includes(r.userId)) : recipients;
+  const candidates = pool.length ? pool : recipients;
+  const counts = await repository.countLeadsByAssignee(tenant.id, new Date(Date.now() - 7 * 86_400_000));
+  const chosen = candidates.reduce((best, r) => ((counts[r.userId] ?? 0) < (counts[best.userId] ?? 0) ? r : best), candidates[0]);
+  await repository.assignLead(tenant.id, lead.id, chosen.userId);
+  await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "COMPLETED", summary: `Assigned ${leadDisplayName(lead)} to ${chosen.name ?? chosen.email}.`, leadId: lead.id, contactId: lead.contactId });
+  return { lead: { ...lead, assigneeId: chosen.userId }, alert: [chosen], assigned: chosen };
+}
+
+export async function runGreenLeadPlaybook(tenant: TenantSummary, incoming: LeadRecord): Promise<void> {
   const automations = (await repository.getTenantConfig(tenant.id)).automations;
   const enabled = (key: string) => automations.find((a) => a.typeKey === key)?.enabled ?? false;
+  const autoReply = automations.find((a) => a.typeKey === "enquiry_auto_reply");
+  // 0. Decide whose lead it is before anything is sent, so the acknowledgement can be signed by that person.
+  const allRecipients = await repository.listAlertRecipients(tenant.id);
+  const { lead, alert: recipients } = await assignNewLead(tenant, incoming, autoReply?.settings ?? {}, allRecipients);
   const name = leadDisplayName(lead);
   const bookingUrl = await bookingLinkFor(tenant, lead);
   let acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" = "NONE";
@@ -68,21 +95,33 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
     await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
   }
 
-  // 3. Alert the assigned people
-  const recipients = await repository.listAlertRecipients(tenant.id);
+  // 3. Alert the assigned person, or everyone who holds lead alerts when nobody is assigned: a text to their phone
+  //    first (that is the moment), the full details by email.
   if (recipients.length > 0) {
     const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
+    const topic = safeTopic(typeof lead.attributes.service === "string" ? lead.attributes.service : null, tenant.qualificationRules.highIntentServices) ?? (tenant.qualificationRules.highIntentServices ?? []).find((s) => (lead.message ?? "").toLowerCase().includes(s.toLowerCase())) ?? null;
+    const area = safeArea(`${lead.message ?? ""} ${typeof lead.attributes.suburb === "string" ? lead.attributes.suburb : ""}`, tenant.qualificationRules.serviceAreas);
     const mail = templates.leadAlertEmail({ tenant, leadName: name, summary: lead.message ?? "(no message)", score: lead.intentScore ?? 0, reason: lead.qualificationReason ?? "", phone: lead.phone, email: lead.email, portalUrl, acknowledged });
+    const text = templates.leadAlertSms({ tenant, leadName: name, topic, area, phone: lead.phone, acknowledged });
     const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Told ${recipients.length === 1 ? recipients[0].name ?? recipients[0].email : `${recipients.length} people`} about ${name}.`, leadId: lead.id, contactId: lead.contactId, details: { recipients: recipients.map((r) => r.userId) } });
+    const bySms = autoReply?.settings.alertBySms !== false;
+    const phones = bySms ? new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member" && p.phone).map((p) => [p.userId, p.phone as string])) : new Map<string, string>();
     const reached: string[] = [];
     const failed: string[] = [];
+    let texted = 0;
     let notConfigured = 0;
     for (const r of recipients) {
+      const phone = phones.get(r.userId);
+      if (phone && destinationAllowed(tenant, phone)) {
+        const buzz = await sendMessage({ tenant, contactId: null, channel: "SMS", to: phone, body: text, automationRunId: run.id, transactional: true });
+        if (buzz.ok) texted++;
+      }
       const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
       (sent.ok ? reached : failed).push(r.name ?? r.email);
       if (!sent.ok && sent.simulated) notConfigured++;
       else if (!sent.ok) console.error(`[playbook] alert to ${r.email.slice(0, 3)}… for ${tenant.slug} failed: ${sent.error}`);
     }
+    if (texted > 0 && reached.length > 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SENT", summary: `Told ${reached.join(", ")} about ${name} by text and email.` });
     if (reached.length === 0 && notConfigured === failed.length) {
       // Email is not set up at all (demo, or a deployment without a from-address): say so, no exception per lead.
       await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `Couldn't tell anyone about ${name}: email isn't connected for ${tenant.name} yet.` });

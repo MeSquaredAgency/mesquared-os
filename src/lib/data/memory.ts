@@ -822,6 +822,13 @@ export const memoryRepository: Repository = {
     return store().missed.find((x) => x.id === moId && x.tenantId === tenantId) ?? null;
   },
 
+  async listOpenMissedOpportunitiesBefore(tenantId, before, limit = 200) {
+    return store()
+      .missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && m.detectedAt < before)
+      .sort((a, b) => a.detectedAt.getTime() - b.detectedAt.getTime())
+      .slice(0, limit);
+  },
+
   async listOpenMissedOpportunitiesFor(tenantId, subject) {
     if (!subject.leadId && !subject.contactId) return [];
     const types = subject.types?.length ? new Set(subject.types) : null;
@@ -873,7 +880,13 @@ export const memoryRepository: Repository = {
   },
 
   async countAutomationRuns(tenantId, opts) {
-    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
+    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.leadId || r.leadId === opts.leadId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
+  },
+
+  async countLeadsByAssignee(tenantId, since) {
+    const out: Record<string, number> = {};
+    for (const l of store().leads) if (l.tenantId === tenantId && l.assigneeId && l.createdAt >= since) out[l.assigneeId] = (out[l.assigneeId] ?? 0) + 1;
+    return out;
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {
@@ -1202,8 +1215,14 @@ export const memoryRepository: Repository = {
   },
 
   async setAutomation(tenantId, typeKey, patch) {
-    const a = store().config[tenantId]?.automations.find((x) => x.typeKey === typeKey);
-    if (!a) return;
+    const cfg = store().config[tenantId];
+    if (!cfg) return;
+    let a = cfg.automations.find((x) => x.typeKey === typeKey);
+    if (!a) {
+      // A type added to the registry after the workspace was set up: the row appears the first time it is touched.
+      a = { typeKey, enabled: patch.enabled ?? false, settings: {} };
+      cfg.automations.push(a);
+    }
     if (patch.enabled !== undefined) a.enabled = patch.enabled;
     if (patch.settings) a.settings = { ...a.settings, ...patch.settings };
   },
@@ -1440,15 +1459,18 @@ export const memoryRepository: Repository = {
   async upsertTransactions(tenantId, rows: NewTransaction[]) {
     const s = store();
     let fresh = 0;
+    // Money shows against the lead it came from: the contact's most recent lead that was not lost.
+    const leadFor = (contactId: string | null) => (contactId ? (s.leads.filter((l) => l.tenantId === tenantId && l.contactId === contactId && l.status !== "LOST" && l.status !== "ARCHIVED").sort(byNewest)[0]?.id ?? null) : null);
     for (const r of rows) {
       const email = r.customerEmail?.toLowerCase() ?? null;
       const contactId = r.contactId ?? (email ? s.contacts.find((c) => c.tenantId === tenantId && c.email === email)?.id ?? null : null);
       const existing = s.transactions.find((t) => t.tenantId === tenantId && t.provider === r.provider && t.providerId === r.providerId);
       if (existing) {
-        Object.assign(existing, { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: existing.contactId ?? contactId });
+        const linkedContact = existing.contactId ?? contactId;
+        Object.assign(existing, { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: linkedContact, leadId: existing.leadId ?? r.leadId ?? leadFor(linkedContact) });
         continue;
       }
-      pushBounded(s.transactions, { id: id("txn"), tenantId, contactId, leadId: r.leadId ?? null, provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt }, false);
+      pushBounded(s.transactions, { id: id("txn"), tenantId, contactId, leadId: r.leadId ?? leadFor(contactId), provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt }, false);
       fresh++;
     }
     return fresh;

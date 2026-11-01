@@ -59,6 +59,7 @@ export const healthFitnessTemplate: IndustryTemplate = {
     { key: "reactivation", settings: { inactiveDays: 42 } },
     { key: "payment_reminders", settings: { remindDaysBefore: 3, chaseEveryDays: 7, maxChases: 3 } },
     { key: "sla_watch", settings: { unrepliedInboxMinutes: 120, unansweredReviewHours: 48 } },
+    { key: "weekly_digest" },
     { key: "content_engine", settings: { draftFromReviews: true, minReviewRating: 4 } },
     { key: "social_publish" },
     { key: "social_sync" },

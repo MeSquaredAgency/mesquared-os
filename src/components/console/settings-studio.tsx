@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Row } from "@/components/shell/section";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
-import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setModuleAction, updateMemberProfileAction } from "@/lib/tenants/actions";
+import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setLeadAssignmentAction, setModuleAction, updateMemberProfileAction } from "@/lib/tenants/actions";
 import type { OperatorOption, SettingsView } from "@/lib/tenants/settings-view";
 import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord } from "@/lib/types";
 import { cn, formatDateTime, humanize, type FormatContext } from "@/lib/utils";
@@ -485,9 +485,24 @@ function KeysPanel({ tenant, keys, fmt, pending, run }: Props & { pending: boole
   );
 }
 
-function SwitchesPanel({ tenant, modules, automations, pending, run }: Props & { pending: boolean; run: Run }) {
+function SwitchesPanel({ tenant, modules, automations, people, pending, run }: Props & { pending: boolean; run: Run }) {
+  const assignMode = automations.find((a) => a.typeKey === "enquiry_auto_reply")?.settings.assign === "round_robin" ? "round_robin" : "none";
+  const alertHolders = people.filter((p) => p.via === "member" && p.permissions.includes("RECEIVE_LEAD_ALERTS"));
   return (
     <div className="grid gap-6 xl:grid-cols-2">
+      <Block id="assignment-title" title="Lead assignment" lede="Who a new enquiry goes to. Round-robin gives it to whoever has had the fewest this week, alerts only them, and signs the acknowledgement as them when that is on." className="xl:col-span-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant={assignMode === "none" ? "default" : "outline"} disabled={pending} onClick={() => run(() => setLeadAssignmentAction(tenant.id, "none"))}>
+            Tell everyone
+          </Button>
+          <Button size="sm" variant={assignMode === "round_robin" ? "default" : "outline"} disabled={pending || alertHolders.length === 0} onClick={() => run(() => setLeadAssignmentAction(tenant.id, "round_robin"))}>
+            Share out in turn
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {alertHolders.length === 0 ? "Nobody holds lead alerts yet; add people under People first." : `${alertHolders.length} ${alertHolders.length === 1 ? "person holds" : "people hold"} lead alerts: ${alertHolders.map((p) => p.name ?? p.email).join(", ")}.`}
+          </span>
+        </div>
+      </Block>
       <Block id="modules-title" title="Modules" lede="What this workspace runs.">
         <ul className="divide-y">
           {modules.map((m) => (

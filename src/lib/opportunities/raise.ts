@@ -1,5 +1,6 @@
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { log } from "@/lib/log";
 import { sendMessage, templates } from "@/lib/messaging";
 import type { MissedOpportunityType, TenantSummary } from "@/lib/types";
 
@@ -27,7 +28,7 @@ export async function escalateeFor(tenant: TenantSummary, type: MissedOpportunit
   if (!rule?.notifyUserId) return null;
   const member = (await repository.listTenantPeople(tenant.id)).find((p) => p.via === "member" && p.userId === rule.notifyUserId);
   if (!member) {
-    console.warn(`[opportunities] escalation rule "${rule.when}" for ${tenant.slug} names a user who is not a member of the workspace; ignored`);
+    log("warn", "opportunities.escalation_rule_ignored", { tenantId: tenant.id, when: rule.when, reason: "not a member of the workspace" });
     return null;
   }
   return { userId: member.userId, email: member.email, name: member.name };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsStudio } from "@/components/console/settings-studio";
 import { PageHeader } from "@/components/shell/section";
 import { getConsoleContext } from "@/lib/auth/access";
+import { AUTOMATIONS } from "@/lib/automations/registry";
 import { repository } from "@/lib/data";
 import { platformReadiness, tenantReadiness } from "@/lib/launch/readiness";
 import { toOperatorOption, toSettingsView } from "@/lib/tenants/settings-view";
@@ -56,7 +57,7 @@ export default async function TenantSettingsPage({ params }: { params: Promise<{
         operators={operators.map(toOperatorOption)}
         keys={keys}
         modules={config.modules}
-        automations={config.automations}
+        automations={AUTOMATIONS.map((a) => config.automations.find((row) => row.typeKey === a.key) ?? { typeKey: a.key, enabled: a.defaultEnabled, settings: {} })}
         inventory={inventory}
       />
     </div>

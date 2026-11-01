@@ -81,6 +81,7 @@ export const realEstateTemplate: IndustryTemplate = {
     { key: "chase_information", settings: { applications: true, chaseEveryDays: 2, maxChases: 3 } },
     { key: "review_request", settings: { delayHours: 3 } },
     { key: "sla_watch", settings: { unrepliedInboxMinutes: 120, unansweredReviewHours: 48 } },
+    { key: "weekly_digest" },
     { key: "content_engine", settings: { draftFromReviews: true, minReviewRating: 4 } },
     { key: "social_publish" },
     { key: "social_sync" },

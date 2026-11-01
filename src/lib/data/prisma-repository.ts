@@ -836,6 +836,11 @@ export const prismaRepository: Repository = {
     return row ? toMissed(row) : null;
   },
 
+  async listOpenMissedOpportunitiesBefore(tenantId, before, limit = 200) {
+    const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED }, detectedAt: { lt: before } }, orderBy: { detectedAt: "asc" }, take: limit });
+    return rows.map(toMissed);
+  },
+
   async listOpenMissedOpportunitiesFor(tenantId, subject) {
     const by: Prisma.MissedOpportunityWhereInput[] = [];
     if (subject.leadId) by.push({ leadId: subject.leadId });
@@ -881,7 +886,12 @@ export const prismaRepository: Repository = {
   },
 
   async countAutomationRuns(tenantId, opts) {
-    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
+    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.leadId ? { leadId: opts.leadId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
+  },
+
+  async countLeadsByAssignee(tenantId, since) {
+    const groups = await getPrisma().lead.groupBy({ by: ["assigneeId"], where: { tenantId, createdAt: { gte: since }, assigneeId: { not: null } }, _count: { _all: true } });
+    return Object.fromEntries(groups.filter((g) => g.assigneeId).map((g) => [g.assigneeId as string, g._count._all]));
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {
@@ -1405,14 +1415,25 @@ export const prismaRepository: Repository = {
   async upsertTransactions(tenantId, rows) {
     const db = getPrisma();
     let fresh = 0;
+    // Money shows against the lead it came from: the contact's most recent lead that was not lost, found once per contact.
+    const leadForContact = new Map<string, string | null>();
+    const leadFor = async (contactId: string | null): Promise<string | null> => {
+      if (!contactId) return null;
+      if (!leadForContact.has(contactId)) {
+        const lead = await db.lead.findFirst({ where: { tenantId, contactId, status: { notIn: ["LOST", "ARCHIVED"] } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+        leadForContact.set(contactId, lead?.id ?? null);
+      }
+      return leadForContact.get(contactId) ?? null;
+    };
     for (const r of rows) {
       const contactId = r.contactId ?? (r.customerEmail ? (await db.contact.findFirst({ where: { tenantId, email: r.customerEmail.toLowerCase() }, select: { id: true } }))?.id ?? null : null);
       const existing = await db.transaction.findUnique({ where: { tenantId_provider_providerId: { tenantId, provider: r.provider, providerId: r.providerId } } });
       if (existing) {
-        await db.transaction.update({ where: { id: existing.id }, data: { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: existing.contactId ?? contactId } });
+        const linkedContact = existing.contactId ?? contactId;
+        await db.transaction.update({ where: { id: existing.id }, data: { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: linkedContact, leadId: existing.leadId ?? r.leadId ?? (await leadFor(linkedContact)) } });
         continue;
       }
-      await db.transaction.create({ data: { tenantId, contactId, leadId: r.leadId ?? null, provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt, rawPayload: json(r.rawPayload ?? {}) } });
+      await db.transaction.create({ data: { tenantId, contactId, leadId: r.leadId ?? (await leadFor(contactId)), provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt, rawPayload: json(r.rawPayload ?? {}) } });
       fresh++;
     }
     return fresh;

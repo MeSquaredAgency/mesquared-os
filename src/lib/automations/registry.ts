@@ -29,6 +29,7 @@ export const AUTOMATIONS: AutomationDefinition[] = [
   { key: "inventory_sync", name: "Listings sync", description: "Pulls listings and the rent roll from the property management software every day; new listings become content material.", triggers: ["schedule"], defaultEnabled: true },
   { key: "website_analytics", name: "Website numbers", description: "Rolls up visits, form starts and submissions from the site beacon every day.", triggers: ["schedule"], defaultEnabled: true },
   { key: "messaging", name: "Held messages", description: "Sends messages held during quiet hours when the morning comes.", triggers: ["schedule"], defaultEnabled: true },
+  { key: "weekly_digest", name: "Weekly summary email", description: "Every Monday morning, the owners and managers get one plain email: leads, what was recovered, what needs them, and the money.", triggers: ["schedule"], defaultEnabled: true },
 ];
 
 export const AUTOMATION_BY_KEY: Record<string, AutomationDefinition> = Object.fromEntries(AUTOMATIONS.map((a) => [a.key, a]));

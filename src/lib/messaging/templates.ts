@@ -115,6 +115,46 @@ export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string;
   };
 }
 
+/**
+ * The text that makes the phone buzz: who, what, where, their number, and
+ * whether we have already replied. Under 160 characters where the names
+ * allow, plain GSM punctuation, nothing to tap but the number.
+ */
+export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; topic: string | null; area: string | null; phone: string | null; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" }): string {
+  const who = quoteUntrusted(input.leadName, 40);
+  const about = input.topic ? ` wants ${/^(a|an|the|your)\s/i.test(input.topic) ? input.topic : `an ${input.topic}`.replace(/^an ([^aeiou])/i, "a $1")}` : " just enquired";
+  const where = input.area ? ` in ${input.area}` : "";
+  const tail = input.acknowledged === "SENT" ? "We've replied with a booking link; a call now wins it." : input.acknowledged === "HELD" ? "Our reply goes out in the morning; a call now wins it." : "No reply has gone out yet; please call them.";
+  return `${input.tenant.name}: ${who}${about}${where}.${input.phone ? ` ${input.phone}.` : ""} ${tail}`;
+}
+
+/** "Margaret asked for a call back: tomorrow morning. +61… " to the person who should make the call. */
+export function callbackRequestedSms(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null }): string {
+  const who = quoteUntrusted(input.leadName, 40);
+  const when = input.when ? `: "${quoteUntrusted(input.when, 60)}"` : "";
+  return `${input.tenant.name}: ${who} asked for a call back${when}.${input.phone ? ` ${input.phone}.` : ""} They chose this over booking online, so a call is what they want.`;
+}
+
+export function callbackRequestedEmail(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null; email: string | null; portalUrl: string }): { subject: string; body: string } {
+  const who = quoteUntrusted(input.leadName, 60);
+  return {
+    subject: `${who} asked for a call back${input.when ? ` (${quoteUntrusted(input.when, 40)})` : ""}`,
+    body: [
+      `${who} opened the booking link from ${input.tenant.name} and asked to be called instead.`,
+      "",
+      input.when ? `When suits them: "${quoteUntrusted(input.when, 120)}"` : "They did not say when; sooner is better.",
+      input.phone ? `Phone: ${input.phone}` : null,
+      input.email ? `Email: ${input.email}` : null,
+      "",
+      `See the lead: ${input.portalUrl}`,
+      "",
+      staffSignoff(input.tenant),
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
+}
+
 type Channel = "SMS" | "WHATSAPP" | "EMAIL";
 interface Base {
   tenant: TenantSummary;
@@ -222,6 +262,66 @@ export function invoiceReminder({ tenant, firstName, channel, number, amount, du
 
 export function invoicePaidThanks({ tenant, firstName, channel, number }: Base & { number: string | null }) {
   return pack(channel, `Thanks from ${tenant.name}`, [hi(firstName), `thank you, your payment for ${number ? `invoice ${number}` : "your invoice"} has come through.`], tenant);
+}
+
+export interface WeeklyDigestInput {
+  tenant: TenantSummary;
+  firstName: string | null;
+  /** "27 October – 2 November" */
+  weekLabel: string;
+  leads: number;
+  needsYou: number;
+  recovered: { count: number; cents: number };
+  atRisk: { count: number; cents: number };
+  handled: number;
+  /** Null for a reader without VIEW_FINANCES. */
+  money: { revenueCents: number; adSpendCents: number; costPerLeadCents: number | null } | null;
+  portalUrl: string;
+}
+
+/** The Monday email to owners and managers: the week in plain sentences, nothing to click unless something needs them. */
+export function weeklyDigestEmail(input: WeeklyDigestInput): { subject: string; body: string } {
+  const { tenant } = input;
+  const money = (cents: number) => new Intl.NumberFormat(tenant.locale, { style: "currency", currency: tenant.currency, maximumFractionDigits: 0 }).format(cents / 100);
+  const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+  const lines: (string | null)[] = [
+    hi(input.firstName),
+    "",
+    `Here is how last week went at ${tenant.name} (${input.weekLabel}).`,
+    "",
+    `• ${n(input.leads, "new enquiry", "new enquiries")} came in. ${input.handled > 0 ? `We handled ${n(input.handled, "thing")} without needing you.` : ""}`.trim(),
+    input.recovered.count > 0 ? `• ${n(input.recovered.count, "opportunity", "opportunities")} that would have slipped came back: ${money(input.recovered.cents)} recovered.` : "• Nothing slipped through that needed recovering.",
+    input.atRisk.count > 0 ? `• ${n(input.atRisk.count, "thing")} still at risk, worth about ${money(input.atRisk.cents)}; we are on it.` : null,
+    input.money ? `• Money: ${money(input.money.revenueCents)} came in this month against ${money(input.money.adSpendCents)} of ads${input.money.costPerLeadCents !== null ? `, about ${money(input.money.costPerLeadCents)} per lead` : ""}.` : null,
+    "",
+    input.needsYou > 0 ? `${n(input.needsYou, "person", "people")} ${input.needsYou === 1 ? "is" : "are"} waiting for you right now: ${input.portalUrl}` : `Nothing needs you this morning. Your portal: ${input.portalUrl}`,
+    "",
+    staffSignoff(tenant),
+  ];
+  return { subject: `${tenant.name}: your week (${input.weekLabel})`, body: lines.filter((l): l is string => l !== null).join("\n") };
+}
+
+/** "Margaret replied by text": the staff alert when a lead answers one of our messages. */
+export function replyAlertEmail({ tenant, leadName, channel, text, phone, portalUrl }: { tenant: TenantSummary; leadName: string; channel: "SMS" | "WHATSAPP"; text: string; phone: string | null; portalUrl: string }): { subject: string; body: string } {
+  const how = channel === "SMS" ? "text" : "WhatsApp";
+  return {
+    subject: `${quoteUntrusted(leadName, 60)} replied by ${how}`,
+    body: [
+      `${quoteUntrusted(leadName, 60)} just replied by ${how} to ${tenant.name}.`,
+      "",
+      "They wrote (quoted as received):",
+      `"${quoteUntrusted(text)}"`,
+      "",
+      phone ? `Reply or call: ${phone}` : null,
+      `See the lead: ${portalUrl}`,
+      "",
+      "Nothing goes back to them automatically; this one is yours.",
+      "",
+      staffSignoff(tenant),
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
 }
 
 export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {

@@ -10,7 +10,7 @@ import { Avatar } from "@/components/shell/avatar";
 import { Meta } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { COPY, ticketLabel } from "@/lib/copy";
-import { classifierLabel, leadDisplayName } from "@/lib/leads";
+import { leadDisplayName } from "@/lib/leads";
 import type { LiveLeadRow } from "@/lib/realtime/leads";
 import { cn, formatDateTime, humanize } from "@/lib/utils";
 
@@ -122,17 +122,14 @@ export function LeadRows({ rows, fmt, stageNames }: RowsProps) {
                 <Badge variant={l.ticketType === "GREEN" ? "secondary" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
               </div>
               <p className="line-clamp-2 text-sm text-foreground/85">{l.message ?? "No message"}</p>
-              <Meta parts={[humanize(l.source), <span key="at" suppressHydrationWarning>{formatDateTime(l.createdAt, fmt)}</span>, classifierLabel(l.qualifiedBy), l.stageId && stageNames[l.stageId] ? stageNames[l.stageId] : null]} />
+              <Meta parts={[humanize(l.source), <span key="at" suppressHydrationWarning>{formatDateTime(l.createdAt, fmt)}</span>, l.stageId && stageNames[l.stageId] ? stageNames[l.stageId] : null]} />
               {l.qualificationReason && (
                 <details className="text-xs text-muted-foreground">
-                  <summary className="w-fit">Why it was classified this way</summary>
+                  <summary className="w-fit">{l.ticketType === "GREEN" ? "Why this one needs you" : "Why we handled this one"}</summary>
                   <p className="mt-1 max-w-prose">{l.qualificationReason}</p>
                 </details>
               )}
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground num" title="Intent score out of 100">
-              Intent {l.intentScore ?? "–"}
-            </span>
           </li>
         );
       })}

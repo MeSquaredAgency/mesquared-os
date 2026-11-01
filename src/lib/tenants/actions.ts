@@ -157,6 +157,19 @@ export async function setAutomationAction(tenantId: string, typeKey: string, ena
   }
 }
 
+/** How new leads are handed out: everyone with lead alerts is told, or one person at a time in turn. */
+export async function setLeadAssignmentAction(tenantId: string, mode: "none" | "round_robin"): Promise<ActionResult> {
+  try {
+    const { tenant } = await operatorTenant(tenantId);
+    if (mode !== "none" && mode !== "round_robin") return { ok: false, message: "Unknown assignment mode." };
+    await repository.setAutomation(tenantId, "enquiry_auto_reply", { settings: { assign: mode } });
+    refresh(tenant);
+    return { ok: true, message: mode === "round_robin" ? "New leads are now shared out in turn, and only the assigned person is alerted." : "Everyone with lead alerts is told about every new lead." };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 const OPPORTUNITY_TYPES: MissedOpportunityType[] = ["UNANSWERED_ENQUIRY", "MISSED_CALL", "ABANDONED_FORM", "NOT_BOOKED", "NO_SHOW", "QUIET_QUOTE", "UNREPLIED_DM", "UNREPLIED_COMMENT", "UNANSWERED_REVIEW", "LAPSED_CUSTOMER"];
 
 /** Which missed-opportunity types escalate to a named client person. "*" means all of them. */

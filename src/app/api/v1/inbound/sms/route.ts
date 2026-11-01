@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (!tenant) return new NextResponse("<Response></Response>", { headers: { "Content-Type": "text/xml" } });
 
   const contact = await repository.upsertContact(tenant.id, { firstName: null, lastName: null, email: null, phone: from, company: null });
-  await repository.recordMessage(tenant.id, { contactId: contact.id, channel: "SMS", direction: "INBOUND", sender: "CONTACT", body: body || "(empty)", status: "RECEIVED", providerMessageId: params.MessageSid ?? null });
+  const { conversationId, messageId } = await repository.recordMessage(tenant.id, { contactId: contact.id, channel: "SMS", direction: "INBOUND", sender: "CONTACT", body: body || "(empty)", status: "RECEIVED", providerMessageId: params.MessageSid ?? null });
 
   if (isStopMessage(body)) {
     await repository.setContactConsent(tenant.id, contact.id, "sms", false, "STOP reply");
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     await repository.setContactConsent(tenant.id, contact.id, "sms", true, "START reply");
     await emit(tenant.id, "consent.granted", { contactId: contact.id, channel: "sms" });
   } else {
-    await emit(tenant.id, "message.received", { contactId: contact.id, channel: "SMS" });
+    // The reply alert (handlers) reads the message back by id; the body itself stays out of the event stream.
+    await emit(tenant.id, "message.received", { contactId: contact.id, channel: "SMS", conversationId, messageId });
   }
   // Twilio expects TwiML; an empty response sends nothing back (carriers handle STOP confirmations).
   return new NextResponse("<Response></Response>", { headers: { "Content-Type": "text/xml" } });

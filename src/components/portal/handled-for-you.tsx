@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Empty, Section } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
-import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { COPY } from "@/lib/copy";
 import type { PortalHome } from "@/lib/types";
 import { timeAgo } from "@/lib/utils";
@@ -25,7 +24,7 @@ export function HandledForYou({ handled, activityHref }: { handled: PortalHome["
       }
     >
       {runs.length === 0 ? (
-        <Empty>Nothing yet. Once intake and automations are connected, what gets done for you appears here.</Empty>
+        <Empty>Nothing yet. As enquiries start coming in, what gets done for you appears here.</Empty>
       ) : (
         <ol className="surface divide-y px-5">
           {runs.map((r) => (
@@ -33,9 +32,7 @@ export function HandledForYou({ handled, activityHref }: { handled: PortalHome["
               <span aria-hidden="true" className="mt-2 block size-1.5 shrink-0 bg-brand" />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <p className="text-sm">{r.summary}</p>
-                <p className="text-xs text-muted-foreground">
-                  {AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey} · {timeAgo(r.createdAt)}
-                </p>
+                <p className="text-xs text-muted-foreground">{timeAgo(r.createdAt)}</p>
               </div>
             </li>
           ))}

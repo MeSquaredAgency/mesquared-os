@@ -673,6 +673,8 @@ export interface Repository {
   /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
   listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
   findMissedOpportunityById(tenantId: string, id: string): Promise<MissedOpportunityRecord | null>;
+  /** Open items detected before `before`, oldest first: what the daily expiry sweep closes. */
+  listOpenMissedOpportunitiesBefore(tenantId: string, before: Date, limit?: number): Promise<MissedOpportunityRecord[]>;
   /** Open items about a lead or contact, optionally of certain types; what the reconciler closes when the person comes back. */
   listOpenMissedOpportunitiesFor(tenantId: string, subject: { leadId?: string | null; contactId?: string | null; types?: MissedOpportunityType[] }): Promise<MissedOpportunityRecord[]>;
   /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
@@ -684,7 +686,9 @@ export interface Repository {
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
   /** How many runs match; the throttles ("one review ask per person per quarter") read this instead of scanning history. */
-  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
+  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; leadId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
+  /** Leads created since `since`, grouped by assignee; how round-robin finds the person with the lightest week. */
+  countLeadsByAssignee(tenantId: string, since: Date): Promise<Record<string, number>>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */

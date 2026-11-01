@@ -10,17 +10,27 @@ import { Notice } from "@/components/ui/notice";
 import { Empty, Meta } from "@/components/shell/section";
 import { closeExceptions, resolveException } from "@/lib/console/actions";
 import type { ExceptionRecord, TenantOption } from "@/lib/types";
-import { timeAgo } from "@/lib/utils";
+import { formatMoney, timeAgo } from "@/lib/utils";
+
+/** The money behind a queue item: the open missed opportunity it was raised for. */
+export interface QueueStake {
+  valueCents: number;
+  label: string;
+  currency: string;
+  locale: string;
+}
 
 interface Props {
   items: ExceptionRecord[];
   tenants: TenantOption[];
+  /** Missed opportunity id → what it is worth; items without one are automation failures. */
+  stakes?: Record<string, QueueStake>;
 }
 
 const CHECKBOX = "size-4 shrink-0 accent-[var(--navy)]";
 
 /** The operator queue: everything automation was not confident about, across the portfolio. */
-export function ExceptionQueue({ items, tenants }: Props) {
+export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -105,6 +115,7 @@ export function ExceptionQueue({ items, tenants }: Props) {
           <ul className="flex flex-col gap-3">
             {visible.map((item) => {
               const tenant = tenantById.get(item.tenantId);
+              const stake = item.missedOpportunityId ? stakes[item.missedOpportunityId] : undefined;
               return (
                 <li key={item.id} className="surface flex gap-4 p-5">
                   <input type="checkbox" checked={selected.has(item.id)} onChange={(e) => toggle(item.id, e.target.checked)} disabled={pending} className={`${CHECKBOX} mt-1`} aria-label={`Select: ${item.reason}`} />
@@ -118,6 +129,12 @@ export function ExceptionQueue({ items, tenants }: Props) {
                             </Link>
                           ) : null,
                           timeAgo(item.createdAt),
+                          stake ? stake.label : item.missedOpportunityId ? null : "Automation failure",
+                          stake && stake.valueCents > 0 ? (
+                            <span key="stake" className="font-medium text-red-text num">
+                              {formatMoney(stake.valueCents, stake.currency, stake.locale)} at risk
+                            </span>
+                          ) : null,
                           item.confidence !== null ? `${Math.round(item.confidence * 100)}% confident` : null,
                         ]}
                       />

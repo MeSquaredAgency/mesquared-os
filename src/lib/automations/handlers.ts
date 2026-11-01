@@ -14,6 +14,10 @@ import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
 import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
 import { registerReconciler } from "@/lib/opportunities/reconcile";
+import { expireStaleOpportunities } from "@/lib/opportunities/expire";
+import { sendWeeklyDigest } from "@/lib/digest/weekly";
+import { runGreenLeadPlaybook } from "@/lib/playbook";
+import { log } from "@/lib/log";
 import { registerPipelineAdvancement } from "@/lib/pipelines/advance";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -197,6 +201,74 @@ export async function onBookingCompleted(tenant: TenantSummary, lead: LeadRecord
   }
 }
 
+/**
+ * A text or WhatsApp reply from a contact. Their latest live lead is touched
+ * (so quiet-quote watching restarts), and the assigned person, or everyone
+ * holding lead alerts when nobody is assigned, gets the words by email with
+ * a link to the lead. Logged in "Handled for you" either way.
+ */
+export async function onContactReplied(tenant: TenantSummary, input: { contactId: string; conversationId: string; channel: "SMS" | "WHATSAPP"; messageId: string | null }) {
+  const contact = await repository.findContactById(tenant.id, input.contactId);
+  if (!contact) return;
+  const messages = await repository.listMessages(tenant.id, input.conversationId, 20);
+  const inbound = messages.filter((m) => m.direction === "INBOUND").sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const message = (input.messageId ? inbound.find((m) => m.id === input.messageId) : null) ?? inbound[0] ?? null;
+  const text = message?.body?.trim() || "(empty)";
+  const lead = await repository.findLatestOpenLeadForContact(tenant.id, contact.id);
+  if (lead) await repository.touchLead(tenant.id, lead.id, new Date());
+  const who = leadDisplayName(contact);
+  const everyone = await repository.listAlertRecipients(tenant.id);
+  const recipients = lead?.assigneeId ? everyone.filter((r) => r.userId === lead.assigneeId) : everyone;
+  const alert = recipients.length ? recipients : everyone;
+  if (alert.length === 0) {
+    await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "ESCALATED", summary: `${who} replied by ${channelName(input.channel)}, but nobody at ${tenant.name} holds lead alerts yet.`, leadId: lead?.id ?? null, contactId: contact.id });
+    return;
+  }
+  const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
+  const mail = templates.replyAlertEmail({ tenant, leadName: who, channel: input.channel, text, phone: contact.phone, portalUrl });
+  const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `${who} replied by ${channelName(input.channel)}; told ${alert.length === 1 ? (alert[0].name ?? alert[0].email) : `${alert.length} people`}.`, leadId: lead?.id ?? null, contactId: contact.id, details: { conversationId: input.conversationId } });
+  let reached = 0;
+  for (const r of alert) {
+    const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+    if (sent.ok) reached++;
+  }
+  if (reached === 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `${who} replied by ${channelName(input.channel)}; the alert couldn't be emailed (email isn't connected for ${tenant.name} yet), so check the inbox.` });
+}
+
+/**
+ * Who hears about something a lead did: their assigned person when they have
+ * one and that person holds lead alerts, otherwise everyone who does. Phones
+ * come from member profiles; a person without one gets email only.
+ */
+async function peopleToTell(tenant: TenantSummary, assigneeId: string | null): Promise<{ recipients: { userId: string; email: string; name: string | null }[]; phones: Map<string, string> }> {
+  const everyone = await repository.listAlertRecipients(tenant.id);
+  const own = assigneeId ? everyone.filter((r) => r.userId === assigneeId) : [];
+  const recipients = own.length ? own : everyone;
+  const phones = new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member" && p.phone && destinationAllowed(tenant, p.phone)).map((p) => [p.userId, p.phone as string]));
+  return { recipients, phones };
+}
+
+export async function onCallbackRequested(tenant: TenantSummary, lead: LeadRecord, when: string | null) {
+  const name = leadDisplayName(lead);
+  const { recipients, phones } = await peopleToTell(tenant, lead.assigneeId);
+  if (recipients.length === 0) return;
+  const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
+  const text = templates.callbackRequestedSms({ tenant, leadName: name, when, phone: lead.phone });
+  const mail = templates.callbackRequestedEmail({ tenant, leadName: name, when, phone: lead.phone, email: lead.email, portalUrl });
+  const run = await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "SENT", summary: `Told ${recipients.length === 1 ? (recipients[0].name ?? recipients[0].email) : `${recipients.length} people`} that ${name} wants a call back${when ? ` (${when.slice(0, 60)})` : ""}.`, leadId: lead.id, contactId: lead.contactId });
+  let reached = 0;
+  for (const r of recipients) {
+    const phone = phones.get(r.userId);
+    if (phone) {
+      const buzz = await sendMessage({ tenant, contactId: null, channel: "SMS", to: phone, body: text, automationRunId: run.id, transactional: true });
+      if (buzz.ok) reached++;
+    }
+    const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+    if (sent.ok) reached++;
+  }
+  if (reached === 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `${name} wants a call back${when ? ` (${when.slice(0, 60)})` : ""}, but nobody could be told: messaging isn't connected for ${tenant.name} yet. It is in the queue.` });
+}
+
 /** A cancelled appointment reopens the booking window and offers another time. */
 export async function onBookingCancelled(tenant: TenantSummary, lead: LeadRecord, bookingId: string) {
   await repository.unbookLead(tenant.id, lead.id, new Date(Date.now() + hours(tenant.sla.bookingWindowHours)));
@@ -308,6 +380,23 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
     }
     case "social_sync:run": {
       await runSocialSync(tenant, new Date());
+      return;
+    }
+    case "sla_watch:expire": {
+      await expireStaleOpportunities(tenant, new Date());
+      return;
+    }
+    case "weekly_digest:send": {
+      await sendWeeklyDigest(tenant, new Date());
+      return;
+    }
+    case "playbook:ensure": {
+      // The safety net under the inline playbook: if the request that created the lead died before the playbook
+      // logged anything, run it now. A lead with any auto-reply run already had its turn; never a second message.
+      if (!lead || lead.ticketType !== "GREEN") return;
+      if ((await repository.countAutomationRuns(tenant.id, { typeKey: "enquiry_auto_reply", leadId: lead.id })) > 0) return;
+      log("warn", "playbook.ensure_ran", { tenantId: tenant.id, leadId: lead.id });
+      await runGreenLeadPlaybook(tenant, lead);
       return;
     }
     case "meta_lead:fetch": {
@@ -445,6 +534,27 @@ export function registerAutomations() {
     const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
     const leadId = typeof e.payload.leadId === "string" ? e.payload.leadId : null;
     await askForReview(e.tenantId, contactId, leadId, `won:${leadId ?? e.id}`);
+  });
+
+  // A lead who asks to be called back has told us exactly what they want. The person who should make the call hears
+  // at once, by text and email; the operator queue already holds the item in case nobody does.
+  subscribe("booking.callback_requested", async (e) => {
+    const tenant = await tenantById(e.tenantId);
+    const lead = tenant && typeof e.payload.leadId === "string" ? await repository.findLeadById(tenant.id, e.payload.leadId) : null;
+    if (!tenant || !lead) return;
+    await onCallbackRequested(tenant, lead, typeof e.payload.when === "string" && e.payload.when.trim() ? e.payload.when.trim() : null);
+  });
+
+  // A lead who texts back is talking to a person now: the assigned person (or everyone with lead alerts) is told at once,
+  // with the words, and nothing automated answers them. The inbox watch raises it if nobody replies in time.
+  subscribe("message.received", async (e) => {
+    const channel = e.payload.channel === "WHATSAPP" ? "WHATSAPP" : e.payload.channel === "SMS" ? "SMS" : null;
+    const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
+    const conversationId = typeof e.payload.conversationId === "string" ? e.payload.conversationId : null;
+    if (!channel || !contactId || !conversationId) return;
+    const tenant = await tenantById(e.tenantId);
+    if (!tenant) return;
+    await onContactReplied(tenant, { contactId, conversationId, channel, messageId: typeof e.payload.messageId === "string" ? e.payload.messageId : null });
   });
 
   subscribe("booking.created", async (e) => {

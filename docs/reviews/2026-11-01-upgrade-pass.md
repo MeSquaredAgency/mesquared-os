@@ -84,16 +84,77 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   stage marked won settles the lead; a win or a payment queues a review ask,
   throttled to one per person per quarter by a count rather than a scan.
 
-## Not done (candidates for the next pass)
+## Second batch (same day, after the first merged)
+
+- **Payments show against the lead.** A synced or manual transaction is
+  linked to the contact's most recent live lead (never a lost one), so the
+  attribution report's revenue per channel follows the lead that earned it.
+- **The expiry sweep.** A daily `sla_watch:expire` step writes off open items
+  older than `expireAfterDays` (default 30, 0 turns it off), closes their
+  exceptions, and leaves one honest line in the activity log. Money at risk
+  stops accumulating what nobody can recover.
+- **The queue shows the money.** Each item carries the kind and value of the
+  missed opportunity behind it, the header totals what is riding on the
+  filtered view, and "Most at stake first" is one click.
+- **One-line JSON logs** (`src/lib/log.ts`) on the scheduler and event paths,
+  with tenant, action and event ids as fields, so Cloudflare log queries can
+  filter per workspace.
+
+## Third batch (same branch)
+
+- **Round-robin lead assignment.** With "Share out in turn" on (Settings →
+  Modules & automations → Lead assignment), a new green lead goes to the
+  alert holder with the fewest new leads this week, only that person is
+  alerted, and the acknowledgement is signed as them when that is on. Off by
+  default: everyone with lead alerts is told, as before.
+- **The Monday email.** Owners and managers get one plain email on Monday
+  morning: enquiries, what was handled, what was recovered and for how much,
+  what is still at risk, the month's money (only for people who may see it)
+  and whether anyone is waiting. On by default (`weekly_digest`); a missed
+  Monday sends on Tuesday.
+- **A safety net under the playbook.** Intake queues a `playbook:ensure`
+  step three minutes out. If the request died before the playbook logged
+  anything, the tick runs it then; a lead that already had its turn is left
+  alone, so there is never a second acknowledgement. This is the durable floor
+  the outbox would have given, without the duplicate-send risk.
+- Settings lists every automation type the registry knows, with its default
+  state, so a type added after a workspace was set up can still be switched.
+- **A lead who texts back is heard.** Before, an SMS or WhatsApp reply only
+  landed in the conversation; nobody was told and nothing watched it. Now the
+  assigned person (or everyone with lead alerts) gets the words by email at
+  once, nothing automated answers, and the inbox watch raises it as an
+  unreplied message if nobody replies within the usual window.
+
+## Fourth batch: the client's eyes, and the agent's phone
+
+- **The phone buzzes.** A new green lead now also texts the assigned person
+  (or everyone with lead alerts) in one GSM segment: who, what, where, the
+  number, and whether we have already replied. The email with the full detail
+  still follows. "Every lead answered in under five minutes" starts with the
+  agent knowing within seconds; email alone did not do that. Off per
+  workspace with `enquiry_auto_reply.settings.alertBySms = false`; a member
+  with no phone on their profile gets email only.
+- **No machine detail on the client's screens.** The lead list no longer shows
+  an intent score or whether "AI" or "Rules" classified the lead; the reason
+  is behind "Why this one needs you" / "Why we handled this one". "Handled for
+  you" and the activity log show the sentence and the time, not our automation
+  type names. Empty states no longer mention intake or automations.
+
+- **"Call me back" reaches the caller.** The platform booking page (used
+  until Cal.com is connected) took the request into the operator queue and
+  told nobody at the business. Now the assigned person (or everyone with lead
+  alerts) is texted and emailed with the words the lead chose, the page
+  greets the lead by name, and the thank-you names who will ring them. With
+  Cal.com connected the page forwards to the prefilled link instead of the
+  bare event URL.
+
+## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
-  between the event and the send (today the detector catches it five minutes
-  later).
-- Payments shown against the lead (stages already move on payments and
-  attended appointments, see `src/lib/pipelines/advance.ts`; the transaction
-  row is not yet linked to the lead).
-- An EXPIRED sweep for escalated items nobody closes.
-- Structured JSON logging with tenant and action ids.
-- Visual verification of the UI changes in this pass: the dev server could
+  between the event and the send. Deliberately left: replaying handlers risks
+  a second text to the customer unless every handler is made idempotent
+  first; today a thrown handler becomes an exception and the detector catches
+  a missed acknowledgement five minutes later.
+- Visual verification of the UI changes in both batches: the dev server could
   not bind a port in the sandbox this session, so they are verified by
   typecheck, lint, tests and a production build only.

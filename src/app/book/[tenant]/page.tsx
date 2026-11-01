@@ -9,6 +9,8 @@ import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { takeIntakeTokens } from "@/lib/intake/rate-limit";
 import { leadDisplayName } from "@/lib/leads";
+import { safeName } from "@/lib/messaging/templates";
+import { bookingLinkFor } from "@/lib/scheduling/calcom";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +25,14 @@ export default async function BookPage({ params, searchParams }: { params: Promi
   const tenant = await repository.findTenantBySlug(slug);
   if (!tenant) notFound();
 
+  const lead = leadId ? await repository.findLeadById(tenant.id, leadId) : null;
+  // With Cal.com connected the booking link is theirs, prefilled with what we know; this page only exists when it is not.
   const calcom = await repository.findIntegration(tenant.id, "CALCOM");
   const eventSlug = typeof calcom?.settings.eventTypeSlug === "string" ? calcom.settings.eventTypeSlug : null;
-  if (calcom?.status === "CONNECTED" && eventSlug) redirect(`https://cal.com/${eventSlug}`);
+  if (calcom?.status === "CONNECTED" && eventSlug) redirect(await bookingLinkFor(tenant, lead ?? { id: leadId ?? "", firstName: null, lastName: null, email: null, phone: null }));
+  const firstName = lead ? safeName(lead.firstName) : null;
+  // Who will ring them: the assigned person when the business signs as them, otherwise the business.
+  const caller = lead?.assigneeId && tenant.branding.signAsAssignee ? ((await repository.listTenantPeople(tenant.id)).find((p) => p.userId === lead.assigneeId)?.name?.trim().split(/\s+/)[0] ?? null) : null;
 
   async function requestCallback(formData: FormData) {
     "use server";
@@ -43,9 +50,10 @@ export default async function BookPage({ params, searchParams }: { params: Promi
       await repository.touchLead(t.id, lead.id, new Date());
       await repository.recordAutomationRun(t.id, { typeKey: "booking_lifecycle", outcome: "COMPLETED", summary: `${leadDisplayName(lead)} asked for a call back${when ? ` (${when.replace(/[<>]/g, "")})` : ""}.`, leadId: lead.id, contactId: lead.contactId });
       await repository.createException(t.id, { reason: `${leadDisplayName(lead)} asked to be called back${when ? `: "${when.replace(/[<>]/g, "")}"` : ""}.`, suggestedAction: "Call them at the time they suggested.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
-      await emit(t.id, "booking.callback_requested", { leadId: lead.id });
+      // The handlers tell the person who should make the call, by text and email.
+      await emit(t.id, "booking.callback_requested", { leadId: lead.id, when: when.replace(/[<>]/g, "") || null });
     }
-    redirect(`/book/${slug}?done=1`);
+    redirect(`/book/${slug}?done=1${id ? `&lead=${encodeURIComponent(id)}` : ""}`);
   }
 
   // The customer's page carries the business's name, never Me²'s.
@@ -54,10 +62,10 @@ export default async function BookPage({ params, searchParams }: { params: Promi
       <div className="surface flex w-full max-w-md flex-col gap-6 p-6 shadow-card sm:p-8">
         <div className="flex flex-col gap-2">
           <p className="eyebrow">{tenant.branding.fromName ?? tenant.name}</p>
-          <h1 className="page-title">{done ? "Thank you" : "Let’s find a time"}</h1>
+          <h1 className="page-title">{done ? (firstName ? `Thank you, ${firstName}` : "Thank you") : firstName ? `${firstName}, let’s find a time` : "Let’s find a time"}</h1>
         </div>
         {done ? (
-          <p className="lede">We’ve let the team know. Someone will call you back shortly.</p>
+          <p className="lede">{caller ? `${caller} has been told and will call you back shortly.` : `We’ve let ${tenant.name} know. Someone will call you back shortly.`}</p>
         ) : (
           <form action={requestCallback} className="flex flex-col gap-5">
             <input type="hidden" name="lead" value={leadId ?? ""} />
