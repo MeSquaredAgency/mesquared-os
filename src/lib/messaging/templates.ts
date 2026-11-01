@@ -128,6 +128,33 @@ export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; t
   return `${input.tenant.name}: ${who}${about}${where}.${input.phone ? ` ${input.phone}.` : ""} ${tail}`;
 }
 
+/** "Margaret asked for a call back: tomorrow morning. +61… " to the person who should make the call. */
+export function callbackRequestedSms(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null }): string {
+  const who = quoteUntrusted(input.leadName, 40);
+  const when = input.when ? `: "${quoteUntrusted(input.when, 60)}"` : "";
+  return `${input.tenant.name}: ${who} asked for a call back${when}.${input.phone ? ` ${input.phone}.` : ""} They chose this over booking online, so a call is what they want.`;
+}
+
+export function callbackRequestedEmail(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null; email: string | null; portalUrl: string }): { subject: string; body: string } {
+  const who = quoteUntrusted(input.leadName, 60);
+  return {
+    subject: `${who} asked for a call back${input.when ? ` (${quoteUntrusted(input.when, 40)})` : ""}`,
+    body: [
+      `${who} opened the booking link from ${input.tenant.name} and asked to be called instead.`,
+      "",
+      input.when ? `When suits them: "${quoteUntrusted(input.when, 120)}"` : "They did not say when; sooner is better.",
+      input.phone ? `Phone: ${input.phone}` : null,
+      input.email ? `Email: ${input.email}` : null,
+      "",
+      `See the lead: ${input.portalUrl}`,
+      "",
+      staffSignoff(input.tenant),
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
+}
+
 type Channel = "SMS" | "WHATSAPP" | "EMAIL";
 interface Base {
   tenant: TenantSummary;

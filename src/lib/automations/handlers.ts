@@ -235,6 +235,40 @@ export async function onContactReplied(tenant: TenantSummary, input: { contactId
   if (reached === 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `${who} replied by ${channelName(input.channel)}; the alert couldn't be emailed (email isn't connected for ${tenant.name} yet), so check the inbox.` });
 }
 
+/**
+ * Who hears about something a lead did: their assigned person when they have
+ * one and that person holds lead alerts, otherwise everyone who does. Phones
+ * come from member profiles; a person without one gets email only.
+ */
+async function peopleToTell(tenant: TenantSummary, assigneeId: string | null): Promise<{ recipients: { userId: string; email: string; name: string | null }[]; phones: Map<string, string> }> {
+  const everyone = await repository.listAlertRecipients(tenant.id);
+  const own = assigneeId ? everyone.filter((r) => r.userId === assigneeId) : [];
+  const recipients = own.length ? own : everyone;
+  const phones = new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member" && p.phone && destinationAllowed(tenant, p.phone)).map((p) => [p.userId, p.phone as string]));
+  return { recipients, phones };
+}
+
+export async function onCallbackRequested(tenant: TenantSummary, lead: LeadRecord, when: string | null) {
+  const name = leadDisplayName(lead);
+  const { recipients, phones } = await peopleToTell(tenant, lead.assigneeId);
+  if (recipients.length === 0) return;
+  const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
+  const text = templates.callbackRequestedSms({ tenant, leadName: name, when, phone: lead.phone });
+  const mail = templates.callbackRequestedEmail({ tenant, leadName: name, when, phone: lead.phone, email: lead.email, portalUrl });
+  const run = await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "SENT", summary: `Told ${recipients.length === 1 ? (recipients[0].name ?? recipients[0].email) : `${recipients.length} people`} that ${name} wants a call back${when ? ` (${when.slice(0, 60)})` : ""}.`, leadId: lead.id, contactId: lead.contactId });
+  let reached = 0;
+  for (const r of recipients) {
+    const phone = phones.get(r.userId);
+    if (phone) {
+      const buzz = await sendMessage({ tenant, contactId: null, channel: "SMS", to: phone, body: text, automationRunId: run.id, transactional: true });
+      if (buzz.ok) reached++;
+    }
+    const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
+    if (sent.ok) reached++;
+  }
+  if (reached === 0) await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SKIPPED", summary: `${name} wants a call back${when ? ` (${when.slice(0, 60)})` : ""}, but nobody could be told: messaging isn't connected for ${tenant.name} yet. It is in the queue.` });
+}
+
 /** A cancelled appointment reopens the booking window and offers another time. */
 export async function onBookingCancelled(tenant: TenantSummary, lead: LeadRecord, bookingId: string) {
   await repository.unbookLead(tenant.id, lead.id, new Date(Date.now() + hours(tenant.sla.bookingWindowHours)));
@@ -500,6 +534,15 @@ export function registerAutomations() {
     const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
     const leadId = typeof e.payload.leadId === "string" ? e.payload.leadId : null;
     await askForReview(e.tenantId, contactId, leadId, `won:${leadId ?? e.id}`);
+  });
+
+  // A lead who asks to be called back has told us exactly what they want. The person who should make the call hears
+  // at once, by text and email; the operator queue already holds the item in case nobody does.
+  subscribe("booking.callback_requested", async (e) => {
+    const tenant = await tenantById(e.tenantId);
+    const lead = tenant && typeof e.payload.leadId === "string" ? await repository.findLeadById(tenant.id, e.payload.leadId) : null;
+    if (!tenant || !lead) return;
+    await onCallbackRequested(tenant, lead, typeof e.payload.when === "string" && e.payload.when.trim() ? e.payload.when.trim() : null);
   });
 
   // A lead who texts back is talking to a person now: the assigned person (or everyone with lead alerts) is told at once,

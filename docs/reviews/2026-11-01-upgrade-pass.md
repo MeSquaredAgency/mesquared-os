@@ -140,6 +140,14 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   you" and the activity log show the sentence and the time, not our automation
   type names. Empty states no longer mention intake or automations.
 
+- **"Call me back" reaches the caller.** The platform booking page (used
+  until Cal.com is connected) took the request into the operator queue and
+  told nobody at the business. Now the assigned person (or everyone with lead
+  alerts) is texted and emailed with the words the lead chose, the page
+  greets the lead by name, and the thank-you names who will ring them. With
+  Cal.com connected the page forwards to the prefilled link instead of the
+  bare event URL.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

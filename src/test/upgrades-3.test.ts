@@ -163,6 +163,22 @@ describe("the phone buzzes when a lead arrives", () => {
   });
 });
 
+describe("a lead who asks to be called back", () => {
+  it("is routed to the person who should make the call, with what they said", async () => {
+    const recipients = await repository.listAlertRecipients(harbor.id);
+    const contact = await repository.upsertContact(harbor.id, { firstName: "Call", lastName: "Me", email: "call-me@example.com", phone: "+61400321321", company: null });
+    const { lead } = await repository.createLead(harbor.id, { ...greenLead, contactId: contact.id, email: contact.email, phone: contact.phone, externalId: "b3:callback:1" });
+    await repository.assignLead(harbor.id, lead.id, recipients[1].userId);
+    await emit(harbor.id, "booking.callback_requested", { leadId: lead.id, when: "tomorrow morning" });
+    const run = (await repository.listAutomationRuns(harbor.id, 30)).find((r) => r.leadId === lead.id && /wants a call back/.test(r.summary));
+    assert.ok(run, "logged");
+    assert.match(run!.summary, new RegExp(`Told ${recipients[1].name ?? recipients[1].email}`), "the assigned person, not everyone");
+    assert.match(run!.summary, /tomorrow morning/);
+    const sms = templates.callbackRequestedSms({ tenant: harbor, leadName: "Call Me", when: "tomorrow morning", phone: "+61400321321" });
+    assert.match(sms, /Call Me asked for a call back: "tomorrow morning"\. \+61400321321\./);
+  });
+});
+
 describe("the safety net under the playbook", () => {
   it("runs the playbook for a green lead that never got one, and never twice", async () => {
     const contact = await repository.upsertContact(harbor.id, { firstName: "Safety", lastName: "Net", email: "safety-net@example.com", phone: null, company: null });
