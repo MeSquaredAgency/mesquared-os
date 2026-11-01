@@ -125,6 +125,21 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   once, nothing automated answers, and the inbox watch raises it as an
   unreplied message if nobody replies within the usual window.
 
+## Fourth batch: the client's eyes, and the agent's phone
+
+- **The phone buzzes.** A new green lead now also texts the assigned person
+  (or everyone with lead alerts) in one GSM segment: who, what, where, the
+  number, and whether we have already replied. The email with the full detail
+  still follows. "Every lead answered in under five minutes" starts with the
+  agent knowing within seconds; email alone did not do that. Off per
+  workspace with `enquiry_auto_reply.settings.alertBySms = false`; a member
+  with no phone on their profile gets email only.
+- **No machine detail on the client's screens.** The lead list no longer shows
+  an intent score or whether "AI" or "Rules" classified the lead; the reason
+  is behind "Why this one needs you" / "Why we handled this one". "Handled for
+  you" and the activity log show the sentence and the time, not our automation
+  type names. Empty states no longer mention intake or automations.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

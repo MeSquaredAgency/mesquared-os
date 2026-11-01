@@ -39,7 +39,7 @@ function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: F
         <Meta parts={[humanize(lead.source), timeAgo(lead.createdAt), lead.valueCents > 0 ? `worth about ${formatMoney(lead.valueCents, fmt.currency, fmt.locale)}` : null]} />
         {showReasons && lead.qualificationReason && (
           <details className="text-xs text-muted-foreground">
-            <summary className="w-fit">Why it’s here</summary>
+            <summary className="w-fit">Why this one needs you</summary>
             <p className="mt-1 max-w-prose">{lead.qualificationReason}</p>
           </details>
         )}

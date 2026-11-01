@@ -4,7 +4,6 @@ import { FilterChips, type FilterChip } from "@/components/shell/filter-chips";
 import { Empty, PageHeader } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
-import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { localKey } from "@/lib/content/calendar";
 import { COPY, outcomeLabel } from "@/lib/copy";
 import { repository } from "@/lib/data";
@@ -55,7 +54,7 @@ export default async function ActivityPage({ params, searchParams }: { params: P
         {all.length > 0 && chips.length > 2 && <FilterChips param="outcome" label="Outcome" chips={chips} />}
       </PageHeader>
       {runs.length === 0 ? (
-        <Empty>{all.length === 0 ? "Nothing yet. Once intake and automations are connected, what gets done for you appears here." : "Nothing with that outcome in the last entries."}</Empty>
+        <Empty>{all.length === 0 ? "Nothing yet. As enquiries start coming in, what gets done for you appears here." : "Nothing with that outcome in the last entries."}</Empty>
       ) : (
         <div className="flex flex-col gap-6">
           {[...days.entries()].map(([day, entries]) => (
@@ -69,9 +68,7 @@ export default async function ActivityPage({ params, searchParams }: { params: P
                   <li key={r.id} className="flex items-start justify-between gap-4 py-3.5">
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <p className="text-sm">{r.summary}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {AUTOMATION_BY_KEY[r.typeKey]?.name ?? r.typeKey} · {formatTime(r.createdAt, fmt)}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{formatTime(r.createdAt, fmt)}</p>
                     </div>
                     <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "muted"}>{outcomeLabel(r.outcome)}</Badge>
                   </li>

@@ -115,6 +115,19 @@ export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string;
   };
 }
 
+/**
+ * The text that makes the phone buzz: who, what, where, their number, and
+ * whether we have already replied. Under 160 characters where the names
+ * allow, plain GSM punctuation, nothing to tap but the number.
+ */
+export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; topic: string | null; area: string | null; phone: string | null; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" }): string {
+  const who = quoteUntrusted(input.leadName, 40);
+  const about = input.topic ? ` wants ${/^(a|an|the|your)\s/i.test(input.topic) ? input.topic : `an ${input.topic}`.replace(/^an ([^aeiou])/i, "a $1")}` : " just enquired";
+  const where = input.area ? ` in ${input.area}` : "";
+  const tail = input.acknowledged === "SENT" ? "We've replied with a booking link; a call now wins it." : input.acknowledged === "HELD" ? "Our reply goes out in the morning; a call now wins it." : "No reply has gone out yet; please call them.";
+  return `${input.tenant.name}: ${who}${about}${where}.${input.phone ? ` ${input.phone}.` : ""} ${tail}`;
+}
+
 type Channel = "SMS" | "WHATSAPP" | "EMAIL";
 interface Base {
   tenant: TenantSummary;

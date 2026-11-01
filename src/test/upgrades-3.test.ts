@@ -7,7 +7,8 @@ import { sendWeeklyDigest, weekBounds } from "@/lib/digest/weekly";
 import { emit } from "@/lib/events";
 import { tick } from "@/lib/jobs/tick";
 import { detectForTenant } from "@/lib/opportunities/detect";
-import { assignNewLead, registerPlaybook } from "@/lib/playbook";
+import { templates } from "@/lib/messaging";
+import { assignNewLead, registerPlaybook, runGreenLeadPlaybook } from "@/lib/playbook";
 
 /**
  * Third upgrade batch: round-robin lead assignment, the Monday summary email,
@@ -125,6 +126,40 @@ describe("a lead who texts back is heard", () => {
     assert.equal(flagged?.type, "UNREPLIED_DM");
     const item = (await repository.listMissedOpportunities(harbor.id, { limit: 50 })).find((m) => m.dedupeKey === `UNREPLIED_DM:${conversationId}`);
     assert.match(item?.summary ?? "", /sent a text/);
+  });
+});
+
+describe("the phone buzzes when a lead arrives", () => {
+  it("writes a short text with who, what, where and the number", () => {
+    const text = templates.leadAlertSms({ tenant: harbor, leadName: "Margaret Ellis", topic: "appraisal", area: "Norwood", phone: "+61400111222", acknowledged: "SENT" });
+    assert.equal(text, "Harbor Realty Group: Margaret Ellis wants an appraisal in Norwood. +61400111222. We've replied with a booking link; a call now wins it.");
+    assert.ok(text.length <= 160, `fits one segment: ${text.length}`);
+    assert.match(templates.leadAlertSms({ tenant: harbor, leadName: "Sam", topic: null, area: null, phone: null, acknowledged: "NONE" }), /Sam just enquired\. No reply has gone out yet; please call them\./);
+    assert.match(templates.leadAlertSms({ tenant: harbor, leadName: "Sam", topic: "sale", area: null, phone: null, acknowledged: "HELD" }), /wants a sale\. Our reply goes out in the morning/);
+    assert.doesNotMatch(templates.leadAlertSms({ tenant: harbor, leadName: "Visit http://evil.example now", topic: null, area: null, phone: null, acknowledged: "SENT" }), /http/, "links in a stranger's name are stripped");
+  });
+
+  it("texts the assigned person as well as emailing them", async () => {
+    process.env.DEFAULT_FROM_NUMBER ??= "+61400000000";
+    const recipients = await repository.listAlertRecipients(harbor.id);
+    const person = recipients[0];
+    const roles = (await repository.getTenantConfig(harbor.id)).roles;
+    const people = await repository.listTenantPeople(harbor.id);
+    const me = people.find((p) => p.userId === person.userId)!;
+    await repository.upsertMembership(harbor.id, person.userId, me.roleId ?? roles[0].id, { phone: "+61400555000" });
+    try {
+      const contact = await repository.upsertContact(harbor.id, { firstName: "Buzz", lastName: "Test", email: "buzz@example.com", phone: "+61400666000", company: null });
+      const { lead } = await repository.createLead(harbor.id, { ...greenLead, contactId: contact.id, email: contact.email, phone: contact.phone, externalId: "b3:buzz:1" });
+      await repository.assignLead(harbor.id, lead.id, person.userId);
+      await runGreenLeadPlaybook(harbor, { ...lead, assigneeId: person.userId });
+      const told = (await repository.listAutomationRuns(harbor.id, 30)).find((r) => r.leadId === lead.id && /^Told /.test(r.summary));
+      assert.ok(told, "the alert is logged");
+      assert.match(told!.summary, /by text and email/);
+      const texts = await repository.countOutboundMessages(harbor.id, { since: new Date(Date.now() - 60_000), to: "+61400555000" });
+      assert.ok(texts >= 1, "a text went to the assigned person's phone");
+    } finally {
+      await repository.upsertMembership(harbor.id, person.userId, me.roleId ?? roles[0].id, { phone: null });
+    }
   });
 });
 
