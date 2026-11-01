@@ -12,8 +12,9 @@ export interface FormatContext {
   currency: string;
 }
 
-export function formatMoney(cents: number, currency = "USD", locale = "en-AU") {
-  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(cents / 100);
+export function formatMoney(cents: number, currency = "USD", locale = "en-AU", opts?: { whole?: boolean }) {
+  const digits = opts?.whole ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {};
+  return new Intl.NumberFormat(locale, { style: "currency", currency, ...digits }).format(cents / 100);
 }
 
 /** e.g. "24 Oct, 3:05 pm" in the tenant's timezone. */

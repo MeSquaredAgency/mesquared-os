@@ -858,7 +858,8 @@ export interface PortalHome {
   missed: { open: MissedOpportunityRecord[]; atRiskCents: number; recoveredCents: number };
   money: MoneySummary | null;
   contentAwaiting: ContentAssetRecord[];
-  handled: { runs: AutomationRunRecord[]; countToday: number; countWeek: number };
+  /** Only runs that count as handled (see src/lib/portal/handled.ts); `byType` covers the last seven days. */
+  handled: { runs: AutomationRunRecord[]; countToday: number; countWeek: number; byType: { typeKey: string; count: number }[] };
 }
 
 export type IntegrationHealth = { provider: IntegrationProvider; status: IntegrationStatus; lastError: string | null };

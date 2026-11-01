@@ -16,7 +16,7 @@ export function HandledForYou({ handled, activityHref }: { handled: PortalHome["
     <Section
       id="handled-title"
       title={COPY.handledForYou}
-      lede={`${handled.countToday} thing${handled.countToday === 1 ? "" : "s"} today, ${handled.countWeek} this week, with a person checking the work.`}
+      lede={handled.countWeek === 0 ? "What we do without you, with a person checking the work." : `${handled.countToday} today, ${handled.countWeek} this week, with a person checking the work.`}
       action={
         <Button asChild variant="ghost" size="sm">
           <Link href={activityHref}>Full {COPY.activityLog.toLowerCase()}</Link>

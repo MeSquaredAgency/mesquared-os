@@ -21,7 +21,8 @@ export async function settleException(tenantId: string, exceptionId: string, res
   }
   await repository.recordAutomationRun(tenantId, {
     typeKey: "sla_watch",
-    outcome: "COMPLETED",
+    // A write-off is logged but is not work done for the client, so it never counts as handled.
+    outcome: recovered ? "COMPLETED" : "SKIPPED",
     summary: recovered ? `Sorted by the Me² team: ${note || "handled"}.` : `Closed by the Me² team: ${note || "no longer relevant"}.`,
     leadId: ex.leadId,
     contactId: ex.contactId,

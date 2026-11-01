@@ -21,14 +21,16 @@ const STATUS_LABEL: Record<string, { text: string; variant: "red" | "secondary" 
   EXPIRED: { text: "Closed", variant: "muted" },
 };
 
-/** The two numbers that frame the section: at risk, and won back. */
+/** The two numbers that frame the section: at risk, and won back. A zero says nothing, so it isn't shown. */
 function Totals({ missed, fmt }: Pick<Props, "missed" | "fmt">) {
-  const item = (label: string, cents: number, tone: "red" | "green") => (
-    <div className="flex flex-col items-end leading-tight">
-      <span className={cn("text-lg font-semibold num", cents > 0 ? (tone === "red" ? "text-red-text" : "text-green-text") : "text-muted-foreground")}>{formatMoney(cents, fmt.currency, fmt.locale)}</span>
-      <span className="text-2xs text-muted-foreground">{label}</span>
-    </div>
-  );
+  if (missed.atRiskCents <= 0 && missed.recoveredCents <= 0) return null;
+  const item = (label: string, cents: number, tone: "red" | "green") =>
+    cents > 0 && (
+      <div className="flex flex-col items-end leading-tight">
+        <dt className="order-last text-2xs text-muted-foreground">{label}</dt>
+        <dd className={cn("text-lg font-semibold num", tone === "red" ? "text-red-text" : "text-green-text")}>{formatMoney(cents, fmt.currency, fmt.locale, { whole: true })}</dd>
+      </div>
+    );
   return (
     <dl className="flex items-end gap-6">
       {item(COPY.atRiskLabel, missed.atRiskCents, "red")}
@@ -59,7 +61,7 @@ export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) 
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <span className="text-sm font-medium num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale)}</span>
+                    <span className="text-sm font-medium num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale, { whole: true })}</span>
                     <Badge variant={s.variant}>{s.text}</Badge>
                   </div>
                 </li>
