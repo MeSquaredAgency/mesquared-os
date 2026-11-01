@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
+import { countsAsHandled } from "@/lib/portal/handled";
 import type {
   AdAccountRecord,
   OnboardingRecord,
@@ -1585,7 +1586,10 @@ export const memoryRepository: Repository = {
     const openInvoices = s.invoices.filter((i) => i.tenantId === tenantId && (i.status === "SENT" || i.status === "OVERDUE"));
     const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
 
-    const runs = s.runs.filter((r) => r.tenantId === tenantId && assignedTo(r.leadId, opts.onlyAssigneeId)).sort(byNewest);
+    const runs = s.runs.filter((r) => r.tenantId === tenantId && countsAsHandled(r) && assignedTo(r.leadId, opts.onlyAssigneeId)).sort(byNewest);
+    const week = runs.filter((r) => r.createdAt.getTime() >= weekStart);
+    const byType = new Map<string, number>();
+    for (const r of week) byType.set(r.typeKey, (byType.get(r.typeKey) ?? 0) + 1);
 
     return {
       needsYou,
@@ -1608,7 +1612,8 @@ export const memoryRepository: Repository = {
       handled: {
         runs: runs.slice(0, 6),
         countToday: runs.filter((r) => r.createdAt.getTime() >= dayStart).length,
-        countWeek: runs.filter((r) => r.createdAt.getTime() >= weekStart).length,
+        countWeek: week.length,
+        byType: [...byType].map(([typeKey, count]) => ({ typeKey, count })),
       },
     } satisfies PortalHome;
   },
