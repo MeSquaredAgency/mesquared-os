@@ -148,6 +148,12 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   Cal.com connected the page forwards to the prefilled link instead of the
   bare event URL.
 
+- **The reason reads as a sentence.** The rule engine's reason carried the
+  score and each signal's weight, and the client saw it under "Why we handled
+  this one". It is now plain words ("Reads as a routine question rather than
+  a sale: left a phone number."); the weighted signals stay on the result for
+  operators. The Claude classifier was already asked for plain sentences.
+
 - **Staff can be the test lead from anywhere.** The destination rule still
   limits a workspace to its own country, but numbers listed in
   `MESSAGING_STAFF_NUMBERS` (a deployment secret, E.164, comma-separated) may
