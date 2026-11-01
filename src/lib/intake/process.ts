@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { opportunityValue } from "@/lib/opportunities/detect";
@@ -53,11 +54,28 @@ function isSameEnquiry(existing: LeadRecord, body: IntakeBody): boolean {
   return message === norm(existing.message) && sameProperty;
 }
 
+/**
+ * A stable id for a submission that arrived without one: the same person
+ * sending the same words on the same day. It lets the unique index on
+ * (tenant, externalId) catch two copies of one form submitted in parallel,
+ * which the find-then-create dedupe below cannot.
+ */
+export function derivedExternalId(body: IntakeBody, now = new Date()): string | null {
+  if (body.externalId) return body.externalId;
+  const who = (body.email ?? "").trim().toLowerCase() || body.phone;
+  if (!who) return null;
+  const words = (body.message ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const property = typeof body.fields?.property === "string" ? body.fields.property.replace(/\s+/g, " ").trim().toLowerCase() : "";
+  const day = now.toISOString().slice(0, 10);
+  return `form:${createHash("sha1").update([who, words, property, day].join("\n")).digest("hex").slice(0, 24)}`;
+}
+
 export async function processIntake(tenant: TenantSummary, input: IntakeBody, rawPayload: Record<string, unknown>, meta?: Partial<IntakeMeta>): Promise<IntakeOutcome> {
   registerPlaybook();
   registerAutomations();
   // Phones are stored and messaged in E.164, using the tenant's region when the country code was omitted.
-  const body: IntakeBody = { ...input, phone: toE164(input.phone, tenant.region) };
+  const normalised: IntakeBody = { ...input, phone: toE164(input.phone, tenant.region) };
+  const body: IntakeBody = { ...normalised, externalId: derivedExternalId(normalised) };
   const { firstName, lastName } = splitName(body);
   const payload = redactPayload(rawPayload) as Record<string, unknown>;
   const channel: IntakeChannel = meta?.channel ?? CHANNEL_FOR_SOURCE[body.source] ?? "API";

@@ -42,9 +42,13 @@ export interface AnthropicQualifierOptions {
 }
 
 export function createAnthropicQualifier(opts: AnthropicQualifierOptions = {}): Qualifier {
+  // The acknowledgement has to leave within the five-minute SLA, so a slow model answer falls back to the rule engine
+  // rather than holding intake: one try, a short deadline.
   const client = new Anthropic({
     ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
     ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+    timeout: Number.parseInt(process.env.QUALIFIER_TIMEOUT_MS ?? "", 10) || 8_000,
+    maxRetries: 1,
   });
   const model = opts.model ?? process.env.QUALIFIER_MODEL ?? DEFAULT_MODEL;
   const name = `anthropic${opts.via ? `/${opts.via}` : ""}:${model}`;
@@ -80,6 +84,8 @@ export function createAnthropicQualifier(opts: AnthropicQualifierOptions = {}): 
         let score = v.intent_score;
         // Sanity bound: a lead with no rule-engine signal at all cannot be promoted to GREEN by prose alone.
         if (score >= GREEN_THRESHOLD && baseline.intentScore < BASELINE_FLOOR) score = GREEN_THRESHOLD - 1;
+        // Hard rules are the owner's, not the model's to weigh: no phone when one is required is never green.
+        if (score >= GREEN_THRESHOLD && rules.requirePhone && !input.phone) score = GREEN_THRESHOLD - 1;
         const ticketType = score >= GREEN_THRESHOLD ? "GREEN" : "RED";
         const reason = v.reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX_CHARS);
         return {

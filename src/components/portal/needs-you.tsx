@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Phone } from "lucide-react";
 import { Avatar } from "@/components/shell/avatar";
+import { LeadHandledButton } from "@/components/portal/lead-handled-button";
 import { Empty, Meta, Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,11 @@ interface Props {
   allHref?: string;
   /** Operators see the classifier reason inline; clients see it on expand. */
   showReasons?: boolean;
+  /** When set, each lead gets an "I've called them" action that settles it. */
+  tenantSlug?: string;
 }
 
-function Lead({ lead, fmt, showReasons }: { lead: LeadRecord; fmt: FormatContext; showReasons: boolean }) {
+function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: FormatContext; showReasons: boolean; tenantSlug?: string }) {
   const now = Date.now();
   const overdueResponse = lead.respondBy && !lead.firstResponseAt && lead.respondBy.getTime() < now;
   const overdueBooking = lead.bookBy && !lead.bookedAt && lead.bookBy.getTime() < now;
@@ -41,19 +44,22 @@ function Lead({ lead, fmt, showReasons }: { lead: LeadRecord; fmt: FormatContext
           </details>
         )}
       </div>
-      {lead.phone && (
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          <a href={`tel:${lead.phone}`}>
-            <Phone /> Call
-          </a>
-        </Button>
-      )}
+      <div className="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+        {lead.phone && (
+          <Button asChild variant="outline" size="sm">
+            <a href={`tel:${lead.phone}`}>
+              <Phone /> Call
+            </a>
+          </Button>
+        )}
+        {tenantSlug && <LeadHandledButton tenantSlug={tenantSlug} leadId={lead.id} />}
+      </div>
     </li>
   );
 }
 
 /** New and hot leads waiting on a person: the top of the client portal. */
-export function NeedsYou({ leads, fmt, allHref, showReasons = true }: Props) {
+export function NeedsYou({ leads, fmt, allHref, showReasons = true, tenantSlug }: Props) {
   return (
     <Section
       id="needs-you-title"
@@ -72,7 +78,7 @@ export function NeedsYou({ leads, fmt, allHref, showReasons = true }: Props) {
       ) : (
         <ul className="surface divide-y px-5">
           {leads.map((l) => (
-            <Lead key={l.id} lead={l} fmt={fmt} showReasons={showReasons} />
+            <Lead key={l.id} lead={l} fmt={fmt} showReasons={showReasons} tenantSlug={tenantSlug} />
           ))}
         </ul>
       )}

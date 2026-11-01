@@ -36,6 +36,8 @@ import type {
   MissedOpportunityRecord,
   MissedOpportunityStatus,
   MissedOpportunityType,
+  LeadStatus,
+  StageAdvanceTrigger,
   OpportunityValues,
   PipelineRecord,
   PortalHome,
@@ -226,6 +228,22 @@ export interface NewReview {
 
 /** intake: public web forms and the page beacon. webhooks: call-tracking and review connectors (private). content: uploads and the library (private). */
 export type ApiKeyScope = "intake" | "content" | "webhooks";
+
+export const API_KEY_SCOPES: readonly ApiKeyScope[] = ["intake", "content", "webhooks"];
+
+export interface SchedulerBacklog {
+  /** Steps whose time has come and have not been claimed. */
+  due: number;
+  /** Seconds the oldest due step has been waiting, or null when nothing is due. */
+  oldestDueAgeSeconds: number | null;
+  /** Steps that failed for good in the last 24 hours (each has an exception in the queue). */
+  failedLast24h: number;
+}
+
+/** The one guard for key scopes read from storage or input: every store and action must use it so no scope is silently dropped. */
+export function isApiKeyScope(value: unknown): value is ApiKeyScope {
+  return typeof value === "string" && (API_KEY_SCOPES as readonly string[]).includes(value);
+}
 
 // --- Phase 4 inputs ---------------------------------------------------------------
 
@@ -553,9 +571,26 @@ export interface Repository {
   /** The same two breaches counted, for the portfolio. */
   countLeadsPastSla(tenantId: string, now: Date): Promise<number>;
   findLeadById(tenantId: string, leadId: string): Promise<LeadRecord | null>;
+  /** Several leads in one round trip; ids from other tenants are simply absent. */
+  findLeadsByIds(tenantId: string, leadIds: string[]): Promise<LeadRecord[]>;
   markLeadResponded(tenantId: string, leadId: string, at: Date): Promise<void>;
+  /**
+   * A person has dealt with the lead outside the automation (called them, closed the item): the response
+   * clock stops, and when `booking` is true the booking window stops too, so the detectors do not raise it again.
+   */
+  settleLeadSla(tenantId: string, leadId: string, at: Date, opts?: { booking?: boolean }): Promise<void>;
+  /** Moves a lead to a status a person chose (e.g. NURTURING once they are talking to them). Pipeline stages are not touched. */
+  setLeadStatus(tenantId: string, leadId: string, status: LeadStatus): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
   markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
+  /**
+   * Moves a lead to the first stage of its pipeline that advances on `trigger` (a completed appointment, a payment,
+   * a signed document). A won or lost stage sets the lead's status and timestamps too. Returns the lead and whether
+   * it moved; null when the lead does not exist.
+   */
+  advanceLead(tenantId: string, leadId: string, trigger: StageAdvanceTrigger, at: Date): Promise<{ lead: LeadRecord; moved: boolean; stageName: string | null } | null>;
+  /** The contact's most recent lead that is still in play (not won, lost or archived). */
+  findLatestOpenLeadForContact(tenantId: string, contactId: string): Promise<LeadRecord | null>;
   /** After a cancellation: back to BOOKING_SENT with a fresh booking window so "never booked" can fire again. */
   unbookLead(tenantId: string, leadId: string, bookBy: Date): Promise<void>;
   assignLead(tenantId: string, leadId: string, assigneeId: string | null): Promise<void>;
@@ -571,6 +606,8 @@ export interface Repository {
   upsertIntegration(tenantId: string, data: IntegrationUpsert): Promise<IntegrationSettings>;
   /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
   findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
+  /** The active tenant that owns an integration row; how a per-integration webhook URL finds its workspace in one query. */
+  findTenantByIntegrationId(provider: import("@/lib/types").IntegrationProvider, integrationId: string): Promise<TenantSummary | null>;
   /**
    * Resolves which active tenant owns an active social channel by the platform's own account id
    * (an Instagram business account id, a GBP location name). For Instagram the id may sit in
@@ -590,6 +627,8 @@ export interface Repository {
   scheduleAction(tenantId: string, data: NewScheduledAction): Promise<{ record: ScheduledActionRecord; created: boolean }>;
   /** Pending actions across all tenants whose time has come (read-only; the tick claims them with claimAction). */
   listDueActions(now: Date, limit?: number): Promise<ScheduledActionRecord[]>;
+  /** What the health endpoint reports about the queue: how much is overdue, how old the oldest overdue step is, how many steps gave up recently. */
+  schedulerBacklog(now: Date): Promise<SchedulerBacklog>;
   /** Atomically moves a PENDING (or stale RUNNING) action to RUNNING. False when another worker got it first. */
   claimAction(actionId: string, now: Date, leaseMs: number): Promise<boolean>;
   /** DONE/CANCELLED/FAILED finish the action; PENDING re-queues it at `retryAt`. */
@@ -633,6 +672,9 @@ export interface Repository {
   upsertMissedOpportunity(tenantId: string, data: NewMissedOpportunity): Promise<{ record: MissedOpportunityRecord; created: boolean }>;
   /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
   listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
+  findMissedOpportunityById(tenantId: string, id: string): Promise<MissedOpportunityRecord | null>;
+  /** Open items about a lead or contact, optionally of certain types; what the reconciler closes when the person comes back. */
+  listOpenMissedOpportunitiesFor(tenantId: string, subject: { leadId?: string | null; contactId?: string | null; types?: MissedOpportunityType[] }): Promise<MissedOpportunityRecord[]>;
   /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
   resolveMissedOpportunity(tenantId: string, id: string, status: MissedOpportunityStatus, recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
@@ -641,6 +683,8 @@ export interface Repository {
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
+  /** How many runs match; the throttles ("one review ask per person per quarter") read this instead of scanning history. */
+  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
@@ -665,6 +709,8 @@ export interface Repository {
   createSocialPosts(tenantId: string, items: NewSocialPost[]): Promise<SocialPostRecord[]>;
   listSocialPosts(tenantId: string, opts?: { status?: PostStatus[]; from?: Date; to?: Date; limit?: number }): Promise<SocialPostRecord[]>;
   findSocialPostById(tenantId: string, postId: string): Promise<SocialPostRecord | null>;
+  /** Every post made from one content asset; how approval stays idempotent however many posts the workspace has. */
+  listSocialPostsForAsset(tenantId: string, contentAssetId: string): Promise<SocialPostRecord[]>;
   updateSocialPost(tenantId: string, postId: string, patch: SocialPostPatch): Promise<SocialPostRecord | null>;
   /** SCHEDULED posts across all tenants whose time has come (read-only; claim with claimSocialPost). */
   listDueSocialPosts(now: Date, limit?: number): Promise<SocialPostRecord[]>;

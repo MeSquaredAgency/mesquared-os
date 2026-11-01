@@ -12,9 +12,21 @@ import { rollupSite } from "@/lib/website/rollup";
 import { describeListing, findListingMentioned, findListingsMatching, listingNeeds } from "@/lib/inventory";
 import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
+import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
+import { registerReconciler } from "@/lib/opportunities/reconcile";
+import { registerPipelineAdvancement } from "@/lib/pipelines/advance";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
 export const ACTION_LEASE_MS = 10 * 60_000;
+
+/** A scheduled action that can never succeed (bad payload, no handler): the tick fails it at once instead of retrying. */
+export class NonRetryableError extends Error {
+  readonly retryable = false;
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
+}
 
 /**
  * Automation handlers. Two entry points:
@@ -298,6 +310,14 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       await runSocialSync(tenant, new Date());
       return;
     }
+    case "meta_lead:fetch": {
+      // A Facebook lead whose details could not be read when the webhook arrived. Throwing lets the tick retry and,
+      // after three attempts, hand it to an operator as an exception.
+      const ref = metaLeadRefFromPayload(action.payload);
+      if (!ref) throw new NonRetryableError("meta_lead:fetch payload has no leadgen id");
+      await ingestMetaLead(tenant, ref, { retryOnFailure: false });
+      return;
+    }
     case "messaging:release": {
       // A marketing message held during quiet hours. sendMessage re-checks consent and caps.
       const p = action.payload;
@@ -354,10 +374,9 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
         await skipped(tenant.id, "review_request", `Would have asked ${name} for a review, but no review link is set up for ${tenant.name}.`, { contactId: contact.id, leadId: lead?.id ?? null });
         return;
       }
-      // One ask per person per quarter, however often they book.
+      // One ask per person per quarter, however often they book or pay.
       const since = new Date(Date.now() - 90 * 86_400_000);
-      const recentAsk = (await repository.listAutomationRuns(tenant.id, 500)).find((r) => r.typeKey === "review_request" && r.outcome === "SENT" && r.contactId === contact.id && r.createdAt >= since);
-      if (recentAsk) return;
+      if ((await repository.countAutomationRuns(tenant.id, { typeKey: "review_request", contactId: contact.id, outcome: "SENT", since })) > 0) return;
       // A review request is marketing: consent and quiet hours apply.
       await sendAndLog({ tenant, typeKey: "review_request", recipient: contact, compose: (channel) => templates.reviewRequest({ tenant, firstName: contact.firstName, reviewUrl, channel }), contactId: contact.id, leadId: lead?.id ?? null, transactional: false, sent: `Asked ${name} for a review.`, who: name, verb: "ask for a review from" });
       return;
@@ -383,7 +402,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       return;
     }
     default:
-      throw new Error(`No handler for ${action.typeKey}:${action.action}`);
+      throw new NonRetryableError(`No handler for ${action.typeKey}:${action.action}`);
   }
 }
 
@@ -404,6 +423,29 @@ let registered = false;
 export function registerAutomations() {
   if (registered) return;
   registered = true;
+  // Whatever brings a flagged person back (an enquiry, a reply, a booking, a payment) closes their open items as recovered.
+  registerReconciler();
+  // Completed appointments and payments move the lead along its pipeline.
+  registerPipelineAdvancement();
+
+  // A payment or a win is as good a moment to ask for a review as an attended appointment; one ask per person per quarter.
+  const askForReview = async (tenantId: string, contactId: string | null, leadId: string | null, key: string) => {
+    const tenant = await tenantById(tenantId);
+    if (!tenant || !contactId) return;
+    const review = await automationSettings(tenant.id, "review_request");
+    if (!review) return;
+    await schedule(tenant.id, { typeKey: "review_request", action: "ask", runAt: new Date(Date.now() + hours(num(review, "delayHours", 3))), payload: { leadId, contactId }, dedupeKey: `review:${contactId}:${key}` });
+  };
+  subscribe("invoice.paid", async (e) => {
+    const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
+    const lead = contactId ? await repository.findLatestOpenLeadForContact(e.tenantId, contactId) : null;
+    await askForReview(e.tenantId, contactId, lead?.id ?? null, `paid:${String(e.payload.invoiceId ?? e.id)}`);
+  });
+  subscribe("lead.won", async (e) => {
+    const contactId = typeof e.payload.contactId === "string" ? e.payload.contactId : null;
+    const leadId = typeof e.payload.leadId === "string" ? e.payload.leadId : null;
+    await askForReview(e.tenantId, contactId, leadId, `won:${leadId ?? e.id}`);
+  });
 
   subscribe("booking.created", async (e) => {
     const tenant = await tenantById(e.tenantId);

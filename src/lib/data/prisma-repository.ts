@@ -80,8 +80,11 @@ import type {
   UserRecord,
   WebEventRecord,
 } from "@/lib/types";
-import { monthBucketInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
-import { TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
+import { monthBucketInZone, monthProgressInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { isApiKeyScope, TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
+
+/** How many tenants the portfolio query works on at once. */
+const PORTFOLIO_CONCURRENCY = 5;
 
 const toBooking = (b: Booking): BookingRecord => ({ id: b.id, tenantId: b.tenantId, leadId: b.leadId, provider: b.provider, externalId: b.externalId, bookingUrl: b.bookingUrl, startsAt: b.startsAt, endsAt: b.endsAt, status: b.status, confirmedAt: b.confirmedAt, remindedAt: b.remindedAt, followedUpAt: b.followedUpAt, createdAt: b.createdAt });
 const toConversation = (c: Conversation): ConversationRecord => ({ id: c.id, tenantId: c.tenantId, contactId: c.contactId, channel: c.channel, externalId: c.externalId, lastMessageAt: c.lastMessageAt, awaitingReply: c.awaitingReply, platform: c.platform, channelId: c.channelId, meta: obj(c.meta), displayName: c.displayName, suggestedReply: c.suggestedReply });
@@ -185,7 +188,7 @@ const toLink = (l: TrackedLink): TrackedLinkRecord => ({ id: l.id, tenantId: l.t
 const toWebEvent = (e: WebEvent): WebEventRecord => ({ id: e.id, tenantId: e.tenantId, kind: e.kind, path: e.path, referrer: e.referrer, source: e.source, sessionKey: e.sessionKey, occurredAt: e.occurredAt });
 const toSiteMetrics = (m: SiteMetricSnapshot): SiteMetricSnapshotRecord => ({ id: m.id, tenantId: m.tenantId, date: m.date, sessions: m.sessions, pageviews: m.pageviews, formStarts: m.formStarts, formSubmits: m.formSubmits, linkClicks: m.linkClicks, topPages: obj(m.topPages) as Record<string, number>, topSources: obj(m.topSources) as Record<string, number> });
 const utcDay = (d: Date) => new Date(`${d.toISOString().slice(0, 10)}T00:00:00Z`);
-const toApiKey = (k: TenantApiKey): ApiKeyRecord => ({ id: k.id, tenantId: k.tenantId, label: k.label, keyPrefix: k.keyPrefix, scopes: k.scopes.filter((x): x is "intake" | "content" => x === "intake" || x === "content"), lastUsedAt: k.lastUsedAt, revokedAt: k.revokedAt, createdAt: k.createdAt });
+const toApiKey = (k: TenantApiKey): ApiKeyRecord => ({ id: k.id, tenantId: k.tenantId, label: k.label, keyPrefix: k.keyPrefix, scopes: k.scopes.filter(isApiKeyScope), lastUsedAt: k.lastUsedAt, revokedAt: k.revokedAt, createdAt: k.createdAt });
 const toInventory = (i: InventoryItem): InventoryItemRecord => ({ id: i.id, tenantId: i.tenantId, type: i.type, externalId: i.externalId, name: i.name, status: i.status, quantity: i.quantity, valueCents: i.valueCents, attributes: obj(i.attributes), source: i.source, createdAt: i.createdAt, updatedAt: i.updatedAt });
 const toTxn = (t: Transaction): TransactionRecord => ({ id: t.id, tenantId: t.tenantId, contactId: t.contactId, leadId: t.leadId, provider: t.provider, providerId: t.providerId, kind: t.kind, status: t.status, amountCents: t.amountCents, currency: t.currency, note: t.note, occurredAt: t.occurredAt });
 const toAsset = (a: ContentAsset): ContentAssetRecord => ({ id: a.id, tenantId: a.tenantId, parentId: a.parentId, kind: a.kind, title: a.title, body: a.body, targetPlatform: a.targetPlatform, status: a.status, needsClientSignoff: a.needsClientSignoff, fileUrl: a.fileUrl, tags: a.tags, scheduledFor: a.scheduledFor, generation: obj(a.generation) as ContentAssetRecord["generation"], rejectionNote: a.rejectionNote, approvedAt: a.approvedAt, createdAt: a.createdAt });
@@ -263,7 +266,7 @@ export const prismaRepository: Repository = {
         .tenantApiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
         .catch(() => {});
     }
-    return { tenant: toTenant(key.tenant), apiKeyId: key.id, scopes: key.scopes.filter((s): s is "intake" | "content" => s === "intake" || s === "content") };
+    return { tenant: toTenant(key.tenant), apiKeyId: key.id, scopes: key.scopes.filter(isApiKeyScope) };
   },
 
   async getTenantConfig(tenantId) {
@@ -405,6 +408,22 @@ export const prismaRepository: Repository = {
     return row ? toLead(row) : null;
   },
 
+  async findLeadsByIds(tenantId, leadIds) {
+    if (leadIds.length === 0) return [];
+    const rows = await getPrisma().lead.findMany({ where: { tenantId, id: { in: [...new Set(leadIds)] } } });
+    return rows.map(toLead);
+  },
+
+  async settleLeadSla(tenantId, leadId, at, opts = {}) {
+    const db = getPrisma();
+    await db.lead.updateMany({ where: { id: leadId, tenantId, firstResponseAt: null }, data: { firstResponseAt: at } });
+    if (opts.booking) await db.lead.updateMany({ where: { id: leadId, tenantId, bookedAt: null }, data: { bookBy: null } });
+  },
+
+  async setLeadStatus(tenantId, leadId, status) {
+    await getPrisma().lead.updateMany({ where: { id: leadId, tenantId }, data: { status, lastActivityAt: new Date() } });
+  },
+
   async markLeadBooked(tenantId, leadId, at) {
     const db = getPrisma();
     const lead = await db.lead.findFirst({ where: { id: leadId, tenantId } });
@@ -422,6 +441,33 @@ export const prismaRepository: Repository = {
       },
     });
     return toLead(updated);
+  },
+
+  async advanceLead(tenantId, leadId, trigger, at) {
+    const db = getPrisma();
+    const lead = await db.lead.findFirst({ where: { id: leadId, tenantId }, include: { stage: true } });
+    if (!lead) return null;
+    const next = lead.pipelineId ? await db.pipelineStage.findFirst({ where: { pipelineId: lead.pipelineId, advanceOn: trigger }, orderBy: { order: "asc" } }) : null;
+    // Only ever forward: a payment after the "won" stage does not drag the lead back.
+    if (!next || next.id === lead.stageId || (lead.stage && next.order <= lead.stage.order)) {
+      const touched = await db.lead.update({ where: { id: lead.id }, data: { lastActivityAt: at } });
+      return { lead: toLead(touched), moved: false, stageName: lead.stage?.name ?? null };
+    }
+    const updated = await db.lead.update({
+      where: { id: lead.id },
+      data: {
+        stageId: next.id,
+        stageEnteredAt: at,
+        lastActivityAt: at,
+        ...(next.isWon ? { status: "WON", wonAt: lead.wonAt ?? at } : next.isLost ? { status: "LOST", lostAt: lead.lostAt ?? at } : {}),
+      },
+    });
+    return { lead: toLead(updated), moved: true, stageName: next.name };
+  },
+
+  async findLatestOpenLeadForContact(tenantId, contactId) {
+    const row = await getPrisma().lead.findFirst({ where: { tenantId, contactId, status: { notIn: ["WON", "LOST", "ARCHIVED"] } }, orderBy: { createdAt: "desc" } });
+    return row ? toLead(row) : null;
   },
 
   async unbookLead(tenantId, leadId, bookBy) {
@@ -515,6 +561,11 @@ export const prismaRepository: Repository = {
     return i ? toTenant(i.tenant) : null;
   },
 
+  async findTenantByIntegrationId(provider, integrationId) {
+    const i = await getPrisma().integration.findFirst({ where: { id: integrationId, provider, tenant: { isActive: true } }, include: { tenant: true } });
+    return i ? toTenant(i.tenant) : null;
+  },
+
   async findTenantByChannelAccount(platform, externalAccountId) {
     const c = await getPrisma().channel.findFirst({
       where: { platform, isActive: true, tenant: { isActive: true }, OR: [{ externalAccountId }, { settings: { path: ["igUserId"], equals: externalAccountId } }] },
@@ -582,6 +633,17 @@ export const prismaRepository: Repository = {
     const stale = new Date(now.getTime() - 10 * 60_000);
     const rows = await getPrisma().scheduledAction.findMany({ where: { runAt: { lte: now }, OR: [{ status: "PENDING" }, { status: "RUNNING", lockedAt: { lt: stale } }] }, orderBy: { runAt: "asc" }, take: limit });
     return rows.map(toAction);
+  },
+
+  async schedulerBacklog(now) {
+    const db = getPrisma();
+    const dueWhere = { status: "PENDING" as const, runAt: { lte: now } };
+    const [due, oldest, failedLast24h] = await Promise.all([
+      db.scheduledAction.count({ where: dueWhere }),
+      db.scheduledAction.findFirst({ where: dueWhere, orderBy: { runAt: "asc" }, select: { runAt: true } }),
+      db.scheduledAction.count({ where: { status: "FAILED", ranAt: { gte: new Date(now.getTime() - 24 * 3_600_000) } } }),
+    ]);
+    return { due, oldestDueAgeSeconds: oldest ? Math.max(0, Math.round((now.getTime() - oldest.runAt.getTime()) / 1000)) : null, failedLast24h };
   },
 
   async claimAction(actionId, now, leaseMs) {
@@ -715,7 +777,13 @@ export const prismaRepository: Repository = {
   },
 
   async listLeadsQuietInStage(tenantId, now) {
-    const rows = await getPrisma().lead.findMany({ where: { tenantId, stage: { quietAfterDays: { not: null } }, status: { notIn: ["WON", "LOST", "ARCHIVED"] } }, include: { stage: true } });
+    // Only leads that have sat in a quiet-watched stage for at least a day can qualify; the rest never leave the database.
+    const rows = await getPrisma().lead.findMany({
+      where: { tenantId, stage: { quietAfterDays: { not: null } }, status: { notIn: ["WON", "LOST", "ARCHIVED"] }, OR: [{ lastActivityAt: null }, { lastActivityAt: { lt: new Date(now.getTime() - 86_400_000) } }] },
+      include: { stage: true },
+      orderBy: { lastActivityAt: { sort: "asc", nulls: "first" } },
+      take: 500,
+    });
     const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
     for (const row of rows) {
       const days = row.stage?.quietAfterDays ?? null;
@@ -744,14 +812,40 @@ export const prismaRepository: Repository = {
       const reopened = await db.missedOpportunity.update({ where: { id: existing.id }, data: { status: "DETECTED", summary: data.summary, estimatedValueCents: data.estimatedValueCents, detectedAt: new Date(), resolvedAt: null } });
       return { record: toMissed(reopened), created: true };
     }
-    const created = await db.missedOpportunity.create({
-      data: { tenantId, type: data.type, contactId: data.contactId, leadId: data.leadId, estimatedValueCents: data.estimatedValueCents, summary: data.summary, dedupeKey: data.dedupeKey },
-    });
-    return { record: toMissed(created), created: true };
+    try {
+      const created = await db.missedOpportunity.create({
+        data: { tenantId, type: data.type, contactId: data.contactId, leadId: data.leadId, estimatedValueCents: data.estimatedValueCents, summary: data.summary, dedupeKey: data.dedupeKey },
+      });
+      return { record: toMissed(created), created: true };
+    } catch (error) {
+      // Two overlapping ticks raced on the same subject: the other one won, and this is the same item, not a failure.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+      const winner = await db.missedOpportunity.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+      if (!winner) throw error;
+      return { record: toMissed(winner), created: false };
+    }
   },
 
   async listMissedOpportunities(tenantId, opts = {}) {
     const rows = await getPrisma().missedOpportunity.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}), ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: opts.limit ?? 50 });
+    return rows.map(toMissed);
+  },
+
+  async findMissedOpportunityById(tenantId, id) {
+    const row = await getPrisma().missedOpportunity.findFirst({ where: { id, tenantId } });
+    return row ? toMissed(row) : null;
+  },
+
+  async listOpenMissedOpportunitiesFor(tenantId, subject) {
+    const by: Prisma.MissedOpportunityWhereInput[] = [];
+    if (subject.leadId) by.push({ leadId: subject.leadId });
+    if (subject.contactId) by.push({ contactId: subject.contactId });
+    if (by.length === 0) return [];
+    const rows = await getPrisma().missedOpportunity.findMany({
+      where: { tenantId, status: { in: OPEN_MISSED }, OR: by, ...(subject.types?.length ? { type: { in: subject.types } } : {}) },
+      orderBy: { detectedAt: "asc" },
+      take: 100,
+    });
     return rows.map(toMissed);
   },
 
@@ -784,6 +878,10 @@ export const prismaRepository: Repository = {
 
   async updateAutomationRun(tenantId, runId, patch) {
     await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
+  },
+
+  async countAutomationRuns(tenantId, opts) {
+    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {
@@ -915,6 +1013,11 @@ export const prismaRepository: Repository = {
       orderBy: { scheduledFor: { sort: "asc", nulls: "last" } },
       take: opts.limit ?? 200,
     });
+    return rows.map(toPost);
+  },
+
+  async listSocialPostsForAsset(tenantId, contentAssetId) {
+    const rows = await getPrisma().socialPost.findMany({ where: { tenantId, contentAssetId }, orderBy: { createdAt: "asc" }, take: 50 });
     return rows.map(toPost);
   },
 
@@ -1397,9 +1500,12 @@ export const prismaRepository: Repository = {
     const dayStart = startOfDayInZone(opts.timezone);
     const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60_000);
 
-    const [needsYou, open, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
+    const openWhere = { tenantId, status: { in: OPEN_MISSED }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) } satisfies Prisma.MissedOpportunityWhereInput;
+    const [needsYou, open, atRisk, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
       this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 }),
-      db.missedOpportunity.findMany({ where: { tenantId, status: { in: OPEN_MISSED }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { detectedAt: "desc" }, take: 20 }),
+      db.missedOpportunity.findMany({ where: openWhere, orderBy: { detectedAt: "desc" }, take: 20 }),
+      // The headline sums every open item, not just the twenty shown.
+      db.missedOpportunity.aggregate({ where: openWhere, _sum: { estimatedValueCents: true } }),
       db.missedOpportunity.aggregate({ where: { tenantId, status: "RECOVERED", resolvedAt: { gte: monthStart } }, _sum: { recoveredValueCents: true } }),
       db.lead.count({ where: { tenantId, createdAt: { gte: monthStart } } }),
       db.transaction.aggregate({ where: { tenantId, status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
@@ -1416,7 +1522,7 @@ export const prismaRepository: Repository = {
     const overdue = openInvoices.filter((i) => i.status === "OVERDUE" || (i.dueAt && i.dueAt.getTime() < Date.now()));
     return {
       needsYou,
-      missed: { open: open.map(toMissed), atRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0), recoveredCents: recovered._sum.recoveredValueCents ?? 0 },
+      missed: { open: open.map(toMissed), atRiskCents: atRisk._sum.estimatedValueCents ?? 0, recoveredCents: recovered._sum.recoveredValueCents ?? 0 },
       money: opts.canViewFinances
         ? {
             revenueMonthCents,
@@ -1438,34 +1544,37 @@ export const prismaRepository: Repository = {
 
   async getPortfolio(tenants, now = new Date()) {
     const db = getPrisma();
-    const rows: PortfolioRow[] = [];
-    for (const tenant of tenants) {
+    const rowFor = async (tenant: TenantSummary): Promise<PortfolioRow> => {
       const dayStart = startOfDayInZone(tenant.timezone, now);
       const [slaBreaches, open, exceptionsOpen, contentDue, integrations, leadsToday, budget, spentCents] = await Promise.all([
         this.countLeadsPastSla(tenant.id, now),
-        db.missedOpportunity.findMany({ where: { tenantId: tenant.id, status: { in: OPEN_MISSED } }, select: { estimatedValueCents: true } }),
+        db.missedOpportunity.aggregate({ where: { tenantId: tenant.id, status: { in: OPEN_MISSED } }, _count: { _all: true }, _sum: { estimatedValueCents: true } }),
         db.exceptionItem.count({ where: { tenantId: tenant.id, status: { not: "RESOLVED" } } }),
         db.contentAsset.count({ where: { tenantId: tenant.id, status: "IN_REVIEW" } }),
         db.integration.findMany({ where: { tenantId: tenant.id }, select: { provider: true, status: true, lastError: true } }),
         db.lead.count({ where: { tenantId: tenant.id, createdAt: { gte: dayStart } } }),
-        db.adAccount.aggregate({ where: { tenantId: tenant.id, isActive: true }, _sum: { monthlyBudgetCents: true } }),
+        // Budget and spend must be in the same currency to compare; accounts in another currency are left out of both.
+        db.adAccount.aggregate({ where: { tenantId: tenant.id, isActive: true, currency: tenant.currency.toUpperCase() }, _sum: { monthlyBudgetCents: true } }),
         this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now), undefined, tenant.currency),
       ]);
       const budgetCents = budget._sum.monthlyBudgetCents ?? 0;
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const { daysElapsed, daysInMonth } = monthProgressInZone(tenant.timezone, now);
       const base = {
         tenant,
         slaBreaches,
-        missedOpen: open.length,
-        missedAtRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0),
+        missedOpen: open._count._all,
+        missedAtRiskCents: open._sum.estimatedValueCents ?? 0,
         exceptionsOpen,
         contentDue,
-        adPacing: budgetCents > 0 ? { spentCents, budgetCents, daysElapsed: now.getDate(), daysInMonth } : null,
+        adPacing: budgetCents > 0 ? { spentCents, budgetCents, daysElapsed, daysInMonth } : null,
         integrations,
         leadsToday,
       };
-      rows.push({ ...base, health: healthScore(base) });
-    }
+      return { ...base, health: healthScore(base) };
+    };
+    // A handful of tenants at a time: the portfolio page should not open fifty connections, nor wait on them one by one.
+    const rows: PortfolioRow[] = [];
+    for (let i = 0; i < tenants.length; i += PORTFOLIO_CONCURRENCY) rows.push(...(await Promise.all(tenants.slice(i, i + PORTFOLIO_CONCURRENCY).map(rowFor))));
     return rows.sort((a, b) => a.health - b.health);
   },
 };

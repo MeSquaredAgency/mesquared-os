@@ -7,6 +7,8 @@ import { ContentStudio } from "@/components/console/content-studio";
 import { MoneyStudio } from "@/components/console/money-studio";
 import { OperationsPanels } from "@/components/console/operations-panels";
 import { HealthBar } from "@/components/console/portfolio-table";
+import { HealthNotes } from "@/components/console/health-notes";
+import { healthBreakdown } from "@/lib/health";
 import { HandledForYou } from "@/components/portal/handled-for-you";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { NeedsYou } from "@/components/portal/needs-you";
@@ -70,7 +72,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
         title={tenant.name}
         lede={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {health !== null && <HealthBar score={health} />}
+            {health !== null && row && <HealthBar score={health} deductions={healthBreakdown(row)} />}
             <span aria-hidden="true" className="hidden text-border-strong sm:inline">
               |
             </span>
@@ -111,7 +113,8 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
 
       {tab === "overview" && home && (
         <div className="flex flex-col gap-8">
-          <NeedsYou leads={home.needsYou} fmt={fmt} />
+          {row && <HealthNotes deductions={healthBreakdown(row)} base={base} slug={tenant.slug} />}
+          <NeedsYou leads={home.needsYou} fmt={fmt} tenantSlug={tenant.slug} />
           <MissedOpportunities missed={home.missed} fmt={fmt} />
           <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
         </div>
@@ -202,5 +205,11 @@ async function MoneyTab({ tenant, fmt, integrations }: { tenant: TenantSummary; 
   const [adAccounts, pacing, invoices, links] = await Promise.all([repository.listAdAccounts(tenant.id), pacingStatus(tenant), repository.listInvoices(tenant.id, { limit: 50 }), repository.listTrackedLinks(tenant.id, 30)]);
   const financeIntegrations = integrations.filter((i) => ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].includes(i.provider));
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  return <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={adAccounts.map(({ settings: _settings, ...account }) => account)} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />;
+  // The studio renders accounts without their settings (credentials live there).
+  const accountsForClient = adAccounts.map((account) => {
+    const { settings, ...rest } = account;
+    void settings;
+    return rest;
+  });
+  return <MoneyStudio tenantId={tenant.id} tenantSlug={tenant.slug} fmt={fmt} adAccounts={accountsForClient} pacing={pacing} financeIntegrations={financeIntegrations} invoices={invoices} links={links} appUrl={appUrl} />;
 }

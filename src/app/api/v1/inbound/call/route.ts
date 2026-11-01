@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { onMissedCall, registerAutomations } from "@/lib/automations/handlers";
 import { clientIpFromHeaders } from "@/lib/auth/client-ip";
+import { localKey } from "@/lib/content/calendar";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { takeIntakeTokens } from "@/lib/intake/rate-limit";
@@ -58,8 +59,8 @@ export async function POST(req: NextRequest) {
 
   if (parsed.data.status === "answered") return NextResponse.json({ received: true, outcome: "logged" });
 
-  // One open item per caller per day, whatever the provider sends as an id.
-  const day = new Date().toISOString().slice(0, 10);
+  // One open item per caller per day on the tenant's calendar, whatever the provider sends as an id.
+  const day = localKey(tenant.timezone, new Date());
   const raised = await raiseMissedOpportunity(tenant, {
     type: "MISSED_CALL",
     leadId: null,

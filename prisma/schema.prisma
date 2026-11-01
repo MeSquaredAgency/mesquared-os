@@ -474,6 +474,8 @@ model Lead {
   @@index([tenantId, assigneeId])
   @@index([tenantId, respondBy])
   @@index([tenantId, bookBy])
+  @@index([tenantId, stageId])
+  @@index([contactId, status])
   @@index([tenantId, email])
   @@index([tenantId, phone])
 }
@@ -559,6 +561,7 @@ model Conversation {
   /// One thread per provider thread id per channel (DM conversation, commented post).
   @@unique([tenantId, channel, externalId])
   @@index([tenantId, awaitingReply, lastMessageAt])
+  @@index([tenantId, channel, contactId])
 }
 
 enum MessageDirection {
@@ -602,6 +605,7 @@ model Message {
 
   @@index([tenantId, conversationId, createdAt])
   @@index([tenantId, direction, createdAt])
+  @@index([tenantId, to, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +650,7 @@ model Booking {
 
   @@index([tenantId, startsAt])
   @@index([tenantId, status])
+  @@index([tenantId, leadId, createdAt])
 }
 
 /// Work an automation decided to do later: a reminder, a follow-up, a review request, a chase. Processed by the jobs tick.
@@ -802,6 +807,8 @@ model MissedOpportunity {
 
   @@unique([tenantId, dedupeKey])
   @@index([tenantId, status, detectedAt])
+  @@index([tenantId, leadId, status])
+  @@index([tenantId, contactId, status])
 }
 
 /// A reusable automation type switched on for a tenant. Types are declared in src/lib/automations.
@@ -847,6 +854,7 @@ model AutomationRun {
 
   @@index([tenantId, createdAt])
   @@index([tenantId, typeKey])
+  @@index([tenantId, contactId, typeKey, createdAt])
 }
 
 enum ExceptionStatus {
@@ -1148,6 +1156,7 @@ model Transaction {
 
   @@unique([tenantId, provider, providerId])
   @@index([tenantId, occurredAt])
+  @@index([contactId, status, occurredAt])
 }
 
 // ---------------------------------------------------------------------------

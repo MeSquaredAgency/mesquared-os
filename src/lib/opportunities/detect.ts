@@ -53,7 +53,10 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
     });
     if (r) note("UNANSWERED_ENQUIRY", lead.id);
   }
+  // A lead nobody has replied to has not booked either; its value is already counted once, under the unanswered enquiry.
+  const unanswered = new Set(respond.map((l) => l.id));
   for (const lead of book) {
+    if (unanswered.has(lead.id)) continue;
     const r = await raiseMissedOpportunity(tenant, {
       type: "NOT_BOOKED",
       leadId: lead.id,
@@ -66,9 +69,13 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
     if (r) note("NOT_BOOKED", lead.id);
   }
 
-  // 5. No-shows: bookings marked NO_SHOW that have not been followed up.
-  for (const b of await repository.listBookings(tenant.id, { status: ["NO_SHOW"], limit: 200 })) {
-    const lead = await repository.findLeadById(tenant.id, b.leadId);
+  // 5. No-shows: recent bookings marked NO_SHOW. Older ones were raised when they happened (or are not worth chasing),
+  // so a fixed window keeps the list short and stops closed items coming back week after week.
+  const noShowDays = setting(settings, "noShowLookbackDays", 14);
+  const noShows = await repository.listBookings(tenant.id, { status: ["NO_SHOW"], startsAfter: new Date(now.getTime() - noShowDays * 86_400_000), limit: 200 });
+  const noShowLeads = new Map((await repository.findLeadsByIds(tenant.id, noShows.map((b) => b.leadId))).map((l) => [l.id, l]));
+  for (const b of noShows) {
+    const lead = noShowLeads.get(b.leadId);
     if (!lead) continue;
     const r = await raiseMissedOpportunity(tenant, {
       type: "NO_SHOW",

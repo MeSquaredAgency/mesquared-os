@@ -151,7 +151,7 @@ export async function markInvoicePaidAction(tenantId: string, invoiceId: string)
     await repository.updateInvoice(tenantId, invoiceId, { status: "PAID", paidAt: new Date() });
     await repository.upsertTransactions(tenantId, [{ provider: "MANUAL", providerId: `invoice:${inv.id}`, kind: "PAYMENT", status: "COMPLETED", amountCents: inv.amountDueCents || inv.amountCents, currency: inv.currency, occurredAt: new Date(), note: `Paid: ${inv.number ?? inv.externalId}`, contactId: inv.contactId, customerEmail: inv.customerEmail }]);
     await repository.recordAutomationRun(tenantId, { typeKey: "finance_sync", outcome: "COMPLETED", summary: `${inv.customerName ?? "A customer"} paid ${inv.number ? `invoice ${inv.number}` : "an invoice"} (recorded by the Me² team).`, contactId: inv.contactId });
-    await emit(tenantId, "invoice.paid", { invoiceId: inv.id, amountCents: inv.amountCents, provider: "MANUAL" });
+    await emit(tenantId, "invoice.paid", { invoiceId: inv.id, amountCents: inv.amountCents, provider: "MANUAL", contactId: inv.contactId });
     refresh(tenant);
     return { ok: true, message: "Marked paid and recorded as revenue." };
   } catch (error) {

@@ -3,12 +3,10 @@ import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { verifyTwilioSignature } from "@/lib/intake/channels/twilio";
 import { normalizePhone } from "@/lib/intake/schema";
+import { isStartMessage, isStopMessage } from "@/lib/messaging/keywords";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const STOP_WORDS = /^\s*(stop|stopall|unsubscribe|cancel|end|quit)\b/i;
-const START_WORDS = /^\s*(start|unstop|yes)\b/i;
 
 
 /**
@@ -41,11 +39,11 @@ export async function POST(req: NextRequest) {
   const contact = await repository.upsertContact(tenant.id, { firstName: null, lastName: null, email: null, phone: from, company: null });
   await repository.recordMessage(tenant.id, { contactId: contact.id, channel: "SMS", direction: "INBOUND", sender: "CONTACT", body: body || "(empty)", status: "RECEIVED", providerMessageId: params.MessageSid ?? null });
 
-  if (STOP_WORDS.test(body)) {
+  if (isStopMessage(body)) {
     await repository.setContactConsent(tenant.id, contact.id, "sms", false, "STOP reply");
     await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "COMPLETED", summary: "A contact replied STOP; no more text messages will be sent to them.", contactId: contact.id });
     await emit(tenant.id, "consent.withdrawn", { contactId: contact.id, channel: "sms" });
-  } else if (START_WORDS.test(body)) {
+  } else if (isStartMessage(body)) {
     await repository.setContactConsent(tenant.id, contact.id, "sms", true, "START reply");
     await emit(tenant.id, "consent.granted", { contactId: contact.id, channel: "sms" });
   } else {

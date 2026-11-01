@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
-import { monthBucketInZone, startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, monthProgressInZone } from "@/lib/utils";
 import type { AdAccountRecord, AdPlatform, TenantSummary } from "@/lib/types";
 import { adsProviderFor, hasRealAdsProvider, type AdsCredentials } from "./providers";
 import { registerBuiltInAdsProviders } from "./providers/builtin";
@@ -86,12 +86,11 @@ export interface PacingStatus {
 
 export async function pacingStatus(tenant: TenantSummary, now = new Date()): Promise<PacingStatus | null> {
   const accounts = await repository.listAdAccounts(tenant.id, { activeOnly: true });
-  const budgetCents = accounts.reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
+  const budgetCents = accounts.filter((a) => a.currency.toUpperCase() === tenant.currency.toUpperCase()).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
   if (budgetCents === 0) return null;
-  const monthStart = startOfMonthInZone(tenant.timezone, now);
-  const spentCents = await repository.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now));
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysElapsed = Math.max(1, Math.min(daysInMonth, Math.floor((now.getTime() - monthStart.getTime()) / 86_400_000) + 1));
+  // Spend in the tenant's currency only, so it compares with the budget; both follow the tenant's calendar month.
+  const spentCents = await repository.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now), undefined, tenant.currency);
+  const { daysElapsed, daysInMonth } = monthProgressInZone(tenant.timezone, now);
   const expectedCents = Math.round((budgetCents * daysElapsed) / daysInMonth);
   const driftPct = expectedCents > 0 ? Math.round(((spentCents - expectedCents) / expectedCents) * 100) : null;
   const projectedCents = Math.round((spentCents / daysElapsed) * daysInMonth);
@@ -107,8 +106,11 @@ export async function checkPacing(tenant: TenantSummary, now = new Date()): Prom
   const threshold = typeof settings.pacingDriftPct === "number" ? settings.pacingDriftPct : 25;
   if (Math.abs(status.driftPct) < threshold) return status;
   const direction = status.driftPct > 0 ? "over" : "under";
-  const open = await repository.listExceptions([tenant.id]);
-  if (open.some((e) => e.reason.includes(`running ${direction} budget`))) return status;
+  // One alert per workspace per calendar month and direction, closed or not: the bucket remembers it was raised,
+  // so an operator who closes the exception is not handed the same alert again tomorrow.
+  const month = monthBucketInZone(tenant.timezone, now).toISOString().slice(0, 7);
+  const { count } = await repository.rateLimitHit(`pacing:${tenant.id}:${month}:${direction}`, 32 * 86_400_000, now);
+  if (count > 1) return status;
   const money = (c: number) => (c / 100).toLocaleString(tenant.locale, { style: "currency", currency: tenant.currency, maximumFractionDigits: 0 });
   await repository.createException(tenant.id, {
     reason: `Ad spend at ${tenant.name} is running ${direction} budget: ${money(status.spentCents)} spent by day ${status.daysElapsed} of ${status.daysInMonth} against ${money(status.budgetCents)} planned (${status.driftPct > 0 ? "+" : ""}${status.driftPct}%), heading for ${money(status.projectedCents)}.`,

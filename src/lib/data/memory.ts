@@ -36,7 +36,7 @@ import type {
   UserRecord,
   WebEventRecord,
 } from "@/lib/types";
-import { monthBucketInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, monthProgressInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/apply";
 import {
   TenantMismatchError,
@@ -406,6 +406,25 @@ export const memoryRepository: Repository = {
     return store().leads.find((l) => l.id === leadId && l.tenantId === tenantId) ?? null;
   },
 
+  async findLeadsByIds(tenantId, leadIds) {
+    const wanted = new Set(leadIds);
+    return store().leads.filter((l) => l.tenantId === tenantId && wanted.has(l.id));
+  },
+
+  async settleLeadSla(tenantId, leadId, at, opts = {}) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return;
+    lead.firstResponseAt ??= at;
+    if (opts.booking && !lead.bookedAt) lead.bookBy = null;
+  },
+
+  async setLeadStatus(tenantId, leadId, status) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return;
+    lead.status = status;
+    lead.lastActivityAt = new Date();
+  },
+
   async markLeadBooked(tenantId, leadId, at) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (!lead) return null;
@@ -419,6 +438,29 @@ export const memoryRepository: Repository = {
     }
     lead.lastActivityAt = at;
     return lead;
+  },
+
+  async advanceLead(tenantId, leadId, trigger, at) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return null;
+    const pipeline = store().config[tenantId]?.pipelines.find((p) => p.id === lead.pipelineId);
+    const current = pipeline?.stages.find((s) => s.id === lead.stageId) ?? null;
+    const next = pipeline?.stages.filter((s) => s.advanceOn === trigger).sort((a, b) => a.order - b.order)[0] ?? null;
+    lead.lastActivityAt = at;
+    if (!next || next.id === lead.stageId || (current && next.order <= current.order)) return { lead, moved: false, stageName: current?.name ?? null };
+    lead.stageId = next.id;
+    lead.stageEnteredAt = at;
+    if (next.isWon) lead.status = "WON";
+    else if (next.isLost) lead.status = "LOST";
+    return { lead, moved: true, stageName: next.name };
+  },
+
+  async findLatestOpenLeadForContact(tenantId, contactId) {
+    return (
+      store()
+        .leads.filter((l) => l.tenantId === tenantId && l.contactId === contactId && l.status !== "WON" && l.status !== "LOST" && l.status !== "ARCHIVED")
+        .sort(byNewest)[0] ?? null
+    );
   },
 
   async unbookLead(tenantId, leadId, bookBy) {
@@ -514,6 +556,11 @@ export const memoryRepository: Repository = {
     return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
   },
 
+  async findTenantByIntegrationId(provider, integrationId) {
+    const i = store().integrations.find((x) => x.id === integrationId && x.provider === provider);
+    return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
+  },
+
   async findTenantByChannelAccount(platform, externalAccountId) {
     const c = store().channels.find((x) => x.platform === platform && x.isActive && (x.externalAccountId === externalAccountId || x.settings.igUserId === externalAccountId));
     return c ? (store().tenants.find((t) => t.id === c.tenantId) ?? null) : null;
@@ -565,6 +612,12 @@ export const memoryRepository: Repository = {
       .actions.filter((a) => (a.status === "PENDING" || (a.status === "RUNNING" && a.lockedAt && now.getTime() - a.lockedAt.getTime() > 10 * 60_000)) && a.runAt <= now)
       .sort((a, b) => a.runAt.getTime() - b.runAt.getTime())
       .slice(0, limit);
+  },
+
+  async schedulerBacklog(now) {
+    const due = store().actions.filter((a) => a.status === "PENDING" && a.runAt <= now);
+    const oldest = due.reduce<Date | null>((min, a) => (!min || a.runAt < min ? a.runAt : min), null);
+    return { due: due.length, oldestDueAgeSeconds: oldest ? Math.max(0, Math.round((now.getTime() - oldest.getTime()) / 1000)) : null, failedLast24h: store().actions.filter((a) => a.status === "FAILED").length };
   },
 
   async claimAction(actionId, now, leaseMs) {
@@ -765,6 +818,19 @@ export const memoryRepository: Repository = {
       .slice(0, opts.limit ?? 50);
   },
 
+  async findMissedOpportunityById(tenantId, moId) {
+    return store().missed.find((x) => x.id === moId && x.tenantId === tenantId) ?? null;
+  },
+
+  async listOpenMissedOpportunitiesFor(tenantId, subject) {
+    if (!subject.leadId && !subject.contactId) return [];
+    const types = subject.types?.length ? new Set(subject.types) : null;
+    return store()
+      .missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && (!types || types.has(m.type)) && ((subject.leadId && m.leadId === subject.leadId) || (subject.contactId && m.contactId === subject.contactId)))
+      .sort((a, b) => a.detectedAt.getTime() - b.detectedAt.getTime())
+      .slice(0, 100);
+  },
+
   async resolveMissedOpportunity(tenantId, moId, status, recoveredValueCents) {
     const m = store().missed.find((x) => x.id === moId && x.tenantId === tenantId);
     if (!m) return null;
@@ -804,6 +870,10 @@ export const memoryRepository: Repository = {
   async updateAutomationRun(tenantId, runId, patch) {
     const run = store().runs.find((r) => r.id === runId && r.tenantId === tenantId);
     if (run) Object.assign(run, { outcome: patch.outcome, summary: patch.summary });
+  },
+
+  async countAutomationRuns(tenantId, opts) {
+    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {
@@ -854,7 +924,7 @@ export const memoryRepository: Repository = {
     const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
     if (!ex) return null;
     ex.status = "RESOLVED";
-    void resolution;
+    (ex as ExceptionRecord & { resolution?: string }).resolution = resolution;
     return ex;
   },
 
@@ -972,6 +1042,10 @@ export const memoryRepository: Repository = {
       .posts.filter((p) => p.tenantId === tenantId && (!statuses || statuses.has(p.status)) && (!opts.from || (p.scheduledFor && p.scheduledFor >= opts.from)) && (!opts.to || (p.scheduledFor && p.scheduledFor < opts.to)))
       .sort((a, b) => (a.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY) - (b.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY))
       .slice(0, opts.limit ?? 200);
+  },
+
+  async listSocialPostsForAsset(tenantId, contentAssetId) {
+    return store().posts.filter((p) => p.tenantId === tenantId && p.contentAssetId === contentAssetId);
   },
 
   async findSocialPostById(tenantId, postId) {
@@ -1524,9 +1598,9 @@ export const memoryRepository: Repository = {
       const dayStart = startOfDayInZone(tenant.timezone, now).getTime();
       const { respond, book } = await this.listLeadsPastSla(tenant.id, now);
       const open = s.missed.filter((m) => m.tenantId === tenant.id && OPEN_MISSED.has(m.status));
-      const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
-      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now)), budgetCents } : null;
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive && a.currency.toUpperCase() === tenant.currency.toUpperCase()).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
+      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now), undefined, tenant.currency), budgetCents } : null;
+      const { daysElapsed, daysInMonth } = monthProgressInZone(tenant.timezone, now);
       const base = {
         tenant,
         slaBreaches: respond.length + book.length,
@@ -1534,7 +1608,7 @@ export const memoryRepository: Repository = {
         missedAtRiskCents: open.reduce((sum, m) => sum + m.estimatedValueCents, 0),
         exceptionsOpen: s.exceptions.filter((e) => e.tenantId === tenant.id && e.status !== "RESOLVED").length,
         contentDue: s.assets.filter((a) => a.tenantId === tenant.id && a.status === "IN_REVIEW").length,
-        adPacing: spend ? { ...spend, daysElapsed: now.getDate(), daysInMonth } : null,
+        adPacing: spend ? { ...spend, daysElapsed, daysInMonth } : null,
         integrations: s.integrations.filter((i) => i.tenantId === tenant.id).map((i) => ({ provider: i.provider, status: i.status, lastError: i.lastError })),
         leadsToday: s.leads.filter((l) => l.tenantId === tenant.id && l.createdAt.getTime() >= dayStart).length,
       };

@@ -20,10 +20,15 @@ export const dynamic = "force-dynamic";
  * Body:     see src/lib/intake/schema.ts
  */
 export async function POST(req: NextRequest) {
+  // The caller's address is throttled before the key is even looked up, so a flood of bad keys costs no database time;
+  // the bucket is intake's own, separate from the page beacon's, so a busy office's analytics cannot block its enquiries.
+  const ipLimit = await takeIntakeTokens([`ip:intake:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  if (!ipLimit.allowed) return NextResponse.json({ error: "Too many requests. Slow down and retry." }, { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSeconds) } });
+
   const auth = await resolveTenantFromRequest(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const limit = await takeIntakeTokens([auth.tenant.id, `ip:${clientIpFromHeaders((n) => req.headers.get(n))}`]);
+  const limit = await takeIntakeTokens([auth.tenant.id]);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many requests for this workspace. Slow down and retry." },
