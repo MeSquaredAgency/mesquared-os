@@ -1,4 +1,5 @@
 import { repository } from "@/lib/data";
+import type { AlertRecipient } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
 import { channelFor, destinationAllowed, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
@@ -16,9 +17,35 @@ import type { LeadRecord, TenantSummary } from "@/lib/types";
  * Every step logs an automation run so "Handled for you" reflects reality,
  * including when nothing could be sent.
  */
-export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadRecord): Promise<void> {
+/**
+ * Who gets a new lead. With `assign: "round_robin"` on the auto-reply
+ * automation, the lead goes to whichever alert recipient has had the fewest
+ * new leads in the last seven days (ties go to the first in the list), and
+ * only that person is alerted. Otherwise nobody is assigned and everyone
+ * holding RECEIVE_LEAD_ALERTS is told, as before.
+ */
+export async function assignNewLead(tenant: TenantSummary, lead: LeadRecord, settings: Record<string, unknown>, recipients: AlertRecipient[]): Promise<{ lead: LeadRecord; alert: AlertRecipient[]; assigned: AlertRecipient | null }> {
+  if (settings.assign !== "round_robin" || recipients.length === 0) return { lead, alert: recipients, assigned: null };
+  if (lead.assigneeId) {
+    const owner = recipients.find((r) => r.userId === lead.assigneeId);
+    return { lead, alert: owner ? [owner] : recipients, assigned: null };
+  }
+  const pool = Array.isArray(settings.assignTo) && settings.assignTo.length ? recipients.filter((r) => (settings.assignTo as unknown[]).includes(r.userId)) : recipients;
+  const candidates = pool.length ? pool : recipients;
+  const counts = await repository.countLeadsByAssignee(tenant.id, new Date(Date.now() - 7 * 86_400_000));
+  const chosen = candidates.reduce((best, r) => ((counts[r.userId] ?? 0) < (counts[best.userId] ?? 0) ? r : best), candidates[0]);
+  await repository.assignLead(tenant.id, lead.id, chosen.userId);
+  await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "COMPLETED", summary: `Assigned ${leadDisplayName(lead)} to ${chosen.name ?? chosen.email}.`, leadId: lead.id, contactId: lead.contactId });
+  return { lead: { ...lead, assigneeId: chosen.userId }, alert: [chosen], assigned: chosen };
+}
+
+export async function runGreenLeadPlaybook(tenant: TenantSummary, incoming: LeadRecord): Promise<void> {
   const automations = (await repository.getTenantConfig(tenant.id)).automations;
   const enabled = (key: string) => automations.find((a) => a.typeKey === key)?.enabled ?? false;
+  const autoReply = automations.find((a) => a.typeKey === "enquiry_auto_reply");
+  // 0. Decide whose lead it is before anything is sent, so the acknowledgement can be signed by that person.
+  const allRecipients = await repository.listAlertRecipients(tenant.id);
+  const { lead, alert: recipients } = await assignNewLead(tenant, incoming, autoReply?.settings ?? {}, allRecipients);
   const name = leadDisplayName(lead);
   const bookingUrl = await bookingLinkFor(tenant, lead);
   let acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" = "NONE";
@@ -68,8 +95,7 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, lead: LeadReco
     await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
   }
 
-  // 3. Alert the assigned people
-  const recipients = await repository.listAlertRecipients(tenant.id);
+  // 3. Alert the assigned person, or everyone who holds lead alerts when nobody is assigned.
   if (recipients.length > 0) {
     const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
     const mail = templates.leadAlertEmail({ tenant, leadName: name, summary: lead.message ?? "(no message)", score: lead.intentScore ?? 0, reason: lead.qualificationReason ?? "", phone: lead.phone, email: lead.email, portalUrl, acknowledged });

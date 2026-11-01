@@ -155,6 +155,10 @@ export async function processIntake(tenant: TenantSummary, input: IntakeBody, ra
   // RED enquiries are answered (or honestly logged as filed) by the automation layer off lead.qualified.
   if (green) bookingUrl = await bookingLinkFor(tenant, lead);
 
+  // The safety net goes in before the playbook runs: if this request dies mid-playbook, the tick runs it in three
+  // minutes, well inside the response SLA. A playbook that did run leaves a log line, and the net does nothing.
+  if (green) await repository.scheduleAction(tenant.id, { typeKey: "playbook", action: "ensure", runAt: new Date(now + 3 * 60_000), payload: { leadId: lead.id, contactId: contact.id }, dedupeKey: `playbook:ensure:${lead.id}` }).catch(() => {});
+
   // The green-lead playbook (acknowledgement, alerts, booking) runs off this event.
   await emit(tenant.id, "lead.qualified", { leadId: lead.id, tenantSlug: tenant.slug, ticketType: qualification.ticketType, intentScore: qualification.intentScore, classifier: qualification.classifier });
 

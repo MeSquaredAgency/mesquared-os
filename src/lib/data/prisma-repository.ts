@@ -886,7 +886,12 @@ export const prismaRepository: Repository = {
   },
 
   async countAutomationRuns(tenantId, opts) {
-    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
+    return getPrisma().automationRun.count({ where: { tenantId, typeKey: opts.typeKey, ...(opts.contactId ? { contactId: opts.contactId } : {}), ...(opts.leadId ? { leadId: opts.leadId } : {}), ...(opts.outcome ? { outcome: opts.outcome } : {}), ...(opts.since ? { createdAt: { gte: opts.since } } : {}) } });
+  },
+
+  async countLeadsByAssignee(tenantId, since) {
+    const groups = await getPrisma().lead.groupBy({ by: ["assigneeId"], where: { tenantId, createdAt: { gte: since }, assigneeId: { not: null } }, _count: { _all: true } });
+    return Object.fromEntries(groups.filter((g) => g.assigneeId).map((g) => [g.assigneeId as string, g._count._all]));
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {

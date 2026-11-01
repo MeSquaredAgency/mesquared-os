@@ -686,7 +686,9 @@ export interface Repository {
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
   /** How many runs match; the throttles ("one review ask per person per quarter") read this instead of scanning history. */
-  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
+  countAutomationRuns(tenantId: string, opts: { typeKey: string; contactId?: string | null; leadId?: string | null; outcome?: AutomationOutcome; since?: Date }): Promise<number>;
+  /** Leads created since `since`, grouped by assignee; how round-robin finds the person with the lightest week. */
+  countLeadsByAssignee(tenantId: string, since: Date): Promise<Record<string, number>>;
   /** Creates the exception, or reopens the one already attached to the same missed opportunity. */
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */

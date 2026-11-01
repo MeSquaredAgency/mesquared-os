@@ -100,6 +100,26 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   with tenant, action and event ids as fields, so Cloudflare log queries can
   filter per workspace.
 
+## Third batch (same branch)
+
+- **Round-robin lead assignment.** With "Share out in turn" on (Settings →
+  Modules & automations → Lead assignment), a new green lead goes to the
+  alert holder with the fewest new leads this week, only that person is
+  alerted, and the acknowledgement is signed as them when that is on. Off by
+  default: everyone with lead alerts is told, as before.
+- **The Monday email.** Owners and managers get one plain email on Monday
+  morning: enquiries, what was handled, what was recovered and for how much,
+  what is still at risk, the month's money (only for people who may see it)
+  and whether anyone is waiting. On by default (`weekly_digest`); a missed
+  Monday sends on Tuesday.
+- **A safety net under the playbook.** Intake queues a `playbook:ensure`
+  step three minutes out. If the request died before the playbook logged
+  anything, the tick runs it then; a lead that already had its turn is left
+  alone, so there is never a second acknowledgement. This is the durable floor
+  the outbox would have given, without the duplicate-send risk.
+- Settings lists every automation type the registry knows, with its default
+  state, so a type added after a workspace was set up can still be switched.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

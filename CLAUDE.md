@@ -59,6 +59,7 @@ tested modules free of `next/*` imports and JSX.
 - `src/lib/intake/channels/meta-lead.ts` — one Meta lead form submission through intake, with a queued retry (`meta_lead:fetch`) when Graph does not answer
 - `src/lib/health.ts` — the portfolio health score and its breakdown in words; `src/lib/portal/actions.ts` — the client's own actions ("I've called them"); `src/lib/pipelines/advance.ts` — stages move on attended appointments and payments
 - `src/lib/log.ts` — `log(level, event, fields)` writes one JSON line for the scheduler and event paths; fields are ids, counts and short messages, never payloads or secrets
+- `src/lib/playbook` — the green-lead playbook; `assignNewLead` does round-robin when `enquiry_auto_reply.settings.assign === "round_robin"`; intake queues `playbook:ensure` as the safety net. `src/lib/digest/weekly.ts` — the Monday summary email (`weekly_digest`); `automationState()` reads a type with its registry default when a workspace has no row yet
 - `src/components/shell/filter-chips.tsx` — URL-driven filter pills; a filtered list is a shareable, server-rendered URL
 - `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
 - `src/lib/data` — repository contract with Prisma and in-memory implementations

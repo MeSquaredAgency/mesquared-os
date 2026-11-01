@@ -224,6 +224,43 @@ export function invoicePaidThanks({ tenant, firstName, channel, number }: Base &
   return pack(channel, `Thanks from ${tenant.name}`, [hi(firstName), `thank you, your payment for ${number ? `invoice ${number}` : "your invoice"} has come through.`], tenant);
 }
 
+export interface WeeklyDigestInput {
+  tenant: TenantSummary;
+  firstName: string | null;
+  /** "27 October – 2 November" */
+  weekLabel: string;
+  leads: number;
+  needsYou: number;
+  recovered: { count: number; cents: number };
+  atRisk: { count: number; cents: number };
+  handled: number;
+  /** Null for a reader without VIEW_FINANCES. */
+  money: { revenueCents: number; adSpendCents: number; costPerLeadCents: number | null } | null;
+  portalUrl: string;
+}
+
+/** The Monday email to owners and managers: the week in plain sentences, nothing to click unless something needs them. */
+export function weeklyDigestEmail(input: WeeklyDigestInput): { subject: string; body: string } {
+  const { tenant } = input;
+  const money = (cents: number) => new Intl.NumberFormat(tenant.locale, { style: "currency", currency: tenant.currency, maximumFractionDigits: 0 }).format(cents / 100);
+  const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+  const lines: (string | null)[] = [
+    hi(input.firstName),
+    "",
+    `Here is how last week went at ${tenant.name} (${input.weekLabel}).`,
+    "",
+    `• ${n(input.leads, "new enquiry", "new enquiries")} came in. ${input.handled > 0 ? `We handled ${n(input.handled, "thing")} without needing you.` : ""}`.trim(),
+    input.recovered.count > 0 ? `• ${n(input.recovered.count, "opportunity", "opportunities")} that would have slipped came back: ${money(input.recovered.cents)} recovered.` : "• Nothing slipped through that needed recovering.",
+    input.atRisk.count > 0 ? `• ${n(input.atRisk.count, "thing")} still at risk, worth about ${money(input.atRisk.cents)}; we are on it.` : null,
+    input.money ? `• Money: ${money(input.money.revenueCents)} came in this month against ${money(input.money.adSpendCents)} of ads${input.money.costPerLeadCents !== null ? `, about ${money(input.money.costPerLeadCents)} per lead` : ""}.` : null,
+    "",
+    input.needsYou > 0 ? `${n(input.needsYou, "person", "people")} ${input.needsYou === 1 ? "is" : "are"} waiting for you right now: ${input.portalUrl}` : `Nothing needs you this morning. Your portal: ${input.portalUrl}`,
+    "",
+    staffSignoff(tenant),
+  ];
+  return { subject: `${tenant.name}: your week (${input.weekLabel})`, body: lines.filter((l): l is string => l !== null).join("\n") };
+}
+
 export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }: { tenant: TenantSummary; summary: string; suggestedAction: string; portalUrl: string }) {
   return {
     subject: `${tenant.name}: needs a person — ${summary.slice(0, 60)}`,

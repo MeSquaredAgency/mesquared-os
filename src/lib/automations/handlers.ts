@@ -15,6 +15,9 @@ import { runSocialSync } from "@/lib/social/sync";
 import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
 import { registerReconciler } from "@/lib/opportunities/reconcile";
 import { expireStaleOpportunities } from "@/lib/opportunities/expire";
+import { sendWeeklyDigest } from "@/lib/digest/weekly";
+import { runGreenLeadPlaybook } from "@/lib/playbook";
+import { log } from "@/lib/log";
 import { registerPipelineAdvancement } from "@/lib/pipelines/advance";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -313,6 +316,19 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
     }
     case "sla_watch:expire": {
       await expireStaleOpportunities(tenant, new Date());
+      return;
+    }
+    case "weekly_digest:send": {
+      await sendWeeklyDigest(tenant, new Date());
+      return;
+    }
+    case "playbook:ensure": {
+      // The safety net under the inline playbook: if the request that created the lead died before the playbook
+      // logged anything, run it now. A lead with any auto-reply run already had its turn; never a second message.
+      if (!lead || lead.ticketType !== "GREEN") return;
+      if ((await repository.countAutomationRuns(tenant.id, { typeKey: "enquiry_auto_reply", leadId: lead.id })) > 0) return;
+      log("warn", "playbook.ensure_ran", { tenantId: tenant.id, leadId: lead.id });
+      await runGreenLeadPlaybook(tenant, lead);
       return;
     }
     case "meta_lead:fetch": {

@@ -880,7 +880,13 @@ export const memoryRepository: Repository = {
   },
 
   async countAutomationRuns(tenantId, opts) {
-    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
+    return store().runs.filter((r) => r.tenantId === tenantId && r.typeKey === opts.typeKey && (!opts.contactId || r.contactId === opts.contactId) && (!opts.leadId || r.leadId === opts.leadId) && (!opts.outcome || r.outcome === opts.outcome) && (!opts.since || r.createdAt >= opts.since)).length;
+  },
+
+  async countLeadsByAssignee(tenantId, since) {
+    const out: Record<string, number> = {};
+    for (const l of store().leads) if (l.tenantId === tenantId && l.assigneeId && l.createdAt >= since) out[l.assigneeId] = (out[l.assigneeId] ?? 0) + 1;
+    return out;
   },
 
   async listAutomationRuns(tenantId, limit = 50, opts = {}) {
@@ -1209,8 +1215,14 @@ export const memoryRepository: Repository = {
   },
 
   async setAutomation(tenantId, typeKey, patch) {
-    const a = store().config[tenantId]?.automations.find((x) => x.typeKey === typeKey);
-    if (!a) return;
+    const cfg = store().config[tenantId];
+    if (!cfg) return;
+    let a = cfg.automations.find((x) => x.typeKey === typeKey);
+    if (!a) {
+      // A type added to the registry after the workspace was set up: the row appears the first time it is touched.
+      a = { typeKey, enabled: patch.enabled ?? false, settings: {} };
+      cfg.automations.push(a);
+    }
     if (patch.enabled !== undefined) a.enabled = patch.enabled;
     if (patch.settings) a.settings = { ...a.settings, ...patch.settings };
   },

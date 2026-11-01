@@ -1,5 +1,6 @@
 import { ACTION_LEASE_MS, NonRetryableError, registerAutomations, runScheduledAction } from "@/lib/automations/handlers";
 import { repository } from "@/lib/data";
+import { weekBounds } from "@/lib/digest/weekly";
 import { detectForTenant } from "@/lib/opportunities/detect";
 import { registerPlaybook } from "@/lib/playbook";
 import { registerContentEngine } from "@/lib/content/engine";
@@ -51,7 +52,12 @@ async function scheduleRecurring(tenant: TenantSummary, now: Date) {
   const batchAt = morning > now ? morning : now;
   const dailyAt = new Date(batchAt.getTime() + 30 * 60_000);
   const hourBucket = now.toISOString().slice(0, 13);
+  // Monday morning in the tenant's zone: the week's summary email, keyed by the week so a missed Monday still sends on Tuesday.
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: tenant.timezone, weekday: "short" }).format(now);
+  const { end: weekStart } = weekBounds(tenant.timezone, tenant.locale, now);
+  const weekly = weekday === "Mon" || weekday === "Tue" ? [{ typeKey: "weekly_digest", action: "send", runAt: batchAt, dedupeKey: `digest:weekly:${localKey(tenant.timezone, weekStart)}` }] : [];
   const jobs = [
+    ...weekly,
     { typeKey: "content_engine", action: "batch", runAt: batchAt, dedupeKey: `content:batch:${day}` },
     { typeKey: "ads_sync", action: "run", runAt: dailyAt, dedupeKey: `ads_sync:${day}` },
     { typeKey: "finance_sync", action: "run", runAt: dailyAt, dedupeKey: `finance_sync:${day}` },
