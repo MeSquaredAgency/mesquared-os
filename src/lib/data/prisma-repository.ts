@@ -534,6 +534,11 @@ export const prismaRepository: Repository = {
     return i ? toTenant(i.tenant) : null;
   },
 
+  async findTenantByIntegrationId(provider, integrationId) {
+    const i = await getPrisma().integration.findFirst({ where: { id: integrationId, provider, tenant: { isActive: true } }, include: { tenant: true } });
+    return i ? toTenant(i.tenant) : null;
+  },
+
   async findTenantByChannelAccount(platform, externalAccountId) {
     const c = await getPrisma().channel.findFirst({
       where: { platform, isActive: true, tenant: { isActive: true }, OR: [{ externalAccountId }, { settings: { path: ["igUserId"], equals: externalAccountId } }] },
@@ -745,7 +750,13 @@ export const prismaRepository: Repository = {
   },
 
   async listLeadsQuietInStage(tenantId, now) {
-    const rows = await getPrisma().lead.findMany({ where: { tenantId, stage: { quietAfterDays: { not: null } }, status: { notIn: ["WON", "LOST", "ARCHIVED"] } }, include: { stage: true } });
+    // Only leads that have sat in a quiet-watched stage for at least a day can qualify; the rest never leave the database.
+    const rows = await getPrisma().lead.findMany({
+      where: { tenantId, stage: { quietAfterDays: { not: null } }, status: { notIn: ["WON", "LOST", "ARCHIVED"] }, OR: [{ lastActivityAt: null }, { lastActivityAt: { lt: new Date(now.getTime() - 86_400_000) } }] },
+      include: { stage: true },
+      orderBy: { lastActivityAt: { sort: "asc", nulls: "first" } },
+      take: 500,
+    });
     const out: { lead: LeadRecord; stageName: string; quietDays: number }[] = [];
     for (const row of rows) {
       const days = row.stage?.quietAfterDays ?? null;
@@ -971,6 +982,11 @@ export const prismaRepository: Repository = {
       orderBy: { scheduledFor: { sort: "asc", nulls: "last" } },
       take: opts.limit ?? 200,
     });
+    return rows.map(toPost);
+  },
+
+  async listSocialPostsForAsset(tenantId, contentAssetId) {
+    const rows = await getPrisma().socialPost.findMany({ where: { tenantId, contentAssetId }, orderBy: { createdAt: "asc" }, take: 50 });
     return rows.map(toPost);
   },
 

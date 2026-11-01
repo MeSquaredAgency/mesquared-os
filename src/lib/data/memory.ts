@@ -533,6 +533,11 @@ export const memoryRepository: Repository = {
     return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
   },
 
+  async findTenantByIntegrationId(provider, integrationId) {
+    const i = store().integrations.find((x) => x.id === integrationId && x.provider === provider);
+    return i ? (store().tenants.find((t) => t.id === i.tenantId) ?? null) : null;
+  },
+
   async findTenantByChannelAccount(platform, externalAccountId) {
     const c = store().channels.find((x) => x.platform === platform && x.isActive && (x.externalAccountId === externalAccountId || x.settings.igUserId === externalAccountId));
     return c ? (store().tenants.find((t) => t.id === c.tenantId) ?? null) : null;
@@ -892,7 +897,7 @@ export const memoryRepository: Repository = {
     const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
     if (!ex) return null;
     ex.status = "RESOLVED";
-    void resolution;
+    (ex as ExceptionRecord & { resolution?: string }).resolution = resolution;
     return ex;
   },
 
@@ -1010,6 +1015,10 @@ export const memoryRepository: Repository = {
       .posts.filter((p) => p.tenantId === tenantId && (!statuses || statuses.has(p.status)) && (!opts.from || (p.scheduledFor && p.scheduledFor >= opts.from)) && (!opts.to || (p.scheduledFor && p.scheduledFor < opts.to)))
       .sort((a, b) => (a.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY) - (b.scheduledFor?.getTime() ?? Number.POSITIVE_INFINITY))
       .slice(0, opts.limit ?? 200);
+  },
+
+  async listSocialPostsForAsset(tenantId, contentAssetId) {
+    return store().posts.filter((p) => p.tenantId === tenantId && p.contentAssetId === contentAssetId);
   },
 
   async findSocialPostById(tenantId, postId) {

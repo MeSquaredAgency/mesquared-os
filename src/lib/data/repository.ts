@@ -597,6 +597,8 @@ export interface Repository {
   upsertIntegration(tenantId: string, data: IntegrationUpsert): Promise<IntegrationSettings>;
   /** Resolves which tenant owns an external account on a provider (a Meta page id, an inbound email address). */
   findTenantByIntegrationAccount(provider: import("@/lib/types").IntegrationProvider, externalAccountId: string): Promise<TenantSummary | null>;
+  /** The active tenant that owns an integration row; how a per-integration webhook URL finds its workspace in one query. */
+  findTenantByIntegrationId(provider: import("@/lib/types").IntegrationProvider, integrationId: string): Promise<TenantSummary | null>;
   /**
    * Resolves which active tenant owns an active social channel by the platform's own account id
    * (an Instagram business account id, a GBP location name). For Instagram the id may sit in
@@ -696,6 +698,8 @@ export interface Repository {
   createSocialPosts(tenantId: string, items: NewSocialPost[]): Promise<SocialPostRecord[]>;
   listSocialPosts(tenantId: string, opts?: { status?: PostStatus[]; from?: Date; to?: Date; limit?: number }): Promise<SocialPostRecord[]>;
   findSocialPostById(tenantId: string, postId: string): Promise<SocialPostRecord | null>;
+  /** Every post made from one content asset; how approval stays idempotent however many posts the workspace has. */
+  listSocialPostsForAsset(tenantId: string, contentAssetId: string): Promise<SocialPostRecord[]>;
   updateSocialPost(tenantId: string, postId: string, patch: SocialPostPatch): Promise<SocialPostRecord | null>;
   /** SCHEDULED posts across all tenants whose time has come (read-only; claim with claimSocialPost). */
   listDueSocialPosts(now: Date, limit?: number): Promise<SocialPostRecord[]>;

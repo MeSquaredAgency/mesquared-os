@@ -52,3 +52,12 @@ export function healthTone(score: number): "good" | "watch" | "bad" {
   if (score >= 55) return "watch";
   return "bad";
 }
+
+export const HEALTH_TONE_LABEL = { good: "Healthy", watch: "Watch", bad: "Needs attention" } as const;
+
+/** "68 of 100: Watch. 2 SLA breaches (−20), 1 failing integration (−8)." */
+export function healthTitle(score: number, deductions: HealthDeduction[] = []): string {
+  const head = `${score} of 100: ${HEALTH_TONE_LABEL[healthTone(score)]}`;
+  if (deductions.length === 0) return `${head}. Nothing is counting against it.`;
+  return `${head}. ${deductions.map((d) => `${d.label} (−${d.points})`).join(", ")}.`;
+}

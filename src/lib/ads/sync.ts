@@ -106,8 +106,11 @@ export async function checkPacing(tenant: TenantSummary, now = new Date()): Prom
   const threshold = typeof settings.pacingDriftPct === "number" ? settings.pacingDriftPct : 25;
   if (Math.abs(status.driftPct) < threshold) return status;
   const direction = status.driftPct > 0 ? "over" : "under";
-  const open = await repository.listExceptions([tenant.id]);
-  if (open.some((e) => e.reason.includes(`running ${direction} budget`))) return status;
+  // One alert per workspace per calendar month and direction, closed or not: the bucket remembers it was raised,
+  // so an operator who closes the exception is not handed the same alert again tomorrow.
+  const month = monthBucketInZone(tenant.timezone, now).toISOString().slice(0, 7);
+  const { count } = await repository.rateLimitHit(`pacing:${tenant.id}:${month}:${direction}`, 32 * 86_400_000, now);
+  if (count > 1) return status;
   const money = (c: number) => (c / 100).toLocaleString(tenant.locale, { style: "currency", currency: tenant.currency, maximumFractionDigits: 0 });
   await repository.createException(tenant.id, {
     reason: `Ad spend at ${tenant.name} is running ${direction} budget: ${money(status.spentCents)} spent by day ${status.daysElapsed} of ${status.daysInMonth} against ${money(status.budgetCents)} planned (${status.driftPct > 0 ? "+" : ""}${status.driftPct}%), heading for ${money(status.projectedCents)}.`,

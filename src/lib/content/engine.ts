@@ -153,7 +153,7 @@ export async function generateFromSource(tenant: TenantSummary, sourceId: string
 export async function scheduleApproved(tenant: TenantSummary, asset: ContentAssetRecord, opts: { at?: Date | null } = {}): Promise<{ post: Awaited<ReturnType<typeof repository.createSocialPosts>>[number] | null; when: Date | null }> {
   if (!asset.targetPlatform) return { post: null, when: null };
   const { moduleSettings } = await engineSettings(tenant.id);
-  const existing = (await repository.listSocialPosts(tenant.id, { limit: 500 })).filter((p) => p.contentAssetId === asset.id && p.status !== "FAILED");
+  const existing = (await repository.listSocialPostsForAsset(tenant.id, asset.id)).filter((p) => p.status !== "FAILED");
   if (existing.length) return { post: existing[0], when: existing[0].scheduledFor };
 
   const channel = (await repository.listChannels(tenant.id, { activeOnly: true })).find((c) => c.platform === asset.targetPlatform) ?? null;

@@ -38,10 +38,6 @@ export async function processFinanceWebhook(input: { raw: string; headers: Recor
 }
 
 async function findTenantForIntegration(provider: ConnectedFinanceProvider, integrationId: string): Promise<TenantSummary | null> {
-  // Integrations are per tenant; walk the tenants once (webhooks are rare) rather than add a cross-tenant lookup.
-  for (const tenant of await repository.listAllTenants()) {
-    const integration = await repository.findIntegration(tenant.id, provider);
-    if (integration?.id === integrationId) return tenant;
-  }
-  return null;
+  // One lookup by the integration's own id: Stripe and Square send a webhook per payment, so this must not grow with the portfolio.
+  return repository.findTenantByIntegrationId(provider, integrationId);
 }

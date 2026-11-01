@@ -3,18 +3,9 @@ import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Empty } from "@/components/shell/section";
-import { healthBreakdown, healthTone, pacingDrift, type HealthDeduction } from "@/lib/health";
+import { HEALTH_TONE_LABEL as TONE_LABEL, healthBreakdown, healthTitle, healthTone, pacingDrift, type HealthDeduction } from "@/lib/health";
 import type { PortfolioRow } from "@/lib/types";
 import { cn, formatMoney, humanize } from "@/lib/utils";
-
-const TONE_LABEL = { good: "Healthy", watch: "Watch", bad: "Needs attention" } as const;
-
-/** "68 of 100: Needs attention. 2 SLA breaches (−20), 1 failing integration (−8)." */
-export function healthTitle(score: number, deductions: HealthDeduction[] = []): string {
-  const head = `${score} of 100: ${TONE_LABEL[healthTone(score)]}`;
-  if (deductions.length === 0) return `${head}. Nothing is counting against it.`;
-  return `${head}. ${deductions.map((d) => `${d.label} (−${d.points})`).join(", ")}.`;
-}
 
 /** The score as a labelled bar, so 68 means something at a glance; hover for where the points went. */
 export function HealthBar({ score, deductions, compact = false }: { score: number; deductions?: HealthDeduction[]; compact?: boolean }) {
