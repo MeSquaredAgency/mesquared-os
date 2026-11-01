@@ -1,0 +1,92 @@
+# Upgrade pass — 1 November 2026
+
+An engine-and-cosmetics pass over the whole product ahead of the January soft
+launch. Ranked by what it is worth to a client or an operator. Everything here
+is covered by `src/test/upgrades.test.ts` unless marked otherwise.
+
+## Deploy notes
+
+- **Run the migration.** `20261101090000_hot_query_indexes` adds indexes for
+  the queries behind every webhook, send and tick. `npm run db:migrate` (or
+  `prisma migrate deploy`) before the first tick on the new code.
+- **No new environment variables are required.** Optional:
+  `QUALIFIER_TIMEOUT_MS` (default 8000) and `TICK_CONCURRENCY` (default 4).
+- The health endpoint now returns 503 when the oldest due scheduled step is
+  more than ten minutes old. If an uptime check starts failing after deploy,
+  the queue is behind, not the deploy.
+
+## What changed and why
+
+### Leads that were being lost
+
+- **Webhook API keys worked in demo mode only.** The Prisma store dropped the
+  `webhooks` scope when reading keys, so call-tracking and review connectors
+  were refused with 403 in production. One shared guard (`isApiKeyScope`) now
+  decides what a scope is, everywhere.
+- **Meta lead forms survive a Graph API failure.** A failed fetch used to be
+  logged and forgotten. It is now queued as a `meta_lead:fetch` action and
+  retried through the normal three-attempt, dead-letter path; a missing page
+  token raises an exception.
+- **Double-submitted forms are one lead.** A submission without an upstream
+  id gets a derived one (person, words, day), so the unique index catches two
+  copies arriving in parallel.
+- **The Anthropic qualifier has an 8-second deadline** and falls back to the
+  rule engine rather than holding intake past the five-minute SLA. A tenant's
+  `requirePhone` rule is enforced on the model path too.
+
+### Trust and compliance
+
+- **Escalation emails only go to current members** of the workspace. A rule
+  pointing at a removed person, an operator, or an id from another tenant is
+  ignored and logged. A rule for the exact type beats the catch-all.
+- **Opt-outs are final.** A contact who replied STOP is never texted again by
+  an automation, in any region, transactional or not. STOP/START only match a
+  whole-message keyword ("Cancel my appointment" is not an unsubscribe; "Yes,
+  Tuesday works" is not consent).
+
+### Money at risk tells the truth
+
+- **Settled items stay settled.** Recovering or closing an unanswered enquiry
+  or a never-booked item stops the lead's clock, so the detector does not
+  raise the same lead again a week later.
+- **One item per lead.** A lead nobody replied to is no longer also counted as
+  never-booked.
+- **Recovered value follows the person back.** A new reconciler closes open
+  items as RECOVERED when the person enquires again, replies, books or pays
+  (at the paid amount). Previously only four of ten detector types ever
+  recovered.
+- **The portal headline sums every open item**, not the twenty shown.
+- **Pacing uses the tenant's calendar month** and compares budget and spend in
+  the same currency. Pacing alerts are raised once per month and direction.
+
+### Operators
+
+- **Health explains itself.** The score carries its breakdown ("2 SLA
+  breaches, 1 failing integration") in the portfolio row and on hover.
+- **Every list filters.** Queue by workspace and kind; missed opportunities by
+  kind; activity by outcome, grouped by day; leads by search and view. Filters
+  live in the URL, so a view can be shared.
+- **The portfolio is cards on a phone.**
+- **The tick is bounded.** Detectors run four tenants at a time with their own
+  share of the minute; retries back off (5, 10, 20 minutes with jitter); a step
+  that can never succeed fails at once; a subscriber that throws becomes an
+  exception once an hour instead of a log line.
+- **The health endpoint reports the queue backlog.**
+
+### Clients
+
+- **"I've called them"** on Needs you: stops the lead's clock, moves it to
+  nurturing, recovers its open items and logs who did it.
+
+## Not done (candidates for the next pass)
+
+- An outbox for event subscribers, so an acknowledgement survives a crash
+  between the event and the send (today the detector catches it five minutes
+  later).
+- Pipeline advancement on payments and completed bookings, and payments shown
+  against the lead.
+- An EXPIRED sweep for escalated items nobody closes.
+- Structured JSON logging with tenant and action ids.
+- Visual verification of the UI changes in this pass: the dev server could
+  not bind a port in the sandbox this session, so they are verified by
+  typecheck, lint, tests and a production build only.

@@ -5,9 +5,10 @@ import { settleException } from "@/lib/console/resolve";
 import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { isApiKeyScope } from "@/lib/data/repository";
-import { emit } from "@/lib/events";
+import { emit, subscribe } from "@/lib/events";
 import { healthBreakdown, healthScore, healthTitle } from "@/lib/health";
 import { ingestMetaLead } from "@/lib/intake/channels/meta-lead";
+import { derivedExternalId } from "@/lib/intake/process";
 import { retryDelayMs, tick } from "@/lib/jobs/tick";
 import { sendMessage } from "@/lib/messaging";
 import { isStartMessage, isStopMessage } from "@/lib/messaging/keywords";
@@ -222,6 +223,39 @@ describe("recovered value follows the person back", () => {
     const paid = await repository.findMissedOpportunityById(harbor.id, quiet!.id);
     assert.equal(paid?.status, "RECOVERED");
     assert.equal(paid?.recoveredValueCents, 123_400, "the real amount, not the estimate");
+  });
+});
+
+describe("a form submitted twice at once is one lead", () => {
+  it("derives the same external id for the same person, words and day, and a different one otherwise", () => {
+    const day = new Date("2026-11-01T03:00:00Z");
+    const a = derivedExternalId({ source: "WEB_FORM", email: "Sam@Example.com", phone: null, message: "Please  call me", fields: {} } as never, day);
+    const b = derivedExternalId({ source: "WEB_FORM", email: "sam@example.com", phone: null, message: "please call me", fields: {} } as never, day);
+    const c = derivedExternalId({ source: "WEB_FORM", email: "sam@example.com", phone: null, message: "Different words", fields: {} } as never, day);
+    const d = derivedExternalId({ source: "WEB_FORM", email: "sam@example.com", phone: null, message: "please call me", fields: {} } as never, new Date("2026-11-02T03:00:00Z"));
+    assert.ok(a && a.startsWith("form:"));
+    assert.equal(a, b, "case and spacing do not matter");
+    assert.notEqual(a, c);
+    assert.notEqual(a, d);
+    assert.equal(derivedExternalId({ source: "WEB_FORM", email: null, phone: null, message: "anonymous", fields: {} } as never, day), null, "nothing to key on");
+    assert.equal(derivedExternalId({ source: "WEB_FORM", externalId: "given", email: "x@example.com", phone: null, message: "", fields: {} } as never, day), "given", "a given id wins");
+  });
+});
+
+describe("a failing event subscriber is not silent", () => {
+  it("puts one exception an hour in the queue for a handler that throws", async () => {
+    subscribe("upgrade.test.boom", async () => {
+      throw new Error("the SMS provider is down");
+    });
+    const before = (await repository.listExceptions([harbor.id])).length;
+    await emit(harbor.id, "upgrade.test.boom", { leadId: "lead_1" });
+    await emit(harbor.id, "upgrade.test.boom", { leadId: "lead_1" });
+    const after = await repository.listExceptions([harbor.id]);
+    const mine = after.filter((e) => /upgrade test boom/.test(e.reason));
+    assert.equal(mine.length, 1, "once an hour, not once per event");
+    assert.equal(after.length, before + 1);
+    assert.match(mine[0].reason, /SMS provider is down/);
+    assert.equal(mine[0].leadId, "lead_1");
   });
 });
 
