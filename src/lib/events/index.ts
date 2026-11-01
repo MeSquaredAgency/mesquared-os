@@ -1,4 +1,5 @@
 import { repository } from "@/lib/data";
+import { errorText, log } from "@/lib/log";
 import type { DomainEventRecord } from "@/lib/types";
 
 export type EventHandler = (event: DomainEventRecord) => Promise<void> | void;
@@ -30,8 +31,8 @@ export async function emit(tenantId: string, type: string, payload: Record<strin
     try {
       await handler(event);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[events] handler for ${type} failed:`, message);
+      const message = errorText(error);
+      log("error", "events.handler_failed", { tenantId, type, handler: index, eventId: event.id, error: message });
       await noteFailure(tenantId, type, index, message, payload);
     }
   }
@@ -52,7 +53,7 @@ async function noteFailure(tenantId: string, type: string, index: number, messag
       contactId,
     });
   } catch (error) {
-    console.error(`[events] could not record the failure of a ${type} handler:`, error instanceof Error ? error.message : error);
+    log("error", "events.failure_not_recorded", { tenantId, type, error: errorText(error) });
   }
 }
 

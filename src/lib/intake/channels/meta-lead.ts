@@ -2,6 +2,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { repository } from "@/lib/data";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
+import { errorText, log } from "@/lib/log";
 import type { TenantSummary } from "@/lib/types";
 import { fetchMetaLead, mapMetaFieldData } from "./meta";
 
@@ -45,7 +46,7 @@ export async function ingestMetaLead(tenant: TenantSummary, ref: MetaLeadRef, op
   } catch (error) {
     if (!retry) throw error;
     await scheduleRetry(tenant, ref);
-    console.error(`[intake/meta] lead ${ref.leadgenId} could not be fetched, retry queued: ${error instanceof Error ? error.message : error}`);
+    log("warn", "intake.meta_lead_retry_queued", { tenantId: tenant.id, leadgenId: ref.leadgenId, error: errorText(error) });
     return "retry_scheduled";
   }
 

@@ -822,6 +822,13 @@ export const memoryRepository: Repository = {
     return store().missed.find((x) => x.id === moId && x.tenantId === tenantId) ?? null;
   },
 
+  async listOpenMissedOpportunitiesBefore(tenantId, before, limit = 200) {
+    return store()
+      .missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && m.detectedAt < before)
+      .sort((a, b) => a.detectedAt.getTime() - b.detectedAt.getTime())
+      .slice(0, limit);
+  },
+
   async listOpenMissedOpportunitiesFor(tenantId, subject) {
     if (!subject.leadId && !subject.contactId) return [];
     const types = subject.types?.length ? new Set(subject.types) : null;
@@ -1440,15 +1447,18 @@ export const memoryRepository: Repository = {
   async upsertTransactions(tenantId, rows: NewTransaction[]) {
     const s = store();
     let fresh = 0;
+    // Money shows against the lead it came from: the contact's most recent lead that was not lost.
+    const leadFor = (contactId: string | null) => (contactId ? (s.leads.filter((l) => l.tenantId === tenantId && l.contactId === contactId && l.status !== "LOST" && l.status !== "ARCHIVED").sort(byNewest)[0]?.id ?? null) : null);
     for (const r of rows) {
       const email = r.customerEmail?.toLowerCase() ?? null;
       const contactId = r.contactId ?? (email ? s.contacts.find((c) => c.tenantId === tenantId && c.email === email)?.id ?? null : null);
       const existing = s.transactions.find((t) => t.tenantId === tenantId && t.provider === r.provider && t.providerId === r.providerId);
       if (existing) {
-        Object.assign(existing, { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: existing.contactId ?? contactId });
+        const linkedContact = existing.contactId ?? contactId;
+        Object.assign(existing, { status: r.status, amountCents: r.amountCents, note: r.note ?? existing.note, contactId: linkedContact, leadId: existing.leadId ?? r.leadId ?? leadFor(linkedContact) });
         continue;
       }
-      pushBounded(s.transactions, { id: id("txn"), tenantId, contactId, leadId: r.leadId ?? null, provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt }, false);
+      pushBounded(s.transactions, { id: id("txn"), tenantId, contactId, leadId: r.leadId ?? leadFor(contactId), provider: r.provider, providerId: r.providerId, kind: r.kind, status: r.status, amountCents: r.amountCents, currency: r.currency, note: r.note ?? null, occurredAt: r.occurredAt }, false);
       fresh++;
     }
     return fresh;

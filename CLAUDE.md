@@ -53,11 +53,12 @@ tested modules free of `next/*` imports and JSX.
 - `src/lib/auth/access.ts` — `getConsoleContext` / `getPortalContext` resolve the user and their permissions; every page starts there
 - `src/lib/templates` — industry templates; applying one is the only way a tenant gets configured
 - `src/lib/modules`, `src/lib/automations` — registries of module keys and automation types
-- `src/lib/opportunities/detect.ts` — SLA detectors; `raise.ts` opens an item and escalates it (only to a current member); `reconcile.ts` closes items as RECOVERED when the person comes back (enquiry, reply, booking, payment); `POST /api/jobs/tick` (`src/lib/jobs/tick.ts`) runs the detectors with bounded concurrency and a budget, then due scheduled actions with exponential backoff, every minute. Throw `NonRetryableError` from a handler for a step that can never succeed
+- `src/lib/opportunities/detect.ts` — SLA detectors; `raise.ts` opens an item and escalates it (only to a current member); `reconcile.ts` closes items as RECOVERED when the person comes back (enquiry, reply, booking, payment); `expire.ts` is the daily sweep that writes off items older than `sla_watch.expireAfterDays` (default 30); `POST /api/jobs/tick` (`src/lib/jobs/tick.ts`) runs the detectors with bounded concurrency and a budget, then due scheduled actions with exponential backoff, every minute. Throw `NonRetryableError` from a handler for a step that can never succeed
 - `src/lib/messaging` — the only place outbound policy lives: destination allow-list, explicit opt-outs (final on every channel), consent by region, quiet hours, daily caps; every automated send goes through `sendMessage`; `keywords.ts` decides what counts as STOP/START
 - `src/lib/events` — `emit()` appends to the tenant stream and runs subscribers; a subscriber that throws is logged and, once an hour per kind, becomes an exception in the queue
 - `src/lib/intake/channels/meta-lead.ts` — one Meta lead form submission through intake, with a queued retry (`meta_lead:fetch`) when Graph does not answer
-- `src/lib/health.ts` — the portfolio health score and its breakdown in words; `src/lib/portal/actions.ts` — the client's own actions ("I've called them")
+- `src/lib/health.ts` — the portfolio health score and its breakdown in words; `src/lib/portal/actions.ts` — the client's own actions ("I've called them"); `src/lib/pipelines/advance.ts` — stages move on attended appointments and payments
+- `src/lib/log.ts` — `log(level, event, fields)` writes one JSON line for the scheduler and event paths; fields are ids, counts and short messages, never payloads or secrets
 - `src/components/shell/filter-chips.tsx` — URL-driven filter pills; a filtered list is a shareable, server-rendered URL
 - `src/lib/intake` — intake schema and pipeline; `src/lib/qualify` — classifier
 - `src/lib/data` — repository contract with Prisma and in-memory implementations

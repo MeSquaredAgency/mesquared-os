@@ -14,6 +14,7 @@ import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
 import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
 import { registerReconciler } from "@/lib/opportunities/reconcile";
+import { expireStaleOpportunities } from "@/lib/opportunities/expire";
 import { registerPipelineAdvancement } from "@/lib/pipelines/advance";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
@@ -308,6 +309,10 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
     }
     case "social_sync:run": {
       await runSocialSync(tenant, new Date());
+      return;
+    }
+    case "sla_watch:expire": {
+      await expireStaleOpportunities(tenant, new Date());
       return;
     }
     case "meta_lead:fetch": {

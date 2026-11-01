@@ -4,6 +4,7 @@ import { detectForTenant } from "@/lib/opportunities/detect";
 import { registerPlaybook } from "@/lib/playbook";
 import { registerContentEngine } from "@/lib/content/engine";
 import { registerInventory } from "@/lib/inventory";
+import { errorText, log } from "@/lib/log";
 import { quietHoursEnd } from "@/lib/messaging";
 import { publishDuePosts } from "@/lib/social/publish";
 import { localKey } from "@/lib/content/calendar";
@@ -40,8 +41,8 @@ export function retryDelayMs(attempt: number, random = Math.random): number {
 
 /**
  * Recurring per-tenant work rides the same action queue: one content batch
- * a day (after quiet hours end), the money and website jobs half an hour
- * later, one social sync an hour. The dedupe keys make this idempotent.
+ * a day (after quiet hours end), the money, website and expiry jobs half an
+ * hour later, one social sync an hour. The dedupe keys make this idempotent.
  */
 async function scheduleRecurring(tenant: TenantSummary, now: Date) {
   const day = localKey(tenant.timezone, now);
@@ -56,12 +57,13 @@ async function scheduleRecurring(tenant: TenantSummary, now: Date) {
     { typeKey: "finance_sync", action: "run", runAt: dailyAt, dedupeKey: `finance_sync:${day}` },
     { typeKey: "website_analytics", action: "rollup", runAt: dailyAt, dedupeKey: `website_analytics:${day}` },
     { typeKey: "inventory_sync", action: "run", runAt: dailyAt, dedupeKey: `inventory_sync:${day}` },
+    { typeKey: "sla_watch", action: "expire", runAt: dailyAt, dedupeKey: `sla_watch:expire:${day}` },
     { typeKey: "social_sync", action: "run", runAt: now, dedupeKey: `social:sync:${hourBucket}` },
   ];
   await Promise.all(
     jobs.map((job) =>
       repository.scheduleAction(tenant.id, { ...job, payload: {} }).catch((error) => {
-        console.error(`[jobs] could not queue ${job.typeKey} for ${tenant.slug}: ${error instanceof Error ? error.message : error}`);
+        log("error", "tick.schedule_failed", { tenantId: tenant.id, typeKey: job.typeKey, action: job.action, error: errorText(error) });
       }),
     ),
   );
@@ -108,14 +110,14 @@ export async function tick(now = new Date()): Promise<TickResult> {
       detected += (await detectForTenant(tenant, now)).detected.length;
     } catch (error) {
       tenantsFailed++;
-      console.error(`[jobs] detectors failed for ${tenant.slug}: ${error instanceof Error ? error.message : error}`);
+      log("error", "tick.detectors_failed", { tenantId: tenant.id, tenant: tenant.slug, error: errorText(error) });
     }
     await scheduleRecurring(tenant, now);
   });
-  if (skipped > 0) console.warn(`[jobs] detector budget spent; ${skipped} tenant${skipped === 1 ? "" : "s"} left for the next tick`);
+  if (skipped > 0) log("warn", "tick.detector_budget_spent", { skipped, tenants: tenants.length });
 
   const publishing = await publishDuePosts(now).catch((error) => {
-    console.error(`[jobs] publishing failed: ${error instanceof Error ? error.message : error}`);
+    log("error", "tick.publishing_failed", { error: errorText(error) });
     return { published: 0, failed: 0, simulated: 0 };
   });
 
@@ -123,7 +125,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
   let actionsFailed = 0;
   for (const action of await repository.listDueActions(now)) {
     if (Date.now() > deadline) {
-      console.warn(`[jobs] tick budget spent; leaving remaining due actions for the next tick`);
+      log("warn", "tick.action_budget_spent", { actionsRun, actionsFailed });
       break;
     }
     // Claim first so two overlapping ticks (or two instances) never run the same action.
@@ -133,7 +135,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
       await repository.completeAction(action.id, "DONE");
       actionsRun++;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorText(error);
       const attempt = action.attempts + 1;
       const final = attempt >= MAX_ATTEMPTS || error instanceof NonRetryableError;
       if (final) {
@@ -144,11 +146,13 @@ export async function tick(now = new Date()): Promise<TickResult> {
         await repository.recordAutomationRun(action.tenantId, { typeKey: action.typeKey, outcome: "FAILED", summary: `Couldn't finish "${action.action.replace(/_/g, " ")}"${tries}: ${message}`, leadId, contactId }).catch(() => {});
         await repository.createException(action.tenantId, { reason: `A scheduled step (${action.typeKey}: ${action.action.replace(/_/g, " ")}) failed${tries}: ${message}`, suggestedAction: "Check what the step was meant to send and do it by hand.", confidence: 0.8, leadId, contactId }).catch(() => {});
       } else await repository.completeAction(action.id, "PENDING", message, new Date(now.getTime() + retryDelayMs(attempt))).catch(() => {});
-      console.error(`[jobs] action ${action.typeKey}:${action.action} failed (attempt ${attempt}${final ? ", final" : ""}): ${message}`);
+      log("error", "tick.action_failed", { tenantId: action.tenantId, actionId: action.id, typeKey: action.typeKey, action: action.action, attempt, final, error: message });
       actionsFailed++;
     }
   }
   // The heartbeat is what the health endpoint and readiness read to know the scheduler is alive.
-  await repository.recordHeartbeat("tick", new Date()).catch((error) => console.error(`[jobs] could not record the tick heartbeat: ${error instanceof Error ? error.message : error}`));
-  return { tenants: tenants.length, tenantsSkipped: skipped + tenantsFailed, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated };
+  await repository.recordHeartbeat("tick", new Date()).catch((error) => log("error", "tick.heartbeat_failed", { error: errorText(error) }));
+  const result = { tenants: tenants.length, tenantsSkipped: skipped + tenantsFailed, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated };
+  log("info", "tick.done", { ...result, ms: Date.now() - started });
+  return result;
 }

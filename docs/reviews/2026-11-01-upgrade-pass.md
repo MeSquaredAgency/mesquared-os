@@ -84,16 +84,29 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   stage marked won settles the lead; a win or a payment queues a review ask,
   throttled to one per person per quarter by a count rather than a scan.
 
-## Not done (candidates for the next pass)
+## Second batch (same day, after the first merged)
+
+- **Payments show against the lead.** A synced or manual transaction is
+  linked to the contact's most recent live lead (never a lost one), so the
+  attribution report's revenue per channel follows the lead that earned it.
+- **The expiry sweep.** A daily `sla_watch:expire` step writes off open items
+  older than `expireAfterDays` (default 30, 0 turns it off), closes their
+  exceptions, and leaves one honest line in the activity log. Money at risk
+  stops accumulating what nobody can recover.
+- **The queue shows the money.** Each item carries the kind and value of the
+  missed opportunity behind it, the header totals what is riding on the
+  filtered view, and "Most at stake first" is one click.
+- **One-line JSON logs** (`src/lib/log.ts`) on the scheduler and event paths,
+  with tenant, action and event ids as fields, so Cloudflare log queries can
+  filter per workspace.
+
+## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
-  between the event and the send (today the detector catches it five minutes
-  later).
-- Payments shown against the lead (stages already move on payments and
-  attended appointments, see `src/lib/pipelines/advance.ts`; the transaction
-  row is not yet linked to the lead).
-- An EXPIRED sweep for escalated items nobody closes.
-- Structured JSON logging with tenant and action ids.
-- Visual verification of the UI changes in this pass: the dev server could
+  between the event and the send. Deliberately left: replaying handlers risks
+  a second text to the customer unless every handler is made idempotent
+  first; today a thrown handler becomes an exception and the detector catches
+  a missed acknowledgement five minutes later.
+- Visual verification of the UI changes in both batches: the dev server could
   not bind a port in the sandbox this session, so they are verified by
   typecheck, lint, tests and a production build only.
