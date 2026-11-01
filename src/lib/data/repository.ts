@@ -227,6 +227,13 @@ export interface NewReview {
 /** intake: public web forms and the page beacon. webhooks: call-tracking and review connectors (private). content: uploads and the library (private). */
 export type ApiKeyScope = "intake" | "content" | "webhooks";
 
+export const API_KEY_SCOPES: readonly ApiKeyScope[] = ["intake", "content", "webhooks"];
+
+/** The one guard for key scopes read from storage or input: every store and action must use it so no scope is silently dropped. */
+export function isApiKeyScope(value: unknown): value is ApiKeyScope {
+  return typeof value === "string" && (API_KEY_SCOPES as readonly string[]).includes(value);
+}
+
 // --- Phase 4 inputs ---------------------------------------------------------------
 
 export interface NewAdAccount {
@@ -553,7 +560,14 @@ export interface Repository {
   /** The same two breaches counted, for the portfolio. */
   countLeadsPastSla(tenantId: string, now: Date): Promise<number>;
   findLeadById(tenantId: string, leadId: string): Promise<LeadRecord | null>;
+  /** Several leads in one round trip; ids from other tenants are simply absent. */
+  findLeadsByIds(tenantId: string, leadIds: string[]): Promise<LeadRecord[]>;
   markLeadResponded(tenantId: string, leadId: string, at: Date): Promise<void>;
+  /**
+   * A person has dealt with the lead outside the automation (called them, closed the item): the response
+   * clock stops, and when `booking` is true the booking window stops too, so the detectors do not raise it again.
+   */
+  settleLeadSla(tenantId: string, leadId: string, at: Date, opts?: { booking?: boolean }): Promise<void>;
   /** Records the booking time and moves the lead into the first stage whose `advanceOn` matches, if any. */
   markLeadBooked(tenantId: string, leadId: string, at: Date): Promise<LeadRecord | null>;
   /** After a cancellation: back to BOOKING_SENT with a fresh booking window so "never booked" can fire again. */
@@ -633,6 +647,9 @@ export interface Repository {
   upsertMissedOpportunity(tenantId: string, data: NewMissedOpportunity): Promise<{ record: MissedOpportunityRecord; created: boolean }>;
   /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
   listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
+  findMissedOpportunityById(tenantId: string, id: string): Promise<MissedOpportunityRecord | null>;
+  /** Open items about a lead or contact, optionally of certain types; what the reconciler closes when the person comes back. */
+  listOpenMissedOpportunitiesFor(tenantId: string, subject: { leadId?: string | null; contactId?: string | null; types?: MissedOpportunityType[] }): Promise<MissedOpportunityRecord[]>;
   /** Also closes the exception attached to the item when the status is terminal (RECOVERED/EXPIRED). */
   resolveMissedOpportunity(tenantId: string, id: string, status: MissedOpportunityStatus, recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */

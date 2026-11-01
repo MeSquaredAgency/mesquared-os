@@ -58,6 +58,8 @@ export async function senderIdentity(tenant: TenantSummary, assigneeId: string |
   return { signedBy: first || null, replyTo: person.email, userId: person.userId, signature: { name: person.name?.trim() || first || person.email, title: person.title, phone: person.phone, email: person.email, photoUrl: person.photoUrl } };
 }
 
+const channelLabel = (c: OutboundChannel) => (c === "EMAIL" ? "email" : c === "SMS" ? "text messages" : "WhatsApp messages");
+
 /** Caps on automated sends, per tenant per day and per recipient per day. Overridable for big tenants. */
 const DAILY_TENANT_CAP = Number.parseInt(process.env.MESSAGING_DAILY_CAP ?? "500", 10) || 500;
 const DAILY_RECIPIENT_CAP = Number.parseInt(process.env.MESSAGING_RECIPIENT_DAILY_CAP ?? "4", 10) || 4;
@@ -111,13 +113,14 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
     return refuse(`Destination ${opts.to.slice(0, 4)}… is outside the countries this workspace may message.`);
   }
 
+  const consentKey = opts.channel.toLowerCase() as "sms" | "whatsapp" | "email";
+  const contact = opts.contactId ? await repository.findContactById(tenant.id, opts.contactId) : null;
+  // An explicit opt-out (a STOP reply, an unsubscribe) is final on that channel in every region, whatever the message is.
+  if (contact?.consent[consentKey]?.granted === false) return refuse(`This contact has opted out of ${channelLabel(opts.channel)}; nothing is sent.`);
+
   if (!opts.transactional) {
     const needs = regionRule(tenant.region).requiresConsentFor;
-    if (needs.includes(opts.channel)) {
-      const contact = opts.contactId ? await repository.findContactById(tenant.id, opts.contactId) : null;
-      const key = opts.channel.toLowerCase() as "sms" | "whatsapp" | "email";
-      if (!contact?.consent[key]?.granted) return refuse(`No ${opts.channel.toLowerCase()} marketing consent recorded for this contact.`);
-    }
+    if (needs.includes(opts.channel) && !contact?.consent[consentKey]?.granted) return refuse(`No ${opts.channel.toLowerCase()} marketing consent recorded for this contact.`);
     if (inQuietHours(tenant)) {
       // Not dropped: queued as a scheduled action that re-runs this send when quiet hours end.
       const releaseAt = quietHoursEnd(tenant);

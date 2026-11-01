@@ -16,6 +16,23 @@ export interface RaiseInput {
   confidence?: number;
 }
 
+/**
+ * The client person a tenant's escalation rules name for this type: a rule for
+ * the exact type beats a catch-all "*". Only a current member of the workspace
+ * can be told; a rule pointing at someone who has left (or at an id from
+ * elsewhere) is ignored and logged, so lead details never leave the tenant.
+ */
+export async function escalateeFor(tenant: TenantSummary, type: MissedOpportunityType): Promise<{ userId: string; email: string; name: string | null } | null> {
+  const rule = tenant.escalationRules.find((r) => r.when === type) ?? tenant.escalationRules.find((r) => r.when === "*");
+  if (!rule?.notifyUserId) return null;
+  const member = (await repository.listTenantPeople(tenant.id)).find((p) => p.via === "member" && p.userId === rule.notifyUserId);
+  if (!member) {
+    console.warn(`[opportunities] escalation rule "${rule.when}" for ${tenant.slug} names a user who is not a member of the workspace; ignored`);
+    return null;
+  }
+  return { userId: member.userId, email: member.email, name: member.name };
+}
+
 /** Estimated value for a missed-opportunity type from tenant config, falling back to a supplied value. */
 export function opportunityValue(tenant: TenantSummary, type: MissedOpportunityType, fallbackCents = 0): number {
   return tenant.opportunityValues[type] ?? fallbackCents;
@@ -37,10 +54,8 @@ export async function raiseMissedOpportunity(tenant: TenantSummary, input: Raise
   });
   if (!created) return null;
 
-  const rule = tenant.escalationRules.find((r) => r.when === input.type || r.when === "*");
-  const escalatedToUserId = rule?.notifyUserId ?? null;
-
-  const escalatee = escalatedToUserId ? await repository.findUserById(escalatedToUserId) : null;
+  const escalatee = await escalateeFor(tenant, input.type);
+  const escalatedToUserId = escalatee?.userId ?? null;
   await repository.resolveMissedOpportunity(tenant.id, record.id, "ESCALATED");
   const exception = await repository.createException(tenant.id, {
     reason: input.summary,
@@ -61,11 +76,8 @@ export async function raiseMissedOpportunity(tenant: TenantSummary, input: Raise
   });
 
   if (escalatee) {
-    const user = escalatee;
-    {
-      const mail = templates.escalationEmail({ tenant, summary: input.summary, suggestedAction: input.suggestedAction, portalUrl: `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/opportunities` });
-      await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: user.email, body: mail.body, subject: mail.subject, transactional: true });
-    }
+    const mail = templates.escalationEmail({ tenant, summary: input.summary, suggestedAction: input.suggestedAction, portalUrl: `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/opportunities` });
+    await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: escalatee.email, body: mail.body, subject: mail.subject, transactional: true });
   }
 
   await emit(tenant.id, "missed_opportunity.detected", { type: input.type, leadId: input.leadId, contactId: input.contactId, missedOpportunityId: record.id, exceptionId: exception.id, estimatedValueCents: record.estimatedValueCents });

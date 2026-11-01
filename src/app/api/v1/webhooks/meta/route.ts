@@ -1,10 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { decryptSecret } from "@/lib/crypto";
 import { repository } from "@/lib/data";
-import { fetchMetaLead, mapMetaFieldData, parseMetaLeadgenEvents, verifyMetaSignature } from "@/lib/intake/channels/meta";
+import { parseMetaLeadgenEvents, verifyMetaSignature } from "@/lib/intake/channels/meta";
+import { ingestMetaLead } from "@/lib/intake/channels/meta-lead";
 import { ingestMetaWebhookInbox } from "@/lib/social/meta-webhook";
-import { processIntake } from "@/lib/intake/process";
-import { intakeSchema } from "@/lib/intake/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,32 +49,10 @@ export async function POST(req: NextRequest) {
       continue;
     }
     try {
-      const integration = await repository.findIntegration(tenant.id, "META");
-      const token = integration?.credentialsEnc ? decryptSecret(integration.credentialsEnc, integration.id) : process.env.META_PAGE_ACCESS_TOKEN;
-      if (!token) {
-        results.push({ leadgenId: ev.leadgenId, outcome: "no_token" });
-        continue;
-      }
-      const lead = await fetchMetaLead(ev.leadgenId, token);
-      const mapped = mapMetaFieldData(lead.fieldData);
-      const parsed = intakeSchema.safeParse({
-        source: "META_LEAD_FORM",
-        externalId: `meta:${ev.leadgenId}`,
-        name: mapped.name,
-        firstName: mapped.firstName,
-        lastName: mapped.lastName,
-        email: mapped.email,
-        phone: mapped.phone,
-        message: mapped.fields.message ?? mapped.fields.comments ?? null,
-        fields: { ...mapped.fields, utm_source: "facebook", utm_medium: "lead_form", ...(ev.adId ? { utm_content: ev.adId } : {}), ...(ev.formId ? { form_id: ev.formId } : {}) },
-      });
-      if (!parsed.success) {
-        results.push({ leadgenId: ev.leadgenId, outcome: "invalid" });
-        continue;
-      }
-      const result = await processIntake(tenant, parsed.data, { meta: ev, field_data: lead.fieldData }, { channel: "META_LEAD_FORM", provider: "META" });
-      results.push({ leadgenId: ev.leadgenId, outcome: result.outcome });
+      results.push({ leadgenId: ev.leadgenId, outcome: await ingestMetaLead(tenant, ev) });
     } catch (error) {
+      // Only the intake pipeline itself can throw here (a Graph failure is already queued for retry); the lead is still
+      // deduped on its leadgen id, so a later retry from Meta or the queue is safe.
       console.error(`[webhooks/meta] lead ${ev.leadgenId} failed: ${error instanceof Error ? error.message : error}`);
       results.push({ leadgenId: ev.leadgenId, outcome: "error" });
     }
@@ -84,6 +60,7 @@ export async function POST(req: NextRequest) {
   // Comments, Messenger messages and Instagram comments and DMs go to the unified inbox.
   // `page` webhooks name the Facebook page; `instagram` webhooks name the IG business account.
   const { inboxNew } = await ingestMetaWebhookInbox(body);
-  // Always 200 so Meta does not retry forever; failures are in our logs and the exception queue.
+  // Always 200 so Meta does not retry forever; a lead that could not be fetched is queued for our own retry and,
+  // failing that, lands in the exception queue.
   return NextResponse.json({ received: events.length, inbox: inboxNew, results });
 }

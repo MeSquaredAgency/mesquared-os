@@ -12,9 +12,20 @@ import { rollupSite } from "@/lib/website/rollup";
 import { describeListing, findListingMentioned, findListingsMatching, listingNeeds } from "@/lib/inventory";
 import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
+import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
+import { registerReconciler } from "@/lib/opportunities/reconcile";
 import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
 
 export const ACTION_LEASE_MS = 10 * 60_000;
+
+/** A scheduled action that can never succeed (bad payload, no handler): the tick fails it at once instead of retrying. */
+export class NonRetryableError extends Error {
+  readonly retryable = false;
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
+}
 
 /**
  * Automation handlers. Two entry points:
@@ -298,6 +309,14 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       await runSocialSync(tenant, new Date());
       return;
     }
+    case "meta_lead:fetch": {
+      // A Facebook lead whose details could not be read when the webhook arrived. Throwing lets the tick retry and,
+      // after three attempts, hand it to an operator as an exception.
+      const ref = metaLeadRefFromPayload(action.payload);
+      if (!ref) throw new NonRetryableError("meta_lead:fetch payload has no leadgen id");
+      await ingestMetaLead(tenant, ref, { retryOnFailure: false });
+      return;
+    }
     case "messaging:release": {
       // A marketing message held during quiet hours. sendMessage re-checks consent and caps.
       const p = action.payload;
@@ -383,7 +402,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       return;
     }
     default:
-      throw new Error(`No handler for ${action.typeKey}:${action.action}`);
+      throw new NonRetryableError(`No handler for ${action.typeKey}:${action.action}`);
   }
 }
 
@@ -404,6 +423,8 @@ let registered = false;
 export function registerAutomations() {
   if (registered) return;
   registered = true;
+  // Whatever brings a flagged person back (an enquiry, a reply, a booking, a payment) closes their open items as recovered.
+  registerReconciler();
 
   subscribe("booking.created", async (e) => {
     const tenant = await tenantById(e.tenantId);

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getConsoleContext } from "@/lib/auth/access";
 import { ForbiddenError } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
-import type { ApiKeyScope } from "@/lib/data/repository";
+import { isApiKeyScope, type ApiKeyScope } from "@/lib/data/repository";
 import { csvToInventory, importInventory } from "@/lib/inventory";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import type { MissedOpportunityType, TenantSummary } from "@/lib/types";
@@ -252,7 +252,7 @@ export async function assignOperatorAction(tenantId: string, userId: string): Pr
 export async function issueApiKeyAction(tenantId: string, label: string, scopes: ApiKeyScope[]): Promise<ActionResult & { rawKey?: string }> {
   try {
     const { tenant } = await operatorTenant(tenantId);
-    const clean = scopes.filter((s): s is ApiKeyScope => s === "intake" || s === "content" || s === "webhooks");
+    const clean = scopes.filter(isApiKeyScope);
     const issued = await issueApiKey(tenantId, label.slice(0, 80), clean);
     refresh(tenant);
     return { ok: true, message: `Key "${issued.key.label}" issued. Copy it now; it is shown once.`, rawKey: issued.raw };

@@ -45,7 +45,7 @@ export async function ingestFinanceRows(tenant: TenantSummary, provider: Finance
     tenant.id,
     rows.invoices.map((i) => ({ provider, externalId: i.externalId, number: i.number, amountCents: i.amountCents, amountDueCents: i.amountDueCents, currency: i.currency, status: i.status, issuedAt: i.issuedAt, dueAt: i.dueAt, paidAt: i.paidAt, url: i.url, customerName: i.customerName, customerEmail: i.customerEmail })),
   );
-  for (const inv of paidNow) await emit(tenant.id, "invoice.paid", { invoiceId: inv.id, amountCents: inv.amountCents, provider });
+  for (const inv of paidNow) await emit(tenant.id, "invoice.paid", { invoiceId: inv.id, amountCents: inv.amountCents, provider, contactId: inv.contactId });
   return { transactions, invoices: written, paidNow };
 }
 

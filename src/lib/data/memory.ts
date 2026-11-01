@@ -36,7 +36,7 @@ import type {
   UserRecord,
   WebEventRecord,
 } from "@/lib/types";
-import { monthBucketInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
+import { monthBucketInZone, monthProgressInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
 import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/apply";
 import {
   TenantMismatchError,
@@ -406,6 +406,18 @@ export const memoryRepository: Repository = {
     return store().leads.find((l) => l.id === leadId && l.tenantId === tenantId) ?? null;
   },
 
+  async findLeadsByIds(tenantId, leadIds) {
+    const wanted = new Set(leadIds);
+    return store().leads.filter((l) => l.tenantId === tenantId && wanted.has(l.id));
+  },
+
+  async settleLeadSla(tenantId, leadId, at, opts = {}) {
+    const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
+    if (!lead) return;
+    lead.firstResponseAt ??= at;
+    if (opts.booking && !lead.bookedAt) lead.bookBy = null;
+  },
+
   async markLeadBooked(tenantId, leadId, at) {
     const lead = store().leads.find((l) => l.id === leadId && l.tenantId === tenantId);
     if (!lead) return null;
@@ -763,6 +775,19 @@ export const memoryRepository: Repository = {
       .missed.filter((m) => m.tenantId === tenantId && (!statuses || statuses.has(m.status)) && assignedTo(m.leadId, opts.onlyAssigneeId))
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime())
       .slice(0, opts.limit ?? 50);
+  },
+
+  async findMissedOpportunityById(tenantId, moId) {
+    return store().missed.find((x) => x.id === moId && x.tenantId === tenantId) ?? null;
+  },
+
+  async listOpenMissedOpportunitiesFor(tenantId, subject) {
+    if (!subject.leadId && !subject.contactId) return [];
+    const types = subject.types?.length ? new Set(subject.types) : null;
+    return store()
+      .missed.filter((m) => m.tenantId === tenantId && OPEN_MISSED.has(m.status) && (!types || types.has(m.type)) && ((subject.leadId && m.leadId === subject.leadId) || (subject.contactId && m.contactId === subject.contactId)))
+      .sort((a, b) => a.detectedAt.getTime() - b.detectedAt.getTime())
+      .slice(0, 100);
   },
 
   async resolveMissedOpportunity(tenantId, moId, status, recoveredValueCents) {
@@ -1524,9 +1549,9 @@ export const memoryRepository: Repository = {
       const dayStart = startOfDayInZone(tenant.timezone, now).getTime();
       const { respond, book } = await this.listLeadsPastSla(tenant.id, now);
       const open = s.missed.filter((m) => m.tenantId === tenant.id && OPEN_MISSED.has(m.status));
-      const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
-      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now)), budgetCents } : null;
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const budgetCents = s.adAccounts.filter((a) => a.tenantId === tenant.id && a.isActive && a.currency.toUpperCase() === tenant.currency.toUpperCase()).reduce((sum, a) => sum + (a.monthlyBudgetCents ?? 0), 0);
+      const spend = budgetCents > 0 ? { spentCents: await this.sumAdSpend(tenant.id, monthBucketInZone(tenant.timezone, now), undefined, tenant.currency), budgetCents } : null;
+      const { daysElapsed, daysInMonth } = monthProgressInZone(tenant.timezone, now);
       const base = {
         tenant,
         slaBreaches: respond.length + book.length,
@@ -1534,7 +1559,7 @@ export const memoryRepository: Repository = {
         missedAtRiskCents: open.reduce((sum, m) => sum + m.estimatedValueCents, 0),
         exceptionsOpen: s.exceptions.filter((e) => e.tenantId === tenant.id && e.status !== "RESOLVED").length,
         contentDue: s.assets.filter((a) => a.tenantId === tenant.id && a.status === "IN_REVIEW").length,
-        adPacing: spend ? { ...spend, daysElapsed: now.getDate(), daysInMonth } : null,
+        adPacing: spend ? { ...spend, daysElapsed, daysInMonth } : null,
         integrations: s.integrations.filter((i) => i.tenantId === tenant.id).map((i) => ({ provider: i.provider, status: i.status, lastError: i.lastError })),
         leadsToday: s.leads.filter((l) => l.tenantId === tenant.id && l.createdAt.getTime() >= dayStart).length,
       };

@@ -78,11 +78,8 @@ export async function POST(req: NextRequest) {
       if (!booking) await repository.updateBooking(tenant.id, bookingId, { status: "SCHEDULED", startsAt, endsAt, externalId: uid });
       await repository.markLeadBooked(tenant.id, lead.id, startsAt ?? new Date());
       await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "COMPLETED", summary: `${leadDisplayName(lead)} ${rescheduled ? "moved their appointment to" : "booked a time for"} ${startsAt ? startsAt.toLocaleString(tenant.locale, { timeZone: tenant.timezone, dateStyle: "medium", timeStyle: "short" }) : "a new time"}.`, leadId: lead.id, contactId: lead.contactId, details: { bookingUid: uid } });
+      // The reconciler (subscribed to booking.created) marks the lead's open missed opportunities recovered.
       await emit(tenant.id, "booking.created", { bookingId, leadId: lead.id, startsAt: startsAt?.toISOString() ?? null, endsAt: endsAt?.toISOString() ?? null, provider: "CALCOM", rescheduled });
-      const open = await repository.listMissedOpportunities(tenant.id, { status: ["DETECTED", "RECOVERING", "ESCALATED"], limit: 500 });
-      for (const m of open.filter((x) => x.leadId === lead.id && (x.type === "NOT_BOOKED" || x.type === "NO_SHOW"))) {
-        await repository.resolveMissedOpportunity(tenant.id, m.id, "RECOVERED", m.estimatedValueCents);
-      }
       return NextResponse.json({ received: true, bookingId });
     }
     case "BOOKING_CANCELLED": {

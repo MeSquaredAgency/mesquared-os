@@ -1,15 +1,23 @@
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
-import type { ExceptionRecord } from "@/lib/types";
+import type { ExceptionRecord, MissedOpportunityType } from "@/lib/types";
+
+/** Opportunity types whose subject is a lead's SLA clock: settling them must stop that clock, or the detector raises the same lead again a week later. */
+const SLA_TYPES: ReadonlySet<MissedOpportunityType> = new Set<MissedOpportunityType>(["UNANSWERED_ENQUIRY", "NOT_BOOKED"]);
 
 /** Closes one exception, settles its missed opportunity and logs the outcome. Returns null when it was already resolved. */
 export async function settleException(tenantId: string, exceptionId: string, resolution: string, recovered: boolean, userId: string): Promise<ExceptionRecord | null> {
   const note = resolution.trim();
   const ex = await repository.resolveException(tenantId, exceptionId, note || "Resolved");
   if (!ex) return null;
+  const now = new Date();
   if (ex.missedOpportunityId) {
-    const mo = recovered ? (await repository.listMissedOpportunities(tenantId, { limit: 500 })).find((m) => m.id === ex.missedOpportunityId) : undefined;
+    const mo = await repository.findMissedOpportunityById(tenantId, ex.missedOpportunityId);
     await repository.resolveMissedOpportunity(tenantId, ex.missedOpportunityId, recovered ? "RECOVERED" : "EXPIRED", recovered ? (mo?.estimatedValueCents ?? 0) : 0);
+    // A person has dealt with this lead: the enquiry counts as answered, and a closed booking item stops the booking clock.
+    if (mo && SLA_TYPES.has(mo.type) && mo.leadId) await repository.settleLeadSla(tenantId, mo.leadId, now, { booking: mo.type === "NOT_BOOKED" });
+  } else if (ex.leadId) {
+    await repository.settleLeadSla(tenantId, ex.leadId, now);
   }
   await repository.recordAutomationRun(tenantId, {
     typeKey: "sla_watch",

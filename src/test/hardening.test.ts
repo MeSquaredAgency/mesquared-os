@@ -167,19 +167,16 @@ describe("scheduled actions are claimed, retried, then surfaced", () => {
     await repository.completeAction(record.id, "DONE");
   });
 
-  it("backs off, then fails after three attempts with an exception an operator can see", async () => {
-    await repository.scheduleAction(harbor.id, { typeKey: "booking_lifecycle", action: "nonexistent_step", runAt: new Date(Date.now() - 1000), payload: { leadId: "lead_1" }, dedupeKey: "test:fails-thrice" });
-    let now = new Date();
-    for (let i = 0; i < 3; i++) {
-      await tick(now);
-      now = new Date(now.getTime() + 20 * 60_000);
-    }
+  it("a step with no handler fails at once, with an exception an operator can see, instead of being retried", async () => {
+    await repository.scheduleAction(harbor.id, { typeKey: "booking_lifecycle", action: "nonexistent_step", runAt: new Date(Date.now() - 1000), payload: { leadId: "lead_1" }, dedupeKey: "test:fails-once" });
+    const now = new Date();
+    await tick(now);
     const exceptions = await repository.listExceptions([harbor.id]);
-    assert.ok(exceptions.some((e) => /nonexistent step/.test(e.reason) && /3 times/.test(e.reason)), "exception after the third failure");
+    assert.ok(exceptions.some((e) => /nonexistent step/.test(e.reason) && /No handler/.test(e.reason)), "exception after the first failure");
     const runs = await repository.listAutomationRuns(harbor.id, 100);
     assert.ok(runs.some((r) => r.outcome === "FAILED" && /nonexistent step/.test(r.summary)));
-    const stillDue = (await repository.listDueActions(new Date(now.getTime() + 86_400_000))).filter((a) => a.dedupeKey === "test:fails-thrice");
-    assert.equal(stillDue.length, 0, "not retried forever");
+    const stillDue = (await repository.listDueActions(new Date(now.getTime() + 86_400_000))).filter((a) => a.dedupeKey === "test:fails-once");
+    assert.equal(stillDue.length, 0, "not retried: it could never succeed");
   });
 });
 

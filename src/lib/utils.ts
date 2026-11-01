@@ -140,10 +140,23 @@ export function formatLocalInput(local: string, locale: string) {
 }
 
 /** YYYY-MM-DD of `now` in the given timezone. */
-function localDateParts(timeZone: string, now: Date): { year: number; month: number; day: number } {
+export function localDateParts(timeZone: string, now: Date): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
   return { year: get("year"), month: get("month"), day: get("day") };
+}
+
+/**
+ * How far through its calendar month a tenant is: the day of the month and the
+ * month's length, both on the tenant's calendar. Budget pacing compares spend
+ * against `daysElapsed / daysInMonth`; reading the server's clock instead
+ * puts Adelaide a day out around midnight and a whole month out on the 1st.
+ */
+export function monthProgressInZone(timeZone: string, now: Date = new Date()): { daysElapsed: number; daysInMonth: number } {
+  const { year, month, day } = localDateParts(timeZone, now);
+  // Day 0 of the next month is the last day of this one.
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { daysElapsed: Math.min(Math.max(day, 1), daysInMonth), daysInMonth };
 }
 
 /**
