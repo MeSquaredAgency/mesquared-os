@@ -141,6 +141,9 @@ function parseTimeline(attributes: Record<string, unknown>): "now" | "soon" | "l
 
 export function scoreLead(input: QualificationInput, rules: QualificationRules): QualificationResult {
   const signals: string[] = [];
+  // The same findings in words a client can read; the weighted `signals` stay for operators.
+  const why: string[] = [];
+  const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
   let score = 35; // neutral starting point: an unknown lead is a mild red until proven green
 
   const body = text(input);
@@ -154,11 +157,13 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
     const pts = Math.min(30, greenHits.length * 10);
     score += pts;
     signals.push(`green keywords: ${greenHits.slice(0, 4).join(", ")} (+${pts})`);
+    why.push(`mentions ${list(greenHits.slice(0, 3))}`);
   }
   if (redHits.length) {
     const pts = Math.min(35, redHits.length * 15);
     score -= pts;
     signals.push(`red keywords: ${redHits.slice(0, 4).join(", ")} (-${pts})`);
+    why.push(`is about ${list(redHits.slice(0, 3))}`);
   }
 
   const services = (rules.highIntentServices ?? []).map((s) => s.toLowerCase());
@@ -166,6 +171,7 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   if (serviceHits.length) {
     score += 15;
     signals.push(`high-intent service: ${serviceHits.join(", ")} (+15)`);
+    why.push(`asks about ${list(serviceHits.slice(0, 3))}`);
   }
 
   const budget = parseBudget(input.attributes ?? {});
@@ -173,12 +179,15 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
     if (rules.minBudget !== undefined && budget >= rules.minBudget) {
       score += 20;
       signals.push(`budget ${budget} ≥ tenant minimum ${rules.minBudget} (+20)`);
+      why.push(`has a budget of ${budget}`);
     } else if (rules.minBudget !== undefined) {
       score -= 10;
       signals.push(`budget ${budget} below tenant minimum ${rules.minBudget} (-10)`);
+      why.push(`has a budget of ${budget}, below the minimum`);
     } else {
       score += 10;
       signals.push(`budget stated: ${budget} (+10)`);
+      why.push(`has a budget of ${budget}`);
     }
   }
 
@@ -186,20 +195,25 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   if (timeline === "now") {
     score += 15;
     signals.push("timeline: immediate (+15)");
+    why.push("wants to move now");
   } else if (timeline === "soon") {
     score += 5;
     signals.push("timeline: soon (+5)");
+    why.push("is looking to move soon");
   } else if (timeline === "later") {
     score -= 10;
     signals.push("timeline: later / researching (-10)");
+    why.push("is only researching for now");
   }
 
   if (input.phone) {
     score += 10;
     signals.push("phone number provided (+10)");
+    why.push("left a phone number");
   } else if (rules.requirePhone) {
     score -= 15;
     signals.push("no phone number, which this business requires for a green lead (-15)");
+    why.push("left no phone number");
   }
 
   const areas = (rules.serviceAreas ?? []).map((a) => a.toLowerCase()).filter(Boolean);
@@ -208,6 +222,7 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
     if (inArea.length) {
       score += 10;
       signals.push(`in service area: ${inArea.join(", ")} (+10)`);
+      why.push(`is in ${list(inArea.map((a) => (rules.serviceAreas ?? []).find((o) => o.toLowerCase() === a) ?? a))}`);
     }
   }
 
@@ -216,6 +231,7 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   if (autoHits.length) {
     score -= 20;
     signals.push(`handled automatically for this business: ${autoHits[0]} (-20)`);
+    why.push(`is a ${autoHits[0]} question, which is answered automatically`);
   }
   if (HIGH_INTENT_SOURCES.has(input.source)) {
     score += 5;
@@ -224,14 +240,18 @@ export function scoreLead(input: QualificationInput, rules: QualificationRules):
   if (!input.email && !input.phone) {
     score -= 20;
     signals.push("no contact details (-20)");
+    why.push("left no contact details");
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   const ticketType = score >= GREEN_THRESHOLD ? "GREEN" : "RED";
+  // Read by the client under "Why this one needs you" / "Why we handled this one": plain words, no score, no weights.
   const reason =
     ticketType === "GREEN"
-      ? `Revenue intent detected (score ${score}). ${signals.join("; ")}`
-      : `Routed to operational queue (score ${score}). ${signals.join("; ") || "No intent signals found."}`;
+      ? `Looks like real business: ${list(why)}.`
+      : why.length
+        ? `Reads as a routine question rather than a sale: ${list(why)}.`
+        : "Reads as a routine question rather than a sale; nothing in it points to one.";
 
   return { ticketType, intentScore: score, reason, classifier: "stub", signals };
 }

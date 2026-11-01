@@ -7,6 +7,7 @@ import { demoTenants } from "@/lib/data/fixtures";
 import { tick } from "@/lib/jobs/tick";
 import { clampOutOfQuietHours, inQuietHours, quietHoursEnd, sendMessage } from "@/lib/messaging";
 import { destinationAllowed } from "@/lib/messaging/policy";
+import { scoreLead } from "@/lib/qualify/rules";
 import { quoteUntrusted, safeName, safeTopic, whenPhrase } from "@/lib/messaging/templates";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import type { TenantSummary } from "@/lib/types";
@@ -56,6 +57,20 @@ describe("untrusted text in messages", () => {
   it("formats appointment times for an older reader", () => {
     const when = whenPhrase(harbor, new Date("2026-11-03T23:30:00Z")); // 10:00 am Adelaide (ACDT) on Wednesday 4 November
     assert.match(when ?? "", /^on Wednesday 4 November at 10:00 am$/i);
+  });
+});
+
+describe("the rule engine explains itself in the client's words", () => {
+  const rules = { serviceAreas: ["Norwood", "Adelaide"], highIntentServices: ["appraisal"], requirePhone: true };
+  it("gives a plain reason with no score or weights", () => {
+    const green = scoreLead({ source: "WEB_FORM", message: "Thinking of selling my house in Norwood, can I get an appraisal?", phone: "+61400111222", email: null, attributes: {} }, rules);
+    assert.equal(green.ticketType, "GREEN");
+    assert.doesNotMatch(green.reason, /score|\(\+|\(-|queue|intent detected/i);
+    assert.match(green.reason, /^Looks like real business: .*asks about appraisal.*left a phone number.*is in Norwood\.$/);
+    const routine = scoreLead({ source: "WEB_FORM", message: "TESTING SMS API", phone: "+85512345678", email: null, attributes: {} }, rules);
+    assert.equal(routine.ticketType, "RED");
+    assert.match(routine.reason, /^Reads as a routine question rather than a sale: left a phone number\.$/);
+    assert.ok(routine.signals.some((s) => /\(\+10\)/.test(s)), "operators keep the weighted signals");
   });
 });
 
