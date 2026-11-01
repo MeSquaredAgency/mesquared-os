@@ -5,22 +5,27 @@ import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { MoneyPanel } from "@/components/portal/money-panel";
 import { NeedsYou } from "@/components/portal/needs-you";
 import { Me2Person } from "@/components/shell/me2-person";
-import { PageHeader, Stat, StatStrip } from "@/components/shell/section";
+import { PageHeader } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
-import { COPY } from "@/lib/copy";
 import { repository } from "@/lib/data";
-import { formatMoney } from "@/lib/utils";
+import { describeHandled } from "@/lib/portal/handled";
 
 export const metadata = { title: "Home" };
 
+/**
+ * The client's home. It opens on what needs them; when nothing does, it says
+ * so once and shows what was done for them. Numbers live inside the section
+ * they explain, never in a strip of their own at the top.
+ */
 export default async function PortalHomePage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
   const { user, access } = await getPortalContext(slug);
   const tenant = access.tenant;
   const canViewFinances = hasPermission(access, "VIEW_FINANCES");
   const viewAll = hasPermission(access, "VIEW_ALL_RECORDS");
+  const canApprove = hasPermission(access, "APPROVE_CONTENT");
   const home = await repository.getPortalHome(tenant.id, {
     timezone: tenant.timezone,
     currency: tenant.currency,
@@ -30,37 +35,39 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
   const base = `/app/${slug}`;
   const today = new Date().toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, weekday: "long", day: "numeric", month: "long" });
-  const waiting = home.needsYou.length;
+
+  const leads = home.needsYou.length;
+  const approvals = canApprove ? home.contentAwaiting.length : 0;
+  const waiting = leads + approvals;
+  const done = describeHandled(home.handled.byType);
+  const lede = waiting > 0 ? "Everything else is handled, with a person checking the work." : done ? `This week we ${done}, with a person checking the work.` : "Everything is handled, with a person checking the work.";
+
+  const handled = <HandledForYou handled={home.handled} activityHref={`${base}/activity`} />;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-10">
       <PageHeader
         eyebrow={`${tenant.name} · ${today}`}
         title={headline(waiting, user.name)}
-        lede={waiting > 0 ? "Everything else is handled, with a person checking the work." : "Everything is handled, with a person checking the work. Here’s where things stand."}
+        lede={lede}
         actions={
           <>
             <Me2Person tenantId={tenant.id} />
             {waiting > 0 && (
               <Button asChild>
-                <Link href="#needs-you-title">See who’s waiting</Link>
+                <Link href={leads > 0 ? "#needs-you-title" : "#content-title"}>See what’s waiting</Link>
               </Button>
             )}
           </>
         }
       />
 
-      <StatStrip label="This month at a glance" columns={3}>
-        <Stat label={COPY.atRiskLabel} value={formatMoney(home.missed.atRiskCents, fmt.currency, fmt.locale)} tone={home.missed.atRiskCents > 0 ? "red" : "neutral"} hint={`${home.missed.open.length} open`} />
-        <Stat label={COPY.recoveredThisMonth} value={formatMoney(home.missed.recoveredCents, fmt.currency, fmt.locale)} tone={home.missed.recoveredCents > 0 ? "green" : "neutral"} hint="Won back for you" />
-        <Stat label="Handled this week" value={home.handled.countWeek} hint={`${home.handled.countToday} today`} />
-      </StatStrip>
-
-      <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />
+      {leads > 0 && <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />}
+      {home.contentAwaiting.length > 0 && <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={canApprove} isMember={access.via === "member"} />}
+      {waiting === 0 && handled}
       <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />
       {home.money && <MoneyPanel money={home.money} fmt={fmt} />}
-      <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={hasPermission(access, "APPROVE_CONTENT")} isMember={access.via === "member"} />
-      <HandledForYou handled={home.handled} activityHref={`${base}/activity`} />
+      {waiting > 0 && handled}
     </div>
   );
 }

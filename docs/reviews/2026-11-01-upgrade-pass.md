@@ -148,6 +148,12 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   Cal.com connected the page forwards to the prefilled link instead of the
   bare event URL.
 
+- **Staff can be the test lead from anywhere.** The destination rule still
+  limits a workspace to its own country, but numbers listed in
+  `MESSAGING_STAFF_NUMBERS` (a deployment secret, E.164, comma-separated) may
+  be texted by any workspace. Twilio's geo-permissions must also allow the
+  country. Nothing a public form submits can widen this.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

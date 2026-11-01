@@ -35,6 +35,7 @@ import {
   type User,
 } from "@prisma/client";
 import { healthScore } from "@/lib/health";
+import { HANDLED_OUTCOMES, HOUSEKEEPING_TYPES } from "@/lib/portal/handled";
 import { getPrisma } from "@/lib/prisma";
 import type {
   AdAccountRecord,
@@ -1522,7 +1523,8 @@ export const prismaRepository: Repository = {
     const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60_000);
 
     const openWhere = { tenantId, status: { in: OPEN_MISSED }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) } satisfies Prisma.MissedOpportunityWhereInput;
-    const [needsYou, open, atRisk, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, countWeek, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
+    const handledWhere = { tenantId, outcome: { in: [...HANDLED_OUTCOMES] }, typeKey: { notIn: [...HOUSEKEEPING_TYPES] }, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) } satisfies Prisma.AutomationRunWhereInput;
+    const [needsYou, open, atRisk, recovered, leadsMonth, revenue, contentAwaiting, runs, countToday, byType, adSpendMonthCents, expenses, openInvoices] = await Promise.all([
       this.listNeedsYou(tenantId, { onlyAssigneeId: opts.onlyAssigneeId, limit: 8 }),
       db.missedOpportunity.findMany({ where: openWhere, orderBy: { detectedAt: "desc" }, take: 20 }),
       // The headline sums every open item, not just the twenty shown.
@@ -1531,9 +1533,9 @@ export const prismaRepository: Repository = {
       db.lead.count({ where: { tenantId, createdAt: { gte: monthStart } } }),
       db.transaction.aggregate({ where: { tenantId, status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.contentAsset.findMany({ where: { tenantId, status: "IN_REVIEW" }, orderBy: { createdAt: "desc" }, take: 10 }),
-      db.automationRun.findMany({ where: { tenantId, ...(opts.onlyAssigneeId ? { lead: { assigneeId: opts.onlyAssigneeId } } : {}) }, orderBy: { createdAt: "desc" }, take: 6 }),
-      db.automationRun.count({ where: { tenantId, createdAt: { gte: dayStart } } }),
-      db.automationRun.count({ where: { tenantId, createdAt: { gte: weekStart } } }),
+      db.automationRun.findMany({ where: handledWhere, orderBy: { createdAt: "desc" }, take: 6 }),
+      db.automationRun.count({ where: { ...handledWhere, createdAt: { gte: dayStart } } }),
+      db.automationRun.groupBy({ by: ["typeKey"], where: { ...handledWhere, createdAt: { gte: weekStart } }, _count: { _all: true } }),
       this.sumAdSpend(tenantId, monthBucketInZone(opts.timezone), undefined, opts.currency),
       db.transaction.aggregate({ where: { tenantId, kind: "EXPENSE", status: "COMPLETED", currency: opts.currency, occurredAt: { gte: monthStart } }, _sum: { amountCents: true } }),
       db.invoice.findMany({ where: { tenantId, status: { in: ["SENT", "OVERDUE"] } }, select: { amountDueCents: true, status: true, dueAt: true } }),
@@ -1559,7 +1561,12 @@ export const prismaRepository: Repository = {
           }
         : null,
       contentAwaiting: contentAwaiting.map(toAsset),
-      handled: { runs: runs.map(toRun), countToday, countWeek },
+      handled: {
+        runs: runs.map(toRun),
+        countToday,
+        countWeek: byType.reduce((sum, t) => sum + t._count._all, 0),
+        byType: byType.map((t) => ({ typeKey: t.typeKey, count: t._count._all })),
+      },
     } satisfies PortalHome;
   },
 

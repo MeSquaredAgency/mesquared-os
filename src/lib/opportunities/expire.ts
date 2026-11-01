@@ -33,7 +33,7 @@ export async function expireStaleOpportunities(tenant: TenantSummary, now = new 
   const expired = [...kinds.values()].reduce((a, b) => a + b, 0);
   if (expired > 0) {
     const breakdown = [...kinds.entries()].map(([label, n]) => `${n} ${label.toLowerCase()}${n === 1 ? "" : "s"}`).join(", ");
-    await repository.recordAutomationRun(tenant.id, { typeKey: "sla_watch", outcome: "COMPLETED", summary: `Closed ${expired} item${expired === 1 ? "" : "s"} older than ${days} days that nobody could recover (${breakdown}).` });
+    await repository.recordAutomationRun(tenant.id, { typeKey: "sla_watch", outcome: "SKIPPED", summary: `Closed ${expired} item${expired === 1 ? "" : "s"} older than ${days} days that nobody could recover (${breakdown}).` });
     log("info", "opportunities.expired", { tenantId: tenant.id, expired, valueCents, days });
   }
   return { expired, valueCents };

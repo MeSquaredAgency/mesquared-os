@@ -64,13 +64,28 @@ const ALLOWED_CALLING_CODES: Record<string, string[]> = {
 };
 
 /**
+ * Me² staff mobiles that any workspace may text, whatever its region, so an
+ * operator abroad can be the test lead for a client. Read from
+ * MESSAGING_STAFF_NUMBERS (E.164, comma-separated; spaces inside a number are
+ * fine), kept as a deployment secret rather than in the repo; never a
+ * per-workspace setting.
+ */
+export function staffNumbers(raw: string | undefined = process.env.MESSAGING_STAFF_NUMBERS): string[] {
+  return (raw ?? "")
+    .split(/[,;]+/)
+    .map((n) => n.replace(/\D/g, ""))
+    .filter((n) => n.length >= 8);
+}
+
+/**
  * Phone destinations are limited to the tenant's own country (and close
  * neighbours). A public form must never be able to point tenant-branded SMS
- * at premium or overseas numbers.
+ * at premium or overseas numbers. The only exception is our own staff.
  */
-export function destinationAllowed(tenant: Pick<TenantSummary, "region">, to: string): boolean {
+export function destinationAllowed(tenant: Pick<TenantSummary, "region">, to: string, staff: string[] = staffNumbers()): boolean {
   const digits = to.replace(/\D/g, "");
   if (!to.startsWith("+") || digits.length < 8) return false;
+  if (staff.includes(digits)) return true;
   const allowed = ALLOWED_CALLING_CODES[tenant.region.toUpperCase()] ?? [];
   return allowed.some((cc) => digits.startsWith(cc));
 }
