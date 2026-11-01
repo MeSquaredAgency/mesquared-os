@@ -6,7 +6,7 @@ import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { tick } from "@/lib/jobs/tick";
 import { clampOutOfQuietHours, inQuietHours, quietHoursEnd, sendMessage } from "@/lib/messaging";
-import { destinationAllowed } from "@/lib/messaging/policy";
+import { destinationAllowed, staffNumbers } from "@/lib/messaging/policy";
 import { quoteUntrusted, safeName, safeTopic, whenPhrase } from "@/lib/messaging/templates";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import type { TenantSummary } from "@/lib/types";
@@ -65,6 +65,15 @@ describe("destination and consent policy inside sendMessage", () => {
     assert.equal(destinationAllowed(harbor, "+8801700000000"), false);
     assert.equal(destinationAllowed(harbor, "0400111222"), false);
     assert.equal(destinationAllowed({ region: "KH" }, "+85512345678"), true);
+  });
+
+  it("lets any workspace text a Me² staff mobile, and only that mobile", () => {
+    const staff = staffNumbers("+855 12 345 678, +61400111222;junk");
+    assert.deepEqual(staff, ["85512345678", "61400111222"]);
+    assert.equal(destinationAllowed(harbor, "+85512345678", staff), true);
+    assert.equal(destinationAllowed(harbor, "+85512345679", staff), false);
+    assert.equal(destinationAllowed(harbor, "85512345678", staff), false, "still needs E.164");
+    assert.deepEqual(staffNumbers(undefined), []);
   });
 
   it("refuses an overseas SMS and records the refusal on the conversation", async () => {
