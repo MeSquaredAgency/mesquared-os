@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { MissedOpportunities } from "@/components/portal/missed-opportunities";
 import { FilterChips, type FilterChip } from "@/components/shell/filter-chips";
 import { Empty, PageHeader, Section } from "@/components/shell/section";
@@ -6,6 +7,7 @@ import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
 import { repository } from "@/lib/data";
+import { moduleOn } from "@/lib/modules/registry";
 import type { MissedOpportunityType } from "@/lib/types";
 import { formatMoney, timeAgo } from "@/lib/utils";
 
@@ -20,6 +22,8 @@ export default async function OpportunitiesPage({ params, searchParams }: { para
   const tenant = access.tenant;
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
   const onlyAssigneeId = hasPermission(access, "VIEW_ALL_RECORDS") ? null : user.id;
+  const config = await repository.getTenantConfig(tenant.id);
+  if (!moduleOn(config.modules, "opportunities")) notFound();
   const all = await repository.listMissedOpportunities(tenant.id, { limit: 200, onlyAssigneeId });
   const type = rawType && rawType in MISSED_OPPORTUNITY_LABEL ? (rawType as MissedOpportunityType) : null;
 
@@ -61,7 +65,7 @@ export default async function OpportunitiesPage({ params, searchParams }: { para
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className="text-sm font-medium num">{formatMoney(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents, fmt.currency, fmt.locale)}</span>
+                  {(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents) > 0 && <span className="text-sm font-medium num">{formatMoney(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents, fmt.currency, fmt.locale)}</span>}
                   <Badge variant={m.status === "RECOVERED" ? "green" : "muted"}>{m.status === "RECOVERED" ? COPY.recovered : "Closed"}</Badge>
                 </div>
               </li>

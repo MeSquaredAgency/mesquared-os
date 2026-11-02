@@ -8,6 +8,7 @@ import { emit } from "@/lib/events";
 import { tick } from "@/lib/jobs/tick";
 import { detectForTenant } from "@/lib/opportunities/detect";
 import { templates } from "@/lib/messaging";
+import { moduleOn } from "@/lib/modules/registry";
 import { assignNewLead, registerPlaybook, runGreenLeadPlaybook } from "@/lib/playbook";
 
 /**
@@ -100,6 +101,26 @@ describe("the Monday email", () => {
     assert.ok(run, "the digest leaves a line in the activity log");
     if (result.sent > 0) assert.match(run!.summary, /Sent the weekly summary/);
     else assert.match(run!.summary, /could not be sent/);
+  });
+
+  it("leaves missed opportunities out when that module is off, and never prints a price nobody set", () => {
+    const base = { tenant: harbor, firstName: "Dana", weekLabel: "26 October – 1 November", leads: 4, needsYou: 0, handled: 3, money: null, portalUrl: "https://os.example/app/harbor" };
+    const on = templates.weeklyDigestEmail({ ...base, recovered: { count: 0, cents: 0 }, atRisk: { count: 0, cents: 0 } });
+    assert.match(on.body, /Nothing slipped through/);
+    const off = templates.weeklyDigestEmail({ ...base, recovered: null, atRisk: null });
+    assert.doesNotMatch(off.body, /slipped|at risk|recovered/i, "the module is off, so the email says nothing about it");
+    assert.match(off.body, /4 new enquiries came in/);
+    // Values zeroed in Settings: the counts stay, the dollar figures go.
+    const unpriced = templates.weeklyDigestEmail({ ...base, recovered: { count: 2, cents: 0 }, atRisk: { count: 1, cents: 0 } });
+    assert.match(unpriced.body, /2 opportunities that would have slipped came back\./);
+    assert.match(unpriced.body, /1 thing still at risk; we are on it\./);
+    assert.doesNotMatch(unpriced.body, /\$/);
+  });
+
+  it("treats a module with no row, or switched off, as off", () => {
+    assert.equal(moduleOn([], "opportunities"), false);
+    assert.equal(moduleOn([{ moduleKey: "opportunities", enabled: false }], "opportunities"), false);
+    assert.equal(moduleOn([{ moduleKey: "opportunities", enabled: true }], "opportunities"), true);
   });
 });
 

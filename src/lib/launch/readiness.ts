@@ -1,5 +1,6 @@
 import { dataMode, repository } from "@/lib/data";
 import type { TenantConfig } from "@/lib/data/repository";
+import { moduleOn } from "@/lib/modules/registry";
 import type { ReadinessCheck, TenantSummary } from "@/lib/types";
 
 /**
@@ -38,7 +39,7 @@ export async function tenantReadiness(tenant: TenantSummary, knownConfig?: Tenan
   add("ads", "Ad accounts connected with budgets", "recommended", adAccounts.length > 0 && adAccounts.every((a) => (a.monthlyBudgetCents ?? 0) > 0), adAccounts.length ? `${adAccounts.length} account${adAccounts.length === 1 ? "" : "s"}${adAccounts.some((a) => !a.monthlyBudgetCents) ? ", some without a budget" : ""}` : "Connect Meta and Google Ads to tie spend to leads");
   add("finance", "Finance provider connected", "optional", ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].some(connected), ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].filter(connected).join(", ") || "Revenue stays at pipeline value until one is connected");
   add("website", "Website forms and beacon", "recommended", Boolean(integration("WEBSITE")) || intakeKeys.length > 0, integration("WEBSITE") ? `Domain ${String(integration("WEBSITE")!.externalAccountId ?? "")} on file` : "Add the form key and the page beacon to the site");
-  const inventoryOn = config.modules.some((m) => m.moduleKey === "inventory" && m.enabled);
+  const inventoryOn = moduleOn(config.modules, "inventory");
   const pm = integration("PROPERTY_MANAGEMENT");
   add("inventory", "Inventory (listings) on when the business tracks stock", "optional", inventoryOn, inventoryOn ? (pm?.status === "CONNECTED" ? `Inventory module on; ${pm.label ?? "property management software"} connected, synced daily` : "Inventory module on; import a CSV or connect the property management software") : "Off; switch on for listings, rent roll or stock");
   return checks;

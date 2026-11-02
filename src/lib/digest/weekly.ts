@@ -4,6 +4,7 @@ import type { TenantConfig } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
 import { log } from "@/lib/log";
 import { sendMessage, templates } from "@/lib/messaging";
+import { moduleOn } from "@/lib/modules/registry";
 import type { TenantSummary } from "@/lib/types";
 import { startOfDayInZone } from "@/lib/utils";
 
@@ -47,6 +48,7 @@ export async function sendWeeklyDigest(tenant: TenantSummary, now = new Date()):
     repository.listMissedOpportunities(tenant.id, { status: ["RECOVERED"], limit: 500 }),
   ]);
   const recoveredThisWeek = closed.filter((m) => m.resolvedAt && m.resolvedAt >= start && m.resolvedAt < end);
+  const opportunitiesOn = moduleOn(config.modules, "opportunities");
   const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}`;
 
   let sent = 0;
@@ -58,8 +60,8 @@ export async function sendWeeklyDigest(tenant: TenantSummary, now = new Date()):
       weekLabel: label,
       leads: leads.length,
       needsYou: home.needsYou.length,
-      recovered: { count: recoveredThisWeek.length, cents: recoveredThisWeek.reduce((s, m) => s + m.recoveredValueCents, 0) },
-      atRisk: { count: home.missed.open.length, cents: home.missed.atRiskCents },
+      recovered: opportunitiesOn ? { count: recoveredThisWeek.length, cents: recoveredThisWeek.reduce((s, m) => s + m.recoveredValueCents, 0) } : null,
+      atRisk: opportunitiesOn ? { count: home.missed.open.length, cents: home.missed.atRiskCents } : null,
       handled: home.handled.countWeek,
       money: canSeeMoney && home.money ? { revenueCents: home.money.revenueMonthCents, adSpendCents: home.money.adSpendMonthCents, costPerLeadCents: home.money.costPerLeadCents } : null,
       portalUrl,

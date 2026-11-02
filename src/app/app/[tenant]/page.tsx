@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
+import { moduleOn } from "@/lib/modules/registry";
 import { describeHandled } from "@/lib/portal/handled";
 
 export const metadata = { title: "Home" };
@@ -26,12 +27,16 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
   const canViewFinances = hasPermission(access, "VIEW_FINANCES");
   const viewAll = hasPermission(access, "VIEW_ALL_RECORDS");
   const canApprove = hasPermission(access, "APPROVE_CONTENT");
-  const home = await repository.getPortalHome(tenant.id, {
-    timezone: tenant.timezone,
-    currency: tenant.currency,
-    onlyAssigneeId: viewAll ? null : user.id,
-    canViewFinances,
-  });
+  const [home, config] = await Promise.all([
+    repository.getPortalHome(tenant.id, {
+      timezone: tenant.timezone,
+      currency: tenant.currency,
+      onlyAssigneeId: viewAll ? null : user.id,
+      canViewFinances,
+    }),
+    repository.getTenantConfig(tenant.id),
+  ]);
+  const opportunitiesOn = moduleOn(config.modules, "opportunities");
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
   const base = `/app/${slug}`;
   const today = new Date().toLocaleDateString(tenant.locale, { timeZone: tenant.timezone, weekday: "long", day: "numeric", month: "long" });
@@ -65,7 +70,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
       {leads > 0 && <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />}
       {home.contentAwaiting.length > 0 && <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={canApprove} isMember={access.via === "member"} />}
       {waiting === 0 && handled}
-      <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />
+      {opportunitiesOn && <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />}
       {home.money && <MoneyPanel money={home.money} fmt={fmt} />}
       {waiting > 0 && handled}
     </div>

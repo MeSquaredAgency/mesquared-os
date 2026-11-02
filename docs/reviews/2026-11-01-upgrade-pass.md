@@ -193,6 +193,19 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   everyone again ten minutes later unless someone has marked the lead as
   called or they have booked. Book-first workspaces are unchanged.
 
+- **The "Missed opportunities" module switch now does something (2 Nov).**
+  APN's dashboard showed "$3,600 recovered this month": two of our own test
+  enquiries, priced at the real-estate template's $1,800 default, marked
+  handled. Before, the module toggle in Settings was decorative: the portal's
+  nav link, home card and page, and the Monday email's money lines, all
+  ignored it (only Inventory honoured its switch). `moduleOn(config.modules,
+  key)` in the modules registry is now the one way to ask, and the portal nav,
+  home card, opportunities page (404 when off) and the digest's recovered /
+  at-risk lines all use it. Detection and the SLA watch keep running with the
+  module off, because the call-first chase depends on them. Separately, a
+  workspace whose values are all zero in "What a missed opportunity is worth"
+  now gets counts without prices everywhere instead of "$0" figures.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
