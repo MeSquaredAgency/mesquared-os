@@ -160,6 +160,14 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   be texted by any workspace. Twilio's geo-permissions must also allow the
   country. Nothing a public form submits can widen this.
 
+- **A member's mobile works however it was typed.** Member phones were stored
+  as entered ("0490 415 758"), and the destination rule only accepts E.164, so
+  every lead-alert and callback text to a client's own people was skipped
+  silently: no message row, no error, nothing in Twilio. Both alert paths now
+  go through `textableNumber`, which normalises to E.164 using the workspace's
+  region before checking the rule; provisioning and the People form store
+  E.164 going forward; a text that Twilio rejects is now logged.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

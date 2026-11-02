@@ -1,3 +1,4 @@
+import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import type { TenantSummary } from "@/lib/types";
 import { zonedLocalToUtc } from "@/lib/utils";
 import type { OutboundChannel } from "./types";
@@ -88,6 +89,17 @@ export function destinationAllowed(tenant: Pick<TenantSummary, "region">, to: st
   if (staff.includes(digits)) return true;
   const allowed = ALLOWED_CALLING_CODES[tenant.region.toUpperCase()] ?? [];
   return allowed.some((cc) => digits.startsWith(cc));
+}
+
+/**
+ * A person's mobile as they typed it ("0490 415 758", "+61 490 415 758") as the
+ * E.164 number this workspace may text, or null when it cannot be texted. Member
+ * phones are stored however they were entered, so every text to a member goes
+ * through here rather than straight to `destinationAllowed`.
+ */
+export function textableNumber(tenant: Pick<TenantSummary, "region">, raw: string | null | undefined, staff: string[] = staffNumbers()): string | null {
+  const number = toE164(normalizePhone(raw), tenant.region);
+  return number && destinationAllowed(tenant, number, staff) ? number : null;
 }
 
 /** The next instant quiet hours end in the tenant's timezone (today or tomorrow). */

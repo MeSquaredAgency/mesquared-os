@@ -2,7 +2,7 @@ import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, clampOutOfQuietHours, destinationAllowed, sendMessage, templates, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta, type MessageSignature } from "@/lib/messaging";
+import { channelFor, clampOutOfQuietHours, destinationAllowed, sendMessage, templates, textableNumber, type OutboundChannel, senderIdentity, type SenderIdentity, type MessageCta, type MessageSignature } from "@/lib/messaging";
 import { safeAreas, whenPhrase } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { runContentBatch } from "@/lib/content/engine";
@@ -244,7 +244,7 @@ async function peopleToTell(tenant: TenantSummary, assigneeId: string | null): P
   const everyone = await repository.listAlertRecipients(tenant.id);
   const own = assigneeId ? everyone.filter((r) => r.userId === assigneeId) : [];
   const recipients = own.length ? own : everyone;
-  const phones = new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member" && p.phone && destinationAllowed(tenant, p.phone)).map((p) => [p.userId, p.phone as string]));
+  const phones = new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member").map((p) => [p.userId, textableNumber(tenant, p.phone)] as const).filter((e): e is readonly [string, string] => e[1] !== null));
   return { recipients, phones };
 }
 
@@ -262,6 +262,7 @@ export async function onCallbackRequested(tenant: TenantSummary, lead: LeadRecor
     if (phone) {
       const buzz = await sendMessage({ tenant, contactId: null, channel: "SMS", to: phone, body: text, automationRunId: run.id, transactional: true });
       if (buzz.ok) reached++;
+      else if (!buzz.simulated) console.error(`[automations] text to ${phone.slice(0, 4)}… for ${tenant.slug} failed: ${buzz.error}`);
     }
     const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
     if (sent.ok) reached++;

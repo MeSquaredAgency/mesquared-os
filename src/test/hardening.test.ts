@@ -91,6 +91,17 @@ describe("destination and consent policy inside sendMessage", () => {
     assert.deepEqual(staffNumbers(undefined), []);
   });
 
+  it("texts a member whose mobile was saved the way people write it", () => {
+    assert.equal(textableNumber(harbor, "0490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+61 490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "61490415758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+61 (0) 490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+855 12 345 678"), null, "overseas, and not a staff number");
+    assert.equal(textableNumber(harbor, "+855 12 345 678", staffNumbers("+85512345678")), "+85512345678");
+    assert.equal(textableNumber(harbor, null), null);
+    assert.equal(textableNumber(harbor, "ext 12"), null);
+  });
+
   it("refuses an overseas SMS and records the refusal on the conversation", async () => {
     const contact = await repository.upsertContact(harbor.id, { firstName: "Far", lastName: null, email: null, phone: "+8801700000001", company: null });
     const r = await sendMessage({ tenant: harbor, contactId: contact.id, channel: "SMS", to: contact.phone!, body: "hi", transactional: true });
