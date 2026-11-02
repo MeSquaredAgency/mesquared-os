@@ -97,6 +97,18 @@ export function destinationAllowed(tenant: Pick<TenantSummary, "region">, to: st
  * phones are stored however they were entered, so every text to a member goes
  * through here rather than straight to `destinationAllowed`.
  */
+/**
+ * The platform's own number, used instead of the workspace's when the
+ * destination is a Me² staff mobile (`MESSAGING_STAFF_NUMBERS`): a workspace's
+ * local number often cannot reach the country a staff member is testing from.
+ * Set `MESSAGING_STAFF_FROM_NUMBER` (E.164) to a number that can.
+ */
+export function staffFromNumber(to: string, staff: string[] = staffNumbers(), from: string | undefined = process.env.MESSAGING_STAFF_FROM_NUMBER): string | null {
+  const number = normalizePhone(from);
+  if (!number?.startsWith("+")) return null;
+  return staff.includes(to.replace(/\D/g, "")) ? number : null;
+}
+
 export function textableNumber(tenant: Pick<TenantSummary, "region">, raw: string | null | undefined, staff: string[] = staffNumbers()): string | null {
   const number = toE164(normalizePhone(raw), tenant.region);
   return number && destinationAllowed(tenant, number, staff) ? number : null;

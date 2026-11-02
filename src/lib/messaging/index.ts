@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { repository } from "@/lib/data";
 import type { TenantSummary } from "@/lib/types";
-import { chooseChannel, destinationAllowed, inQuietHours, quietHoursEnd, regionRule } from "./policy";
+import { chooseChannel, destinationAllowed, inQuietHours, quietHoursEnd, regionRule, staffFromNumber } from "./policy";
 import { providerFor } from "./providers";
 import type { MessageCta, MessageSignature, OutboundChannel, OutboundMessage, SendResult } from "./types";
 
@@ -65,7 +65,7 @@ const DAILY_TENANT_CAP = Number.parseInt(process.env.MESSAGING_DAILY_CAP ?? "500
 const DAILY_RECIPIENT_CAP = Number.parseInt(process.env.MESSAGING_RECIPIENT_DAILY_CAP ?? "4", 10) || 4;
 
 /** The sender identity for a channel: the tenant's number or address, with its name. */
-async function senderFor(tenant: TenantSummary, channel: OutboundChannel, replyToOverride?: string | null): Promise<OutboundMessage["from"] | null> {
+async function senderFor(tenant: TenantSummary, channel: OutboundChannel, to: string, replyToOverride?: string | null): Promise<OutboundMessage["from"] | null> {
   const name = tenant.branding.fromName ?? tenant.name;
   if (channel === "EMAIL") {
     // Email goes out from the platform's verified sending domain under the tenant's name;
@@ -76,7 +76,7 @@ async function senderFor(tenant: TenantSummary, channel: OutboundChannel, replyT
     return address ? { name, address, replyTo } : null;
   }
   const twilio = await repository.findIntegration(tenant.id, "TWILIO");
-  const fromNumber = typeof twilio?.settings.fromNumber === "string" ? twilio.settings.fromNumber : process.env.DEFAULT_FROM_NUMBER;
+  const fromNumber = staffFromNumber(to) ?? (typeof twilio?.settings.fromNumber === "string" ? twilio.settings.fromNumber : process.env.DEFAULT_FROM_NUMBER);
   return fromNumber ? { name, address: fromNumber } : null;
 }
 
@@ -144,7 +144,7 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
   // the tenant's own people (lead alerts, escalations; contactId null) are not customer traffic and are never capped.
   if (opts.contactId !== null && recipientCount >= DAILY_RECIPIENT_CAP) return refuse(`Already sent ${recipientCount} automated messages to this recipient today; holding back.`);
 
-  const from = await senderFor(tenant, opts.channel, opts.replyTo);
+  const from = await senderFor(tenant, opts.channel, opts.to, opts.replyTo);
   if (!from) return refuse(`No sender identity configured for ${opts.channel} on this workspace.`, true);
 
   const result = await providerFor(opts.channel).send({ channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject, from, cta: opts.cta ?? null, signature: opts.signature ?? null }, tenant);

@@ -6,7 +6,7 @@ import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { tick } from "@/lib/jobs/tick";
 import { clampOutOfQuietHours, inQuietHours, quietHoursEnd, sendMessage } from "@/lib/messaging";
-import { destinationAllowed, staffNumbers, textableNumber } from "@/lib/messaging/policy";
+import { destinationAllowed, staffFromNumber, staffNumbers, textableNumber } from "@/lib/messaging/policy";
 import { scoreLead } from "@/lib/qualify/rules";
 import { quoteUntrusted, safeName, safeTopic, whenPhrase } from "@/lib/messaging/templates";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
@@ -89,6 +89,14 @@ describe("destination and consent policy inside sendMessage", () => {
     assert.equal(destinationAllowed(harbor, "+85512345679", staff), false);
     assert.equal(destinationAllowed(harbor, "85512345678", staff), false, "still needs E.164");
     assert.deepEqual(staffNumbers(undefined), []);
+  });
+
+  it("texts a staff mobile from the platform number, and everyone else from the workspace's", () => {
+    const staff = staffNumbers("+85512345678");
+    assert.equal(staffFromNumber("+855 12 345 678", staff, "+1 555 0100 200"), "+15550100200");
+    assert.equal(staffFromNumber("+61400111222", staff, "+15550100200"), null, "a lead is never sent from the platform number");
+    assert.equal(staffFromNumber("+85512345678", staff, undefined), null, "no platform number configured");
+    assert.equal(staffFromNumber("+85512345678", staff, "15550100200"), null, "platform number must be E.164");
   });
 
   it("texts a member whose mobile was saved the way people write it", () => {

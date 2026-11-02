@@ -67,28 +67,34 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, incoming: Lead
       let result = null as Awaited<ReturnType<typeof sendMessage>> | null;
       const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Acknowledged ${name} with a booking link.`, leadId: lead.id, contactId: lead.contactId, details: { bookingLink: "prefilled" } });
       const notConfigured: string[] = [];
+      const failures: string[] = [];
       for (const candidate of candidates) {
         channel = candidate;
         const content = channel === "EMAIL" ? templates.acknowledgementEmail({ tenant, firstName: lead.firstName, bookingUrl, topic, area, signedBy: identity.signedBy }) : { subject: undefined, body: templates.acknowledgementSms({ tenant, firstName: lead.firstName, bookingUrl, topic, area, signedBy: identity.signedBy }), cta: null };
         result = await sendMessage({ tenant, contactId: lead.contactId, channel, to: channel === "EMAIL" ? lead.email! : lead.phone!, body: content.body, subject: content.subject, automationRunId: run.id, transactional: true, replyTo: identity.replyTo, cta: content.cta, signature: identity.signature });
-        if (result.ok || !result.simulated) break; // sent, or a real provider error worth surfacing; only "not configured" falls through
-        notConfigured.push(channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp");
+        if (result.ok || result.held) break;
+        // "Not configured" and a provider refusal both fall through to the next channel: the person must hear back either way.
+        const tried = channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp";
+        if (result.simulated) notConfigured.push(tried);
+        else failures.push(`the ${tried} couldn't be sent: ${result.error}`);
       }
       const outcome = result!;
+      const skippedOnly = failures.length === 0 && outcome.simulated;
       const label = channel === "EMAIL" ? "email" : channel === "SMS" ? "SMS" : "WhatsApp";
       if (outcome.ok) {
         acknowledged = "SENT";
-        const fellBack = notConfigured.length ? ` (${notConfigured.join(" and ")} isn't set up for ${tenant.name} yet)` : "";
+        const notes = [...(notConfigured.length ? [`${notConfigured.join(" and ")} isn't set up for ${tenant.name} yet`] : []), ...failures];
+        const fellBack = notes.length ? ` (${notes.join("; ")})` : "";
         await repository.updateAutomationRun(tenant.id, run.id, { outcome: "SENT", summary: `Acknowledged ${name} by ${label} with a booking link${fellBack}.` });
         await repository.markLeadResponded(tenant.id, lead.id, new Date());
         await repository.resolveMissedOpportunityByKey(tenant.id, `UNANSWERED_ENQUIRY:${lead.id}`, "RECOVERED");
         await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: true });
         await emit(tenant.id, "message.sent", { leadId: lead.id, channel, automationRunId: run.id, simulated: outcome.simulated }, run.id);
       } else {
-        acknowledged = outcome.simulated ? "SKIPPED" : "FAILED";
+        acknowledged = skippedOnly ? "SKIPPED" : "FAILED";
         await repository.createBooking(tenant.id, { leadId: lead.id, bookingUrl, sent: false });
-        await repository.updateAutomationRun(tenant.id, run.id, { outcome: outcome.simulated ? "SKIPPED" : "FAILED", summary: outcome.simulated ? `${name} is waiting for a reply: messaging isn’t connected for ${tenant.name} yet (their booking link is ready).` : `Couldn’t send the acknowledgement to ${name}: ${outcome.error}`, details: { error: outcome.error } });
-        if (!outcome.simulated) await repository.createException(tenant.id, { reason: `Acknowledgement to ${name} failed: ${outcome.error}`, suggestedAction: "Reply by hand, then check the messaging integration.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
+        await repository.updateAutomationRun(tenant.id, run.id, { outcome: skippedOnly ? "SKIPPED" : "FAILED", summary: skippedOnly ? `${name} is waiting for a reply: messaging isn’t connected for ${tenant.name} yet (their booking link is ready).` : `Couldn’t send the acknowledgement to ${name}: ${failures.join("; ") || outcome.error}`, details: { error: failures.join("; ") || outcome.error } });
+        if (!skippedOnly) await repository.createException(tenant.id, { reason: `Acknowledgement to ${name} failed: ${failures.join("; ") || outcome.error}`, suggestedAction: "Reply by hand, then check the messaging integration.", confidence: 0.9, leadId: lead.id, contactId: lead.contactId });
       }
     }
   } else {
