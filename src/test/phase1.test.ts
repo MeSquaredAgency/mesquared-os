@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
+import { runScheduledAction } from "@/lib/automations/handlers";
 import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { parseEnquiryEmail } from "@/lib/intake/channels/email-parsers";
@@ -7,6 +8,8 @@ import { mapMetaFieldData, parseMetaLeadgenEvents, verifyMetaSignature } from "@
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
 import { chooseChannel, inQuietHours, regionRule, templates } from "@/lib/messaging";
+import { chaseUncalledLead } from "@/lib/opportunities/call-first";
+import { detectForTenant } from "@/lib/opportunities/detect";
 import { scoreLead } from "@/lib/qualify/rules";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
@@ -111,6 +114,59 @@ describe("green-lead playbook (log provider)", () => {
     const runs = (await repository.listAutomationRuns(summit.id, 30)).filter((r) => r.leadId === lead!.id);
     assert.ok(runs.some((r) => /Acknowledged Fallback Lead by email/.test(r.summary)), "email acknowledgement run");
     assert.ok(runs.some((r) => /SMS isn.t set up/.test(r.summary)), "honest note about SMS");
+  });
+
+  it("call-first: promises a call, leaves the response clock running, and chases the team until someone calls", async () => {
+    const original = harbor.sla;
+    const tenant = (await repository.updateTenant(harbor.id, { sla: { ...harbor.sla, responseMode: "call_first" } }))!;
+    try {
+      const body = intakeSchema.parse({ source: "WEB_FORM", externalId: "pb_call_first", name: "Nora Quinn", email: "nora@example.com", phone: "+61 400 999 113", message: "I own a unit in Adelaide and want an appraisal to sell." });
+      const result = await processIntake(tenant, body, {});
+      assert.equal(result.outcome, "created");
+      if (result.outcome !== "created") return;
+      const lead = await repository.findLeadById(harbor.id, result.lead.id);
+      assert.equal(lead?.firstResponseAt, null, "the automated reply is not the response");
+      assert.equal(lead?.status, "QUALIFIED", "the lead stays in Needs you until a person calls");
+      const runs = (await repository.listAutomationRuns(harbor.id, 30)).filter((r) => r.leadId === lead!.id);
+      assert.ok(runs.some((r) => r.outcome === "SENT" && /Acknowledged Nora Quinn by SMS and promised a call/.test(r.summary)), `promised a call: ${runs.map((r) => r.summary).join(" | ")}`);
+      assert.ok(runs.some((r) => /Told .* about Nora Quinn/.test(r.summary)), "the team was alerted");
+
+      // Six minutes on and nobody has called: the enquiry is raised and the team is reminded on their phones.
+      const later = new Date(Date.now() + 6 * 60_000);
+      const detected = await detectForTenant(tenant, later);
+      assert.ok(detected.detected.some((d) => d.type === "UNANSWERED_ENQUIRY" && d.subjectId === lead!.id), "raised as unanswered");
+      const afterDetect = (await repository.listAutomationRuns(harbor.id, 50)).filter((r) => r.leadId === lead!.id);
+      assert.ok(afterDetect.some((r) => r.typeKey === "sla_watch" && r.outcome === "SENT" && /Reminded .* to call Nora Quinn: \d+ min and nobody has yet/.test(r.summary)), `reminded: ${afterDetect.map((r) => r.summary).join(" | ")}`);
+      const chase = (await repository.listDueActions(new Date(later.getTime() + 11 * 60_000), 500)).find((a) => a.dedupeKey === `sla_watch:chase_call:${lead!.id}`);
+      assert.ok(chase, "a second chase is queued");
+
+      // Still nobody: everyone who holds lead alerts is chased.
+      await runScheduledAction(chase!);
+      const afterChase = (await repository.listAutomationRuns(harbor.id, 50)).filter((r) => r.leadId === lead!.id);
+      assert.ok(afterChase.some((r) => /Chased 2 people to call Nora Quinn/.test(r.summary)), `chased everyone: ${afterChase.map((r) => r.summary).join(" | ")}`);
+
+      // Once a person has called, a queued chase does nothing.
+      await repository.settleLeadSla(harbor.id, lead!.id, new Date());
+      assert.equal(await chaseUncalledLead(tenant, lead!, { again: true }), "settled");
+    } finally {
+      await repository.updateTenant(harbor.id, { sla: original });
+    }
+  });
+
+  it("call-first copy promises a call from the team, names nobody, and sends no link by text", () => {
+    const sms = templates.acknowledgementSms({ tenant: harbor, firstName: "Margaret", bookingUrl: "https://x/y", topic: "an appraisal", area: "Norwood", signedBy: "Dana", callFirst: true });
+    assert.equal(sms, "Hi Margaret, thanks for contacting Harbor Realty Group about an appraisal in Norwood. One of our team will call you shortly. If now isn't a good time, reply with a better one. This is an automated reply from Dana at Harbor Realty Group.");
+    assert.doesNotMatch(sms, /https:\/\/x\/y/, "no link to tap: the call is the next step");
+    const mail = templates.acknowledgementEmail({ tenant: harbor, firstName: null, bookingUrl: "https://x/y", topic: null, callFirst: true });
+    assert.match(mail.body, /one of our team will call you shortly/);
+    assert.match(mail.body, /reply to this email with a better one/);
+    assert.deepEqual(mail.cta, { label: "Choose a time", url: "https://x/y" });
+    const alert = templates.leadAlertEmail({ tenant: harbor, leadName: "Margaret Ellis", summary: "Appraisal please", score: 80, reason: "owner", phone: "+61400111222", email: null, portalUrl: "https://os/app", acknowledged: "SENT", callFirst: true });
+    assert.match(alert.body, /told one of your team will call them shortly, so please call them now/);
+    const chase = templates.callOverdueSms({ tenant: harbor, leadName: "Margaret Ellis", minutes: 7, phone: "+61400111222" });
+    assert.equal(chase, "Harbor Realty Group: nobody has called Margaret Ellis yet (7 min). +61400111222. Please call now.");
+    assert.ok(chase.length <= 160);
+    assert.match(templates.callOverdueSms({ tenant: harbor, leadName: "Margaret Ellis", minutes: 17, phone: null, again: true }), /still nobody has called Margaret Ellis yet \(17 min\)\. They were promised a call; please call now\./);
   });
 
   it("alert recipients are the members holding RECEIVE_LEAD_ALERTS", async () => {

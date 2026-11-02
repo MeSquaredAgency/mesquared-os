@@ -2,7 +2,8 @@ import { repository } from "@/lib/data";
 import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { leadDisplayName } from "@/lib/leads";
 import { quoteUntrusted, safeName } from "@/lib/messaging/templates";
-import type { MissedOpportunityType, TenantSummary } from "@/lib/types";
+import { isCallFirst, type MissedOpportunityType, type TenantSummary } from "@/lib/types";
+import { chaseUncalledLead } from "./call-first";
 import { raiseMissedOpportunity } from "./raise";
 
 export { opportunityValue } from "./raise";
@@ -41,17 +42,20 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
 
   // 1 & 4. Unanswered enquiries and leads that never booked.
   const { respond, book } = await repository.listLeadsPastSla(tenant.id, now);
+  const callFirst = isCallFirst(tenant);
   for (const lead of respond) {
     const r = await raiseMissedOpportunity(tenant, {
       type: "UNANSWERED_ENQUIRY",
       leadId: lead.id,
       contactId: lead.contactId,
       subjectId: lead.id,
-      summary: `${leadDisplayName(lead)} has waited more than ${tenant.sla.firstResponseMinutes} minutes without a reply.`,
-      suggestedAction: "Please call them now; the automatic reply didn't reach them.",
+      summary: callFirst ? `${leadDisplayName(lead)} was promised a call and has waited more than ${tenant.sla.firstResponseMinutes} minutes for it.` : `${leadDisplayName(lead)} has waited more than ${tenant.sla.firstResponseMinutes} minutes without a reply.`,
+      suggestedAction: callFirst ? "Call them now, then mark them as called." : "Please call them now; the automatic reply didn't reach them.",
       fallbackValueCents: lead.valueCents,
     });
     if (r) note("UNANSWERED_ENQUIRY", lead.id);
+    // Call-first: the people who should be calling hear about it on their phones, and are chased again if still nobody has.
+    if (r && callFirst) await chaseUncalledLead(tenant, lead, { again: false, now });
   }
   // A lead nobody has replied to has not booked either; its value is already counted once, under the unanswered enquiry.
   const unanswered = new Set(respond.map((l) => l.id));

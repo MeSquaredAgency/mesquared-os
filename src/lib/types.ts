@@ -89,7 +89,21 @@ export interface ServiceLevels {
   bookingWindowHours: number;
   /** Local wall-clock hours (0–23) between which automated messages are held. */
   quietHours?: { start: number; end: number };
+  /**
+   * What a new green lead is promised. "book_first" (the default) sends a
+   * booking link and counts that reply as the first response. "call_first"
+   * promises a call from the team: the automated reply does not stop the
+   * response clock, only a person does, and the team is chased when the
+   * window passes.
+   */
+  responseMode?: ResponseMode;
 }
+
+export type ResponseMode = "book_first" | "call_first";
+export const RESPONSE_MODES: ResponseMode[] = ["book_first", "call_first"];
+
+/** A workspace whose new leads are promised a call rather than a booking link. */
+export const isCallFirst = (tenant: Pick<TenantSummary, "sla">): boolean => tenant.sla.responseMode === "call_first";
 
 export type MissedOpportunityType =
   | "UNANSWERED_ENQUIRY"

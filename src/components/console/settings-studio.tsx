@@ -16,7 +16,7 @@ import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { MODULE_BY_KEY } from "@/lib/modules/registry";
 import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueApiKeyAction, removeMemberAction, revokeApiKeyAction, saveEscalationRulesAction, saveOpportunityValuesAction, saveTenantSettingsAction, setAutomationAction, setLeadAssignmentAction, setModuleAction, updateMemberProfileAction } from "@/lib/tenants/actions";
 import type { OperatorOption, SettingsView } from "@/lib/tenants/settings-view";
-import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord } from "@/lib/types";
+import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, ResponseMode, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord } from "@/lib/types";
 import { cn, formatDateTime, humanize, type FormatContext } from "@/lib/utils";
 
 interface Props {
@@ -171,6 +171,7 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
     bookingWindowHours: String(tenant.sla.bookingWindowHours),
     quietStart: String(tenant.sla.quietHours?.start ?? 21),
     quietEnd: String(tenant.sla.quietHours?.end ?? 8),
+    responseMode: (tenant.sla.responseMode ?? "book_first") as ResponseMode,
     serviceAreas: (tenant.qualificationRules.serviceAreas ?? []).join(", "),
     greenCriteria: (tenant.qualificationRules.greenCriteria ?? []).join("\n"),
     autoHandled: (tenant.qualificationRules.autoHandled ?? []).join("\n"),
@@ -214,6 +215,7 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
             bookingWindowHours: Number(f.bookingWindowHours),
             quietStart: Number(f.quietStart),
             quietEnd: Number(f.quietEnd),
+            responseMode: f.responseMode,
             serviceAreas: f.serviceAreas,
             greenCriteria: f.greenCriteria,
             autoHandled: f.autoHandled,
@@ -244,6 +246,19 @@ function BusinessPanel({ tenant, brand, pending, run }: Props & { pending: boole
           {field("Quiet hours start (0–23)", "quietStart", { type: "number", min: 0, max: 23 })}
           {field("Quiet hours end (0–23)", "quietEnd", { type: "number", min: 0, max: 23 })}
         </FieldGrid>
+        <Field
+          label="When a new lead comes in"
+          hint={
+            f.responseMode === "call_first"
+              ? "The lead is told one of the team will call shortly; nobody is named. That reply doesn't count as the response: the clock runs until someone marks them as called (or they book), and the team is reminded, then chased, when it runs out."
+              : "The lead gets a booking link straight away, and that reply counts as the first response."
+          }
+        >
+          <Select value={f.responseMode} onChange={(e) => setF({ ...f, responseMode: e.target.value as ResponseMode })}>
+            <option value="book_first">Send a booking link</option>
+            <option value="call_first">Promise a call from the team, and chase it</option>
+          </Select>
+        </Field>
         <CheckField label="Sign messages as the person assigned to the lead" hint="Replies go to them; the business name and number stay the same.">
           <input type="checkbox" checked={f.signAsAssignee} onChange={(e) => setF({ ...f, signAsAssignee: e.target.checked })} />
         </CheckField>

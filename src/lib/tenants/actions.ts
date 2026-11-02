@@ -93,6 +93,7 @@ const settingsSchema = z.object({
   bookingWindowHours: z.number().int().min(1).max(720).optional(),
   quietStart: z.number().int().min(0).max(23).optional(),
   quietEnd: z.number().int().min(0).max(23).optional(),
+  responseMode: z.enum(["book_first", "call_first"]).optional(),
   serviceAreas: z.string().max(500).optional(),
   greenCriteria: z.string().max(1000).optional(),
   autoHandled: z.string().max(1000).optional(),
@@ -114,7 +115,7 @@ export async function saveTenantSettingsAction(tenantId: string, input: z.input<
     if (!parsed.success) return { ok: false, message: "Some values are out of range; check the numbers and the email address." };
     const d = parsed.data;
     const branding = { ...tenant.branding, ...(d.fromName !== undefined ? { fromName: d.fromName || undefined } : {}), ...(d.replyTo !== undefined ? { replyTo: d.replyTo || undefined } : {}), ...(d.primaryColor !== undefined ? { primaryColor: d.primaryColor || undefined } : {}), ...(d.signAsAssignee !== undefined ? { signAsAssignee: d.signAsAssignee } : {}), ...(d.requiredFooter !== undefined ? { footer: d.requiredFooter.trim() || undefined } : {}), ...(d.logoUrl !== undefined ? { logoUrl: d.logoUrl || undefined } : {}), ...(d.website !== undefined ? { website: d.website.replace(/^https?:\/\//i, "").replace(/\/$/, "") || undefined } : {}), ...(d.phone !== undefined ? { phone: d.phone || undefined } : {}), ...(d.addresses !== undefined ? { addresses: d.addresses.split(/\n/).map((a) => a.trim()).filter(Boolean) } : {}), ...(d.facebook !== undefined || d.instagram !== undefined || d.youtube !== undefined || d.linkedin !== undefined ? { social: { ...tenant.branding.social, ...(d.facebook !== undefined ? { facebook: d.facebook || undefined } : {}), ...(d.instagram !== undefined ? { instagram: d.instagram || undefined } : {}), ...(d.youtube !== undefined ? { youtube: d.youtube || undefined } : {}), ...(d.linkedin !== undefined ? { linkedin: d.linkedin || undefined } : {}) } } : {}) };
-    const sla = { ...tenant.sla, ...(d.firstResponseMinutes ? { firstResponseMinutes: d.firstResponseMinutes } : {}), ...(d.bookingWindowHours ? { bookingWindowHours: d.bookingWindowHours } : {}), ...(d.quietStart !== undefined && d.quietEnd !== undefined ? { quietHours: { start: d.quietStart, end: d.quietEnd } } : {}) };
+    const sla = { ...tenant.sla, ...(d.firstResponseMinutes ? { firstResponseMinutes: d.firstResponseMinutes } : {}), ...(d.bookingWindowHours ? { bookingWindowHours: d.bookingWindowHours } : {}), ...(d.quietStart !== undefined && d.quietEnd !== undefined ? { quietHours: { start: d.quietStart, end: d.quietEnd } } : {}), ...(d.responseMode ? { responseMode: d.responseMode } : {}) };
     const q = { ...tenant.qualificationRules };
     const areas = list(d.serviceAreas);
     if (areas) q.serviceAreas = areas;
