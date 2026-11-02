@@ -65,6 +65,8 @@ export const logProvider: MessageProvider = {
   async send(message, tenant): Promise<SendResult> {
     const redact = process.env.NODE_ENV === "production";
     console.info(`[messaging:log] ${tenant.slug} ${message.channel} → ${redact ? message.to.slice(0, 4) + "…" : message.to} from ${message.from.name}: ${redact ? "[body redacted]" : message.body.slice(0, 240)}`);
+    // Tests can make a channel fail the way a real provider would (MESSAGING_LOG_FAIL="SMS,EMAIL") to exercise fallbacks.
+    if ((process.env.MESSAGING_LOG_FAIL ?? "").split(",").includes(message.channel)) return { ok: false, providerMessageId: null, error: `Simulated ${message.channel} provider failure`, simulated: false };
     return { ok: true, providerMessageId: `log_${Date.now()}`, error: null, simulated: true };
   },
 };

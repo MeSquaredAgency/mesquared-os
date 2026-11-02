@@ -168,6 +168,19 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   region before checking the rule; provisioning and the People form store
   E.164 going forward; a text that Twilio rejects is now logged.
 
+- **A lead always hears back if there is any way to reach them.** When the
+  acknowledgement text fails at the provider and the lead left an email, the
+  email goes instead, and the activity line says why ("the SMS couldn't be
+  sent: …"). Before, a provider refusal ended the attempt and the lead got
+  nothing. Only when every channel fails is the run marked failed and an
+  exception raised.
+
+- **Staff tests from abroad.** A workspace's local number often cannot text
+  another country at all (an Australian mobile cannot reach Cambodia, Twilio
+  error 21612). `MESSAGING_STAFF_FROM_NUMBER` names a platform number used as
+  the sender whenever the destination is a staff mobile; the message still
+  carries the workspace's name. Clients' own leads are never affected.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

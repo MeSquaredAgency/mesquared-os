@@ -79,6 +79,25 @@ describe("green-lead playbook (log provider)", () => {
     assert.ok(events.some((e) => e.type === "alert.sent" && e.payload.leadId === lead!.id));
   });
 
+  it("falls back to email when the provider refuses the text, and says so", async () => {
+    process.env.MESSAGING_LOG_FAIL = "SMS";
+    try {
+      const body = intakeSchema.parse({ source: "WEB_FORM", externalId: "pb_sms_refused", name: "Ravi Mehta", email: "ravi@example.com", phone: "+61 400 999 112", message: "I own a unit in Adelaide and want an appraisal to sell." });
+      const result = await processIntake(harbor, body, {});
+      assert.equal(result.outcome, "created");
+      if (result.outcome !== "created") return;
+      const lead = await repository.findLeadById(harbor.id, result.lead.id);
+      assert.equal(lead?.status, "BOOKING_SENT", "the lead still got the booking link");
+      const runs = (await repository.listAutomationRuns(harbor.id, 20)).filter((r) => r.leadId === lead!.id);
+      const ack = runs.find((r) => /Acknowledged Ravi Mehta by email/.test(r.summary));
+      assert.ok(ack, `acknowledged by email: ${runs.map((r) => r.summary).join(" | ")}`);
+      assert.equal(ack!.outcome, "SENT");
+      assert.match(ack!.summary, /the SMS couldn't be sent: Simulated SMS provider failure/);
+    } finally {
+      delete process.env.MESSAGING_LOG_FAIL;
+    }
+  });
+
   it("falls back to email when the preferred channel has no sender configured", async () => {
     // Summit has no TWILIO integration and DEFAULT_FROM_NUMBER is unset, so SMS cannot be sent; the lead also gave an email.
     const summit = demoTenants[1];
