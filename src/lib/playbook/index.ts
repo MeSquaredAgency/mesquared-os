@@ -2,7 +2,7 @@ import { repository } from "@/lib/data";
 import type { AlertRecipient } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
 import { leadDisplayName } from "@/lib/leads";
-import { channelFor, destinationAllowed, sendMessage, senderIdentity, templates, type OutboundChannel } from "@/lib/messaging";
+import { channelFor, destinationAllowed, sendMessage, senderIdentity, templates, textableNumber, type OutboundChannel } from "@/lib/messaging";
 import { safeArea, safeTopic } from "@/lib/messaging/templates";
 import { bookingLinkFor } from "@/lib/scheduling/calcom";
 import type { LeadRecord, TenantSummary } from "@/lib/types";
@@ -105,16 +105,17 @@ export async function runGreenLeadPlaybook(tenant: TenantSummary, incoming: Lead
     const text = templates.leadAlertSms({ tenant, leadName: name, topic, area, phone: lead.phone, acknowledged });
     const run = await repository.recordAutomationRun(tenant.id, { typeKey: "enquiry_auto_reply", outcome: "SENT", summary: `Told ${recipients.length === 1 ? recipients[0].name ?? recipients[0].email : `${recipients.length} people`} about ${name}.`, leadId: lead.id, contactId: lead.contactId, details: { recipients: recipients.map((r) => r.userId) } });
     const bySms = autoReply?.settings.alertBySms !== false;
-    const phones = bySms ? new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member" && p.phone).map((p) => [p.userId, p.phone as string])) : new Map<string, string>();
+    const phones = bySms ? new Map((await repository.listTenantPeople(tenant.id)).filter((p) => p.via === "member").map((p) => [p.userId, textableNumber(tenant, p.phone)] as const).filter((e): e is readonly [string, string] => e[1] !== null)) : new Map<string, string>();
     const reached: string[] = [];
     const failed: string[] = [];
     let texted = 0;
     let notConfigured = 0;
     for (const r of recipients) {
       const phone = phones.get(r.userId);
-      if (phone && destinationAllowed(tenant, phone)) {
+      if (phone) {
         const buzz = await sendMessage({ tenant, contactId: null, channel: "SMS", to: phone, body: text, automationRunId: run.id, transactional: true });
         if (buzz.ok) texted++;
+        else if (!buzz.simulated) console.error(`[playbook] text to ${phone.slice(0, 4)}… for ${tenant.slug} failed: ${buzz.error}`);
       }
       const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, body: mail.body, subject: mail.subject, automationRunId: run.id, transactional: true });
       (sent.ok ? reached : failed).push(r.name ?? r.email);
