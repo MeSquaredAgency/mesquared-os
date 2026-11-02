@@ -6,7 +6,9 @@ import { demoTenants } from "@/lib/data/fixtures";
 import { sendWeeklyDigest, weekBounds } from "@/lib/digest/weekly";
 import { emit } from "@/lib/events";
 import { tick } from "@/lib/jobs/tick";
+import { chaseUncalledLead } from "@/lib/opportunities/call-first";
 import { detectForTenant } from "@/lib/opportunities/detect";
+import { recordCallbackRequest } from "@/lib/scheduling/callback";
 import { templates } from "@/lib/messaging";
 import { assignNewLead, registerPlaybook, runGreenLeadPlaybook } from "@/lib/playbook";
 
@@ -179,6 +181,29 @@ describe("a lead who asks to be called back", () => {
     assert.match(run!.summary, /tomorrow morning/);
     const sms = templates.callbackRequestedSms({ tenant: harbor, leadName: "Call Me", when: "tomorrow morning", phone: "+61400321321" });
     assert.match(sms, /Call Me asked for a call back: "tomorrow morning"\. \+61400321321\./);
+  });
+
+  it("counts as dealt with for now: the clock settles, the chase stands down, and asking twice makes one queue item", async () => {
+    const contact = await repository.upsertContact(harbor.id, { firstName: "Named", lastName: "Time", email: null, phone: "+61400321322", company: null });
+    const { lead } = await repository.createLead(harbor.id, { ...greenLead, contactId: contact.id, phone: contact.phone, externalId: "b3:callback:2" });
+    assert.equal(lead.firstResponseAt, null);
+    assert.equal(await recordCallbackRequest(harbor, lead, " tomorrow <after> 3.30pm ", { notify: false }), "recorded");
+    assert.equal(await recordCallbackRequest(harbor, lead, "tomorrow after 3.30pm", { notify: false }), "already_asked", "a resubmitted form adds nothing");
+    const after = (await repository.findLeadById(harbor.id, lead.id))!;
+    assert.ok(after.firstResponseAt, "the response clock has settled");
+    const queue = (await repository.listExceptions([harbor.id], { status: ["OPEN", "IN_PROGRESS"], limit: 200 })).filter((e) => e.leadId === lead.id);
+    assert.equal(queue.length, 1, "one open item");
+    assert.match(queue[0].reason, /asked to be called back: "tomorrow after 3.30pm"\.$/, "angle brackets stripped, spaces squashed");
+    assert.equal(await chaseUncalledLead(harbor, after, { again: false }), "settled", "nobody is chased for a call the lead has scheduled");
+  });
+
+  it("tells the caller the right thing for the workspace's mode", () => {
+    const base = { tenant: harbor, leadName: "Call Me", when: "tomorrow morning", phone: "+61400321321" };
+    assert.match(templates.callbackRequestedSms(base), /They chose this over booking online/);
+    assert.match(templates.callbackRequestedSms({ ...base, callFirst: true }), /Please call them then\.$/);
+    assert.match(templates.callbackRequestedSms({ ...base, when: null, callFirst: true }), /please call now\.$/);
+    assert.match(templates.callbackRequestedEmail({ ...base, email: null, portalUrl: "https://x", callFirst: true }).body, /said when to call them/);
+    assert.doesNotMatch(templates.callbackRequestedEmail({ ...base, email: null, portalUrl: "https://x", callFirst: true }).body, /booking link/);
   });
 });
 

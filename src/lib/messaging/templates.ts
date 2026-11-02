@@ -144,18 +144,24 @@ export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; t
 }
 
 /** "Margaret asked for a call back: tomorrow morning. +61… " to the person who should make the call. */
-export function callbackRequestedSms(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null }): string {
+/**
+ * To the person who should make the call. In a book-first workspace the lead
+ * was offered online booking and chose a call instead; in a call-first one
+ * they were promised a call and have said when, so the tail changes.
+ */
+export function callbackRequestedSms(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null; callFirst?: boolean }): string {
   const who = quoteUntrusted(input.leadName, 40);
   const when = input.when ? `: "${quoteUntrusted(input.when, 60)}"` : "";
-  return `${input.tenant.name}: ${who} asked for a call back${when}.${input.phone ? ` ${input.phone}.` : ""} They chose this over booking online, so a call is what they want.`;
+  const tail = input.callFirst ? (input.when ? "Please call them then." : "They didn't say when; please call now.") : "They chose this over booking online, so a call is what they want.";
+  return `${input.tenant.name}: ${who} asked for a call back${when}.${input.phone ? ` ${input.phone}.` : ""} ${tail}`;
 }
 
-export function callbackRequestedEmail(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null; email: string | null; portalUrl: string }): { subject: string; body: string } {
+export function callbackRequestedEmail(input: { tenant: TenantSummary; leadName: string; when: string | null; phone: string | null; email: string | null; portalUrl: string; callFirst?: boolean }): { subject: string; body: string } {
   const who = quoteUntrusted(input.leadName, 60);
   return {
     subject: `${who} asked for a call back${input.when ? ` (${quoteUntrusted(input.when, 40)})` : ""}`,
     body: [
-      `${who} opened the booking link from ${input.tenant.name} and asked to be called instead.`,
+      input.callFirst ? `${who} replied to ${input.tenant.name}'s message and said when to call them.` : `${who} opened the booking link from ${input.tenant.name} and asked to be called instead.`,
       "",
       input.when ? `When suits them: "${quoteUntrusted(input.when, 120)}"` : "They did not say when; sooner is better.",
       input.phone ? `Phone: ${input.phone}` : null,
