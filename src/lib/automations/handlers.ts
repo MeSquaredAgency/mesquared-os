@@ -14,6 +14,7 @@ import { runInventorySync } from "@/lib/inventory/sync";
 import { runSocialSync } from "@/lib/social/sync";
 import { ingestMetaLead, metaLeadRefFromPayload } from "@/lib/intake/channels/meta-lead";
 import { registerReconciler } from "@/lib/opportunities/reconcile";
+import { chaseUncalledLead } from "@/lib/opportunities/call-first";
 import { expireStaleOpportunities } from "@/lib/opportunities/expire";
 import { sendWeeklyDigest } from "@/lib/digest/weekly";
 import { runGreenLeadPlaybook } from "@/lib/playbook";
@@ -155,6 +156,9 @@ const skipped = (tenantId: string, typeKey: string, summary: string, ids: { cont
 // ---------------------------------------------------------------------------
 
 export async function onBookingCreated(tenant: TenantSummary, lead: LeadRecord, bookingId: string, startsAt: Date | null, endsAt: Date | null, rescheduled = false) {
+  // A lead who has booked has been reached: this stops the response clock in a call-first workspace, where the
+  // automated reply did not. Elsewhere it is already stopped.
+  await repository.settleLeadSla(tenant.id, lead.id, new Date());
   const settings = await automationSettings(tenant.id, "booking_lifecycle");
   if (!settings) return;
   const booking = await repository.findBookingById(tenant.id, bookingId);
@@ -385,6 +389,12 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
     }
     case "sla_watch:expire": {
       await expireStaleOpportunities(tenant, new Date());
+      return;
+    }
+    case "sla_watch:chase_call": {
+      // Call-first: the second chase, to everyone who holds lead alerts, unless a person has reached them since.
+      if (!lead) return;
+      await chaseUncalledLead(tenant, lead, { again: true });
       return;
     }
     case "weekly_digest:send": {

@@ -134,6 +134,9 @@ describe("the phone buzzes when a lead arrives", () => {
     const text = templates.leadAlertSms({ tenant: harbor, leadName: "Margaret Ellis", topic: "appraisal", area: "Norwood", phone: "+61400111222", acknowledged: "SENT" });
     assert.equal(text, "Harbor Realty Group: Margaret Ellis wants an appraisal in Norwood. +61400111222. We've replied with a booking link; a call now wins it.");
     assert.ok(text.length <= 160, `fits one segment: ${text.length}`);
+    const callFirst = templates.leadAlertSms({ tenant: harbor, leadName: "Margaret Ellis", topic: "appraisal", area: "Norwood", phone: "+61400111222", acknowledged: "SENT", callFirst: true });
+    assert.equal(callFirst, "Harbor Realty Group: Margaret Ellis wants an appraisal in Norwood. +61400111222. We've told them to expect your call. Please call now.");
+    assert.ok(callFirst.length <= 160, `fits one segment: ${callFirst.length}`);
     assert.match(templates.leadAlertSms({ tenant: harbor, leadName: "Sam", topic: null, area: null, phone: null, acknowledged: "NONE" }), /Sam just enquired\. No reply has gone out yet; please call them\./);
     assert.match(templates.leadAlertSms({ tenant: harbor, leadName: "Sam", topic: "sale", area: null, phone: null, acknowledged: "HELD" }), /wants a sale\. Our reply goes out in the morning/);
     assert.doesNotMatch(templates.leadAlertSms({ tenant: harbor, leadName: "Visit http://evil.example now", topic: null, area: null, phone: null, acknowledged: "SENT" }), /http/, "links in a stranger's name are stripped");

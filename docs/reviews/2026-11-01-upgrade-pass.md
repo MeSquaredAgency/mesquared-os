@@ -181,6 +181,18 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   the sender whenever the destination is a staff mobile; the message still
   carries the workspace's name. Clients' own leads are never affected.
 
+- **Call-first workspaces (2 Nov).** APN's view is that a new lead should
+  always get a call, not a link. Before, the automated reply counted as the
+  first response: the five-minute clock stopped the moment the robot texted,
+  so nobody was chased if no human ever called, and the lead was told to
+  "book a time". `sla.responseMode = "call_first"` (Settings → "When a new
+  lead comes in") now tells the lead "one of our team will call you shortly"
+  (no name, no link by text), leaves the lead in "Needs you" with the clock
+  running, and when the window passes the SLA watch reminds the assigned
+  person (or everyone with lead alerts) by text and email, then chases
+  everyone again ten minutes later unless someone has marked the lead as
+  called or they have booked. Book-first workspaces are unchanged.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

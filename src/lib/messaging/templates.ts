@@ -52,16 +52,20 @@ export interface AcknowledgementInput {
   area?: string | null;
   /** First name of the person the lead is assigned to, when the tenant signs messages as that person. */
   signedBy?: string | null;
+  /** The workspace promises a call from the team instead of asking the lead to book. Deliberately generic: no person is named. */
+  callFirst?: boolean;
 }
 
 /** "from Marissa at Harbor Realty Group" when signed by a person, "from Harbor Realty Group" otherwise. */
 const fromWho = (tenant: TenantSummary, signedBy?: string | null) => (signedBy ? `${signedBy} at ${tenant.name}` : tenant.name);
 
-export function acknowledgementSms({ tenant, firstName, bookingUrl, topic, area, signedBy }: AcknowledgementInput): string {
+export function acknowledgementSms({ tenant, firstName, bookingUrl, topic, area, signedBy, callFirst }: AcknowledgementInput): string {
   const safe = safeName(firstName);
   const name = safe ? `Hi ${safe}, ` : "Hi, ";
   const about = aboutPhrase(topic, area);
   const who = safeName(signedBy);
+  // Call-first: the promise is the message. No link to tap, nobody named, so the words hold whoever ends up calling.
+  if (callFirst) return `${name}thanks for contacting ${tenant.name}${about}. One of our team will call you shortly. If now isn't a good time, reply with a better one. This is an automated reply from ${fromWho(tenant, who)}.`;
   return `${name}thanks for contacting ${tenant.name}${about}. Book a time here: ${bookingUrl} or reply and ${who ? `${who} will` : "a person will"} get back to you during business hours. This is an automated reply from ${fromWho(tenant, who)}.`;
 }
 
@@ -72,14 +76,23 @@ export function acknowledgementEmail(input: AcknowledgementInput): { subject: st
   const { tenant, firstName, bookingUrl, topic, area } = input;
   const about = aboutPhrase(topic, area);
   const who = safeName(input.signedBy);
-  const packed = pack(
-    "EMAIL",
-    `Thanks for contacting ${tenant.name}`,
-    [hi(firstName), `thank you for getting in touch with ${tenant.name}${about}. We've received your message and ${who ? `${who} will be in contact soon` : "someone will be in contact soon"}.`, `If you'd like to choose a time now, you can book here: ${bookingUrl}`, "If you'd rather talk first, just reply to this email."],
-    tenant,
-    who,
-    { label: "Book a time", url: bookingUrl },
-  );
+  const packed = input.callFirst
+    ? pack(
+        "EMAIL",
+        `Thanks for contacting ${tenant.name}`,
+        [hi(firstName), `thank you for getting in touch with ${tenant.name}${about}. We've received your message and one of our team will call you shortly.`, "If now isn't a good time, reply to this email with a better one.", `If you'd rather choose a time yourself, you can here: ${bookingUrl}`],
+        tenant,
+        who,
+        { label: "Choose a time", url: bookingUrl },
+      )
+    : pack(
+        "EMAIL",
+        `Thanks for contacting ${tenant.name}`,
+        [hi(firstName), `thank you for getting in touch with ${tenant.name}${about}. We've received your message and ${who ? `${who} will be in contact soon` : "someone will be in contact soon"}.`, `If you'd like to choose a time now, you can book here: ${bookingUrl}`, "If you'd rather talk first, just reply to this email."],
+        tenant,
+        who,
+        { label: "Book a time", url: bookingUrl },
+      );
   return { subject: packed.subject ?? `Thanks for contacting ${tenant.name}`, body: packed.body, cta: packed.cta! };
 }
 
@@ -91,9 +104,11 @@ export function quoteUntrusted(text: string, max = 400): string {
 /** Staff-facing sign-off: the client's own assistant, run by Me²; never "workspace" or "operator". */
 const staffSignoff = (tenant: TenantSummary) => `— ${tenant.name} assistant, run by Me²`;
 
-export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string; summary: string; score: number; reason: string; phone: string | null; email: string | null; portalUrl: string; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" }): { subject: string; body: string } {
+export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string; summary: string; score: number; reason: string; phone: string | null; email: string | null; portalUrl: string; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE"; callFirst?: boolean }): { subject: string; body: string } {
   const { tenant, leadName, summary, reason, phone, email, portalUrl } = input;
-  const ackLine = { SENT: "They've been sent a booking link automatically.", HELD: "Their booking link is queued for the morning (quiet hours).", SKIPPED: "No automatic reply went out (messaging isn't connected yet), so please reach them yourself.", FAILED: "The automatic reply couldn't be sent, so please call them.", NONE: "Automatic replies are off, so please reach them yourself." }[input.acknowledged];
+  const ackLine = input.callFirst
+    ? { SENT: "They've been told one of your team will call them shortly, so please call them now.", HELD: "Our reply promising a call goes out in the morning (quiet hours); a call now still wins it.", SKIPPED: "No automatic reply went out (messaging isn't connected yet), so please call them.", FAILED: "The automatic reply couldn't be sent, so please call them.", NONE: "Automatic replies are off, so please call them." }[input.acknowledged]
+    : { SENT: "They've been sent a booking link automatically.", HELD: "Their booking link is queued for the morning (quiet hours).", SKIPPED: "No automatic reply went out (messaging isn't connected yet), so please reach them yourself.", FAILED: "The automatic reply couldn't be sent, so please call them.", NONE: "Automatic replies are off, so please reach them yourself." }[input.acknowledged];
   return {
     subject: `New lead for ${tenant.name}: ${quoteUntrusted(leadName, 60)}`,
     body: [
@@ -120,11 +135,11 @@ export function leadAlertEmail(input: { tenant: TenantSummary; leadName: string;
  * whether we have already replied. Under 160 characters where the names
  * allow, plain GSM punctuation, nothing to tap but the number.
  */
-export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; topic: string | null; area: string | null; phone: string | null; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE" }): string {
+export function leadAlertSms(input: { tenant: TenantSummary; leadName: string; topic: string | null; area: string | null; phone: string | null; acknowledged: "SENT" | "HELD" | "SKIPPED" | "FAILED" | "NONE"; callFirst?: boolean }): string {
   const who = quoteUntrusted(input.leadName, 40);
   const about = input.topic ? ` wants ${/^(a|an|the|your)\s/i.test(input.topic) ? input.topic : `an ${input.topic}`.replace(/^an ([^aeiou])/i, "a $1")}` : " just enquired";
   const where = input.area ? ` in ${input.area}` : "";
-  const tail = input.acknowledged === "SENT" ? "We've replied with a booking link; a call now wins it." : input.acknowledged === "HELD" ? "Our reply goes out in the morning; a call now wins it." : "No reply has gone out yet; please call them.";
+  const tail = input.acknowledged === "SENT" ? (input.callFirst ? "We've told them to expect your call. Please call now." : "We've replied with a booking link; a call now wins it.") : input.acknowledged === "HELD" ? "Our reply goes out in the morning; a call now wins it." : "No reply has gone out yet; please call them.";
   return `${input.tenant.name}: ${who}${about}${where}.${input.phone ? ` ${input.phone}.` : ""} ${tail}`;
 }
 
@@ -318,6 +333,35 @@ export function replyAlertEmail({ tenant, leadName, channel, text, phone, portal
       "Nothing goes back to them automatically; this one is yours.",
       "",
       staffSignoff(tenant),
+    ]
+      .filter((l) => l !== null)
+      .join("\n"),
+  };
+}
+
+/**
+ * Call-first workspaces: nobody has called a lead the team promised to call.
+ * "Harbor Realty Group: nobody has called Margaret Ellis yet (7 min). +61… Please call now."
+ * The second chase says so, and goes to everyone who holds lead alerts.
+ */
+export function callOverdueSms(input: { tenant: TenantSummary; leadName: string; minutes: number; phone: string | null; again?: boolean }): string {
+  const who = quoteUntrusted(input.leadName, 40);
+  return `${input.tenant.name}: ${input.again ? "still nobody" : "nobody"} has called ${who} yet (${input.minutes} min).${input.phone ? ` ${input.phone}.` : ""} ${input.again ? "They were promised a call; please call now." : "Please call now."}`;
+}
+
+export function callOverdueEmail(input: { tenant: TenantSummary; leadName: string; minutes: number; phone: string | null; email: string | null; portalUrl: string; again?: boolean }): { subject: string; body: string } {
+  const who = quoteUntrusted(input.leadName, 60);
+  return {
+    subject: `${input.again ? "Still waiting" : "Waiting"} for a call: ${who} (${input.minutes} min)`,
+    body: [
+      `${who} was told one of the team at ${input.tenant.name} would call shortly, and ${input.again ? "still nobody has" : "nobody has yet"} (${input.minutes} minutes so far).`,
+      "",
+      input.phone ? `Phone: ${input.phone}` : null,
+      input.email ? `Email: ${input.email}` : null,
+      "",
+      `Please call them now, then mark them as called here: ${input.portalUrl}`,
+      "",
+      staffSignoff(input.tenant),
     ]
       .filter((l) => l !== null)
       .join("\n"),

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { repository } from "@/lib/data";
 import type { TenantPatch } from "@/lib/data/repository";
-import { MISSED_OPPORTUNITY_TYPES, type EscalationRule, type MissedOpportunityType } from "@/lib/types";
+import { MISSED_OPPORTUNITY_TYPES, RESPONSE_MODES, type EscalationRule, type MissedOpportunityType, type ResponseMode } from "@/lib/types";
 
 /**
  * The business settings a workspace definition (`tenants/<slug>.json`) can
@@ -20,6 +20,8 @@ export const tenantSettingsSchema = z.object({
       firstResponseMinutes: z.number().int().min(1).max(1440).optional(),
       bookingWindowHours: z.number().int().min(1).max(720).optional(),
       quietHours: z.object({ start: hour, end: hour }).optional(),
+      /** "call_first": new leads are promised a call and the team is chased until someone makes it. */
+      responseMode: z.enum(RESPONSE_MODES as [ResponseMode, ...ResponseMode[]]).optional(),
     })
     .optional(),
   qualification: z
@@ -71,7 +73,7 @@ export async function applyTenantSettings(tenantId: string, input: TenantSetting
 
   if (settings.sla) {
     patch.sla = { ...tenant.sla, ...settings.sla };
-    log.push(`service levels: ${patch.sla.firstResponseMinutes} min to first reply, ${patch.sla.bookingWindowHours} h to book${patch.sla.quietHours ? `, quiet ${patch.sla.quietHours.start}:00–${patch.sla.quietHours.end}:00` : ""}`);
+    log.push(`service levels: ${patch.sla.firstResponseMinutes} min to first reply, ${patch.sla.bookingWindowHours} h to book${patch.sla.quietHours ? `, quiet ${patch.sla.quietHours.start}:00–${patch.sla.quietHours.end}:00` : ""}${patch.sla.responseMode === "call_first" ? ", call first" : ""}`);
   }
   if (settings.qualification) {
     const q = settings.qualification;
