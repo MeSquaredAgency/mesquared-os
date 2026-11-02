@@ -6,7 +6,7 @@ import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
 import { tick } from "@/lib/jobs/tick";
 import { clampOutOfQuietHours, inQuietHours, quietHoursEnd, sendMessage } from "@/lib/messaging";
-import { destinationAllowed, staffNumbers } from "@/lib/messaging/policy";
+import { destinationAllowed, staffNumbers, textableNumber } from "@/lib/messaging/policy";
 import { quoteUntrusted, safeName, safeTopic, whenPhrase } from "@/lib/messaging/templates";
 import { raiseMissedOpportunity } from "@/lib/opportunities/raise";
 import type { TenantSummary } from "@/lib/types";
@@ -74,6 +74,17 @@ describe("destination and consent policy inside sendMessage", () => {
     assert.equal(destinationAllowed(harbor, "+85512345679", staff), false);
     assert.equal(destinationAllowed(harbor, "85512345678", staff), false, "still needs E.164");
     assert.deepEqual(staffNumbers(undefined), []);
+  });
+
+  it("texts a member whose mobile was saved the way people write it", () => {
+    assert.equal(textableNumber(harbor, "0490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+61 490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "61490415758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+61 (0) 490 415 758"), "+61490415758");
+    assert.equal(textableNumber(harbor, "+855 12 345 678"), null, "overseas, and not a staff number");
+    assert.equal(textableNumber(harbor, "+855 12 345 678", staffNumbers("+85512345678")), "+85512345678");
+    assert.equal(textableNumber(harbor, null), null);
+    assert.equal(textableNumber(harbor, "ext 12"), null);
   });
 
   it("refuses an overseas SMS and records the refusal on the conversation", async () => {

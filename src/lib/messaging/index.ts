@@ -6,7 +6,7 @@ import { providerFor } from "./providers";
 import type { MessageCta, MessageSignature, OutboundChannel, OutboundMessage, SendResult } from "./types";
 
 export * from "./types";
-export { chooseChannel, clampOutOfQuietHours, destinationAllowed, inQuietHours, quietHoursEnd, regionRule } from "./policy";
+export { chooseChannel, clampOutOfQuietHours, destinationAllowed, inQuietHours, quietHoursEnd, regionRule, textableNumber } from "./policy";
 export * as templates from "./templates";
 export { safeName } from "./templates";
 

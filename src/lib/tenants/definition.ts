@@ -1,5 +1,5 @@
 import { repository } from "@/lib/data";
-import { normalizePhone } from "@/lib/intake/schema";
+import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import type { TenantSummary } from "@/lib/types";
 import { inviteMember, provisionTenant, slugify } from "./provision";
@@ -105,7 +105,7 @@ export async function applyDefinition(def: TenantDefinition, opts: { refresh: bo
     const roleDef = template.roles.find((r) => r.key === person.role)!;
     const role = config.roles.find((r) => r.name === roleDef.name);
     if (!role) throw new Error(`role "${roleDef.name}" missing on the workspace; re-apply the template`);
-    const result = await inviteMember(tenant.id, { email: person.email, name: person.name, roleId: role.id, profile: { title: person.title ?? null, phone: person.mobile ?? null, photoUrl: person.photo ?? null } });
+    const result = await inviteMember(tenant.id, { email: person.email, name: person.name, roleId: role.id, profile: { title: person.title ?? null, phone: toE164(normalizePhone(person.mobile), def.region) ?? person.mobile ?? null, photoUrl: person.photo ?? null } });
     log.push(`person   ${person.email} → ${role.name}${result.created ? " (created; reset the password from Settings → People to hand it over)" : ""}`);
   }
 

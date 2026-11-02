@@ -6,6 +6,7 @@ import { getConsoleContext } from "@/lib/auth/access";
 import { ForbiddenError } from "@/lib/auth/permissions";
 import { repository } from "@/lib/data";
 import { isApiKeyScope, type ApiKeyScope } from "@/lib/data/repository";
+import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { csvToInventory, importInventory } from "@/lib/inventory";
 import { TEMPLATE_BY_KEY } from "@/lib/templates";
 import type { MissedOpportunityType, TenantSummary } from "@/lib/types";
@@ -210,7 +211,7 @@ export async function updateMemberProfileAction(tenantId: string, userId: string
     const person = (await repository.listTenantPeople(tenantId)).find((p) => p.userId === userId && p.via === "member");
     if (!person?.roleId) return { ok: false, message: "That person is not a member of this workspace." };
     const d = parsed.data;
-    await repository.upsertMembership(tenantId, userId, person.roleId, { ...(d.title !== undefined ? { title: d.title || null } : {}), ...(d.phone !== undefined ? { phone: d.phone || null } : {}), ...(d.photoUrl !== undefined ? { photoUrl: d.photoUrl || null } : {}) });
+    await repository.upsertMembership(tenantId, userId, person.roleId, { ...(d.title !== undefined ? { title: d.title || null } : {}), ...(d.phone !== undefined ? { phone: d.phone ? (toE164(normalizePhone(d.phone), tenant.region) ?? d.phone) : null } : {}), ...(d.photoUrl !== undefined ? { photoUrl: d.photoUrl || null } : {}) });
     refresh(tenant);
     return { ok: true, message: `Signature details saved for ${person.name ?? person.email}.` };
   } catch (error) {
