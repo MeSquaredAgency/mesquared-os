@@ -1,4 +1,4 @@
-import type { IntegrationProvider } from "@/lib/types";
+import type { IntegrationProvider, TenantModuleRecord } from "@/lib/types";
 
 /**
  * Platform modules a tenant can switch on. Keys are stable identifiers stored
@@ -16,7 +16,7 @@ export interface ModuleDefinition {
 
 export const MODULES: ModuleDefinition[] = [
   { key: "leads", name: "Leads & CRM", description: "Intake, qualification, pipelines and the response playbook.", defaultEnabled: true, integrations: ["CALCOM", "GOOGLE_CALENDAR", "OUTLOOK_CALENDAR", "TWILIO", "RESEND", "WHATSAPP"] },
-  { key: "opportunities", name: "Missed opportunities", description: "Detects revenue leaking out and recovers it.", defaultEnabled: true, integrations: ["CALL_TRACKING"] },
+  { key: "opportunities", name: "Missed opportunities", description: "Spots leads and customers slipping away, puts a value on the risk and shows what came back. Off, the client sees no missed-opportunities page or money figures; the response watch still chases the team.", defaultEnabled: true, integrations: ["CALL_TRACKING"] },
   { key: "automation", name: "Admin automation", description: "Reusable automations with an operator exception queue.", defaultEnabled: true, integrations: ["TWILIO", "RESEND", "WHATSAPP", "EMAIL_FORWARDING"] },
   { key: "content", name: "Content engine", description: "Turns raw material into per-channel assets under brand and compliance rules.", defaultEnabled: true, integrations: [] },
   { key: "social", name: "Social", description: "Publishing, calendar, unified inbox and analytics across channels.", defaultEnabled: true, integrations: ["META", "TIKTOK", "YOUTUBE", "LINKEDIN", "GOOGLE_BUSINESS"] },
@@ -27,3 +27,6 @@ export const MODULES: ModuleDefinition[] = [
 ];
 
 export const MODULE_BY_KEY: Record<string, ModuleDefinition> = Object.fromEntries(MODULES.map((m) => [m.key, m]));
+
+/** Whether a module is switched on for a workspace. A module with no row is off. */
+export const moduleOn = (modules: Pick<TenantModuleRecord, "moduleKey" | "enabled">[], key: string): boolean => modules.some((m) => m.moduleKey === key && m.enabled);

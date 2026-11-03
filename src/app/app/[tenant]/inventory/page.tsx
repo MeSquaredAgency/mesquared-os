@@ -4,6 +4,7 @@ import { Empty, PageHeader } from "@/components/shell/section";
 import { getPortalContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { describeListing } from "@/lib/inventory";
+import { moduleOn } from "@/lib/modules/registry";
 import { formatDateTime, humanize } from "@/lib/utils";
 
 export const metadata = { title: "Inventory" };
@@ -14,7 +15,7 @@ export default async function InventoryPage({ params }: { params: Promise<{ tena
   const { access } = await getPortalContext(slug);
   const tenant = access.tenant;
   const config = await repository.getTenantConfig(tenant.id);
-  if (!config.modules.some((m) => m.moduleKey === "inventory" && m.enabled)) notFound();
+  if (!moduleOn(config.modules, "inventory")) notFound();
   const items = await repository.listInventory(tenant.id, { limit: 300 });
   const fmt = { timezone: tenant.timezone, locale: tenant.locale };
   const active = items.filter((i) => i.status === "ACTIVE");

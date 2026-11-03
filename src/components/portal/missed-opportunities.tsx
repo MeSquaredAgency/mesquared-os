@@ -61,7 +61,7 @@ export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) 
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <span className="text-sm font-medium num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale, { whole: true })}</span>
+                    {m.estimatedValueCents > 0 && <span className="text-sm font-medium num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale, { whole: true })}</span>}
                     <Badge variant={s.variant}>{s.text}</Badge>
                   </div>
                 </li>
