@@ -206,6 +206,19 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   workspace whose values are all zero in "What a missed opportunity is worth"
   now gets counts without prices everywhere instead of "$0" figures.
 
+- **The callback page under call-first (3 Nov).** `/book/[tenant]` predates
+  call-first. A lead who typed "tomorrow after 3.30pm" was still unanswered
+  as far as the five-minute clock knew, so the team would have been chased
+  ten minutes later for a call the lead had scheduled; the text to the
+  directors said "they chose this over booking online", which under call-first
+  they were never offered; and a link with no lead on it thanked the person
+  while telling nobody. `recordCallbackRequest` (`src/lib/scheduling/callback.ts`)
+  is now the one path: it settles the clock, closes the open unanswered-enquiry
+  item, logs it, opens the queue item that is the reminder to call, and tells
+  the caller in words that fit the mode. A link without a lead asks for a name
+  and number and goes through intake, so they are qualified, acknowledged and
+  alerted like any enquiry.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
