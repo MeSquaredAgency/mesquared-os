@@ -292,8 +292,9 @@ export interface WeeklyDigestInput {
   weekLabel: string;
   leads: number;
   needsYou: number;
-  recovered: { count: number; cents: number };
-  atRisk: { count: number; cents: number };
+  /** Null when the missed-opportunities module is off: the email says nothing about them. */
+  recovered: { count: number; cents: number } | null;
+  atRisk: { count: number; cents: number } | null;
   handled: number;
   /** Null for a reader without VIEW_FINANCES. */
   money: { revenueCents: number; adSpendCents: number; costPerLeadCents: number | null } | null;
@@ -311,8 +312,8 @@ export function weeklyDigestEmail(input: WeeklyDigestInput): { subject: string; 
     `Here is how last week went at ${tenant.name} (${input.weekLabel}).`,
     "",
     `• ${n(input.leads, "new enquiry", "new enquiries")} came in. ${input.handled > 0 ? `We handled ${n(input.handled, "thing")} without needing you.` : ""}`.trim(),
-    input.recovered.count > 0 ? `• ${n(input.recovered.count, "opportunity", "opportunities")} that would have slipped came back: ${money(input.recovered.cents)} recovered.` : "• Nothing slipped through that needed recovering.",
-    input.atRisk.count > 0 ? `• ${n(input.atRisk.count, "thing")} still at risk, worth about ${money(input.atRisk.cents)}; we are on it.` : null,
+    input.recovered ? (input.recovered.count > 0 ? `• ${n(input.recovered.count, "opportunity", "opportunities")} that would have slipped came back${input.recovered.cents > 0 ? `: ${money(input.recovered.cents)} recovered` : ""}.` : "• Nothing slipped through that needed recovering.") : null,
+    input.atRisk && input.atRisk.count > 0 ? `• ${n(input.atRisk.count, "thing")} still at risk${input.atRisk.cents > 0 ? `, worth about ${money(input.atRisk.cents)}` : ""}; we are on it.` : null,
     input.money ? `• Money: ${money(input.money.revenueCents)} came in this month against ${money(input.money.adSpendCents)} of ads${input.money.costPerLeadCents !== null ? `, about ${money(input.money.costPerLeadCents)} per lead` : ""}.` : null,
     "",
     input.needsYou > 0 ? `${n(input.needsYou, "person", "people")} ${input.needsYou === 1 ? "is" : "are"} waiting for you right now: ${input.portalUrl}` : `Nothing needs you this morning. Your portal: ${input.portalUrl}`,

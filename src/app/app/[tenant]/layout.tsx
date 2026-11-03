@@ -4,6 +4,7 @@ import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { COPY } from "@/lib/copy";
 import { repository } from "@/lib/data";
+import { moduleOn } from "@/lib/modules/registry";
 import { toTenantOption } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,8 @@ export default async function PortalLayout({ children, params }: { children: Rea
   const { user, access, tenants } = await getPortalContext(slug);
   const base = `/app/${slug}`;
   const config = await repository.getTenantConfig(access.tenant.id);
-  const inventoryOn = config.modules.some((m) => m.moduleKey === "inventory" && m.enabled);
+  const inventoryOn = moduleOn(config.modules, "inventory");
+  const opportunitiesOn = moduleOn(config.modules, "opportunities");
   const operator = user.isOperator || user.isPlatformAdmin;
   const others = tenants.filter((t) => t.tenant.slug !== slug);
   return (
@@ -24,7 +26,7 @@ export default async function PortalLayout({ children, params }: { children: Rea
       nav={[
         { href: base, label: "Home", hint: COPY.needsYou, icon: "home", exact: true },
         { href: `${base}/leads`, label: "Leads", hint: "Everyone who enquired", icon: "users" },
-        { href: `${base}/opportunities`, label: COPY.missedOpportunities, short: "Missed", hint: "Money at risk", icon: "trendingDown" },
+        ...(opportunitiesOn ? [{ href: `${base}/opportunities`, label: COPY.missedOpportunities, short: "Missed", hint: "Money at risk", icon: "trendingDown" as const }] : []),
         ...(hasPermission(access, "VIEW_FINANCES") ? [{ href: `${base}/money`, label: "Money", hint: "Revenue, ads, invoices", icon: "wallet" as const }] : []),
         { href: `${base}/content`, label: "Content", hint: "Approve drafts", icon: "fileCheck" },
         ...(inventoryOn ? [{ href: `${base}/inventory`, label: access.tenant.industry === "REAL_ESTATE" ? "Listings" : "Inventory", hint: "What is on the books", icon: "boxes" as const }] : []),
