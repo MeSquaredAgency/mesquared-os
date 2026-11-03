@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const Tabs = TabsPrimitive.Root;
@@ -46,4 +47,25 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
   return <TabsPrimitive.Content className={cn("flex-1 pt-5 outline-none", className)} {...props} />;
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent };
+/**
+ * Keeps a client-side tab in the query string (`?param=value`), so a section
+ * can be linked to and survives a reload, without a server round trip or a
+ * history entry per click. Spread the result onto `Tabs`.
+ */
+function useQueryTab<T extends string>(param: string, values: readonly T[], fallback: T) {
+  const search = useSearchParams();
+  const raw = search.get(param);
+  const value = values.includes(raw as T) ? (raw as T) : fallback;
+  const onValueChange = React.useCallback(
+    (next: string) => {
+      const url = new URL(window.location.href);
+      if (next === fallback) url.searchParams.delete(param);
+      else url.searchParams.set(param, next);
+      window.history.replaceState(null, "", url);
+    },
+    [param, fallback],
+  );
+  return { value, onValueChange };
+}
+
+export { Tabs, TabsList, TabsTrigger, TabsContent, useQueryTab };

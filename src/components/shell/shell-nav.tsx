@@ -1,37 +1,41 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Boxes, FileCheck, Home, Inbox, LayoutGrid, MoreHorizontal, Plus, Settings, TrendingDown, Users, Wallet, type LucideIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isNavActive, type NavMatch } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 /** Icons are referenced by key so server layouts can describe the nav without passing functions to the client. */
 const ICONS = { home: Home, users: Users, trendingDown: TrendingDown, fileCheck: FileCheck, activity: Activity, layoutGrid: LayoutGrid, inbox: Inbox, wallet: Wallet, plus: Plus, settings: Settings, boxes: Boxes } satisfies Record<string, LucideIcon>;
 export type NavIcon = keyof typeof ICONS;
 
-export interface NavItem {
-  href: string;
+export interface NavItem extends NavMatch {
   label: string;
   /** A short word for the phone tab bar when the label is long. */
   short?: string;
   hint?: string;
   icon: NavIcon;
-  /** Match only the exact path (for a section's home) instead of any sub-path. */
-  exact?: boolean;
   badge?: number;
 }
 
-function useActive() {
+function useActive(items: NavItem[]) {
   const pathname = usePathname();
-  return (item: NavItem) => (item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`));
+  return (item: NavItem) => isNavActive(pathname, item, items);
+}
+
+/** A small pulse on a link whose page is on its way, so a slow server render never feels like a dead click. */
+export function PendingMark({ className }: { className?: string }) {
+  const { pending } = useLinkStatus();
+  return pending ? <span aria-hidden="true" className={cn("size-1.5 shrink-0 animate-pulse rounded-full bg-brand", className)} /> : null;
 }
 
 const Count = ({ n }: { n: number }) => <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-soft px-1.5 text-2xs font-semibold text-red-text num">{n}</span>;
 
 /** The sidebar list. The active item gets the card tone and the coral square. */
 export function ShellNav({ items }: { items: NavItem[] }) {
-  const isActive = useActive();
+  const isActive = useActive(items);
   return (
     <nav aria-label="Main" className="flex flex-col gap-0.5 px-3 py-2">
       {items.map((item) => {
@@ -50,6 +54,7 @@ export function ShellNav({ items }: { items: NavItem[] }) {
           >
             <Icon className="size-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            <PendingMark />
             {item.badge ? <Count n={item.badge} /> : null}
             {active && <span aria-hidden="true" className="absolute top-1/2 -left-3 h-4 w-0.5 -translate-y-1/2 bg-brand" />}
           </Link>
@@ -61,7 +66,7 @@ export function ShellNav({ items }: { items: NavItem[] }) {
 
 /** The phone tab bar: up to four items, the rest behind "More". */
 export function MobileNav({ items }: { items: NavItem[] }) {
-  const isActive = useActive();
+  const isActive = useActive(items);
   const shown = items.length > 5 ? items.slice(0, 4) : items;
   const more = items.length > 5 ? items.slice(4) : [];
   const moreActive = more.some(isActive);
@@ -80,6 +85,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
                 </span>
                 <span className="max-w-full truncate">{item.short ?? item.label}</span>
                 {active && <span aria-hidden="true" className="absolute top-0 h-0.5 w-8 bg-brand" />}
+                <PendingMark className="absolute top-2 right-[calc(50%-1.25rem)]" />
               </Link>
             </li>
           );

@@ -8,7 +8,7 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Select } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger, useQueryTab } from "@/components/ui/tabs";
 import { Meta } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import type { PacingStatus } from "@/lib/ads/sync";
@@ -52,11 +52,12 @@ export function MoneyStudio({ tenantId, tenantSlug, fmt, adAccounts, pacing, fin
   const run: Run = (fn) => start(async () => setNotice(await fn().then((r) => ({ tone: r.ok ? "ok" : "error", text: r.message }))));
   const open = invoices.filter((i) => i.status === "SENT" || i.status === "OVERDUE");
   const pacingOff = Boolean(pacing && pacing.driftPct !== null && Math.abs(pacing.driftPct) >= 25);
+  const view = useQueryTab("view", ["ads", "finance", "links"], "ads");
 
   return (
     <div className="flex flex-col gap-4">
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-      <Tabs defaultValue="ads">
+      <Tabs {...view}>
         <TabsList variant="segment">
           <TabsTrigger value="ads">
             Ads <Count n={adAccounts.length} tone={pacingOff ? "red" : "neutral"} />
