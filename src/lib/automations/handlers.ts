@@ -20,7 +20,7 @@ import { sendWeeklyDigest } from "@/lib/digest/weekly";
 import { runGreenLeadPlaybook } from "@/lib/playbook";
 import { log } from "@/lib/log";
 import { registerPipelineAdvancement } from "@/lib/pipelines/advance";
-import type { AutomationOutcome, ContactRecord, LeadRecord, ScheduledActionRecord, TenantSummary } from "@/lib/types";
+import { isCallFirst, type AutomationOutcome, type ContactRecord, type LeadRecord, type ScheduledActionRecord, type TenantSummary } from "@/lib/types";
 
 export const ACTION_LEASE_MS = 10 * 60_000;
 
@@ -257,8 +257,9 @@ export async function onCallbackRequested(tenant: TenantSummary, lead: LeadRecor
   const { recipients, phones } = await peopleToTell(tenant, lead.assigneeId);
   if (recipients.length === 0) return;
   const portalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/app/${tenant.slug}/leads`;
-  const text = templates.callbackRequestedSms({ tenant, leadName: name, when, phone: lead.phone });
-  const mail = templates.callbackRequestedEmail({ tenant, leadName: name, when, phone: lead.phone, email: lead.email, portalUrl });
+  const callFirst = isCallFirst(tenant);
+  const text = templates.callbackRequestedSms({ tenant, leadName: name, when, phone: lead.phone, callFirst });
+  const mail = templates.callbackRequestedEmail({ tenant, leadName: name, when, phone: lead.phone, email: lead.email, portalUrl, callFirst });
   const run = await repository.recordAutomationRun(tenant.id, { typeKey: "booking_lifecycle", outcome: "SENT", summary: `Told ${recipients.length === 1 ? (recipients[0].name ?? recipients[0].email) : `${recipients.length} people`} that ${name} wants a call back${when ? ` (${when.slice(0, 60)})` : ""}.`, leadId: lead.id, contactId: lead.contactId });
   let reached = 0;
   for (const r of recipients) {
