@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Count } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { PendingMark } from "./shell-nav";
 
 export interface FilterChip {
   /** The query value; empty string (or omitted) is "everything". */
@@ -49,6 +50,7 @@ export function FilterChips({ param, chips, label, className }: { param: string;
           >
             {chip.label}
             {chip.count !== undefined ? <Count n={chip.count} tone={chip.urgent && chip.count > 0 && !active ? "red" : "neutral"} className={cn(active && "bg-primary-foreground/15 text-primary-foreground")} /> : null}
+            <PendingMark />
           </Link>
         );
       })}

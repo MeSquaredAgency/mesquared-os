@@ -86,10 +86,24 @@ export function MissedOpportunities({ missed, fmt, allHref, detailHref, limit = 
         <Empty>Nothing slipping through right now.</Empty>
       ) : (
         <div className="surface px-5">
-          <ul className="divide-y">
-            {shown.map((m) => (
-              <OpportunityRow key={m.id} m={m} fmt={fmt} href={detailHref ? `${detailHref}/${m.id}` : undefined} />
-            ))}
+          <ul className="rise-stagger divide-y">
+            {shown.map((m) => {
+              const s = STATUS_LABEL[m.status] ?? STATUS_LABEL.DETECTED;
+              return (
+                <li key={m.id} className="list-row flex items-start justify-between gap-4 py-4">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="text-sm text-foreground/90">{m.summary}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type} · {timeAgo(m.detectedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {m.estimatedValueCents > 0 && <span className="text-sm font-medium num">{formatMoney(m.estimatedValueCents, fmt.currency, fmt.locale, { whole: true })}</span>}
+                    <Badge variant={s.variant}>{s.text}</Badge>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
           {allHref && more > 0 && (
             <div className="border-t py-3">

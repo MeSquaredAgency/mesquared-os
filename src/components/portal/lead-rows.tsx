@@ -75,7 +75,7 @@ export function FilterableLeadRows({ rows, fmt, stageNames, header }: RowsProps 
               role="tab"
               aria-selected={view === v.key}
               onClick={() => setView(v.key)}
-              className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap transition-colors duration-150", view === v.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}
+              className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap transition-colors duration-150", view === v.key ? "bg-primary text-primary-foreground shadow-[0_1px_2px_#1b232c33]" : "text-muted-foreground hover:bg-accent hover:text-foreground")}
             >
               {v.label}
               <Count n={counts[v.key]} className={cn(view === v.key && "bg-primary-foreground/15 text-primary-foreground")} />
@@ -109,15 +109,15 @@ interface RowsProps {
 export function LeadRows({ rows, fmt, stageNames }: RowsProps) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">No leads yet.</p>;
   return (
-    <ul className="divide-y">
+    <ul className="rise-stagger divide-y">
       {rows.map((l) => {
         const name = leadDisplayName(l);
         return (
-          <li key={l.id} className="flex items-start gap-3.5 py-4">
+          <li key={l.id} className="list-row flex items-start gap-3.5 py-4">
             <Avatar name={name} />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-base font-medium">{name}</span>
+                <span className="text-md font-semibold tracking-[-0.01em]">{name}</span>
                 <StatusBadge status={l.status} />
                 <Badge variant={l.ticketType === "GREEN" ? "secondary" : "muted"}>{ticketLabel(l.ticketType)}</Badge>
               </div>

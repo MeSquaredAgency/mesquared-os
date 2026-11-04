@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Select } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger, useQueryTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Meta } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
@@ -60,11 +60,12 @@ export function ContentStudio({ tenantId, fmt, sources, drafts, posts, channels,
   const queue = posts.filter((p) => p.status !== "PUBLISHED").sort((a, b) => (a.scheduledFor?.getTime() ?? 0) - (b.scheduledFor?.getTime() ?? 0));
   const published = posts.filter((p) => p.status === "PUBLISHED").slice(0, 10);
   const inboxWaiting = inbox.filter((t) => t.conversation.awaitingReply).length;
+  const view = useQueryTab("view", ["drafts", "material", "queue", "inbox", "channels"], "drafts");
 
   return (
     <div className="flex flex-col gap-4">
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-      <Tabs defaultValue="drafts">
+      <Tabs {...view}>
         <TabsList variant="segment">
           <TabsTrigger value="drafts">
             Drafts <Count n={waiting.length} tone={waiting.length ? "red" : "neutral"} />

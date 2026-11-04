@@ -9,7 +9,7 @@ import { CheckField, Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Select } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger, useQueryTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Row } from "@/components/shell/section";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
@@ -60,6 +60,9 @@ function BlockFooter({ children }: { children: React.ReactNode }) {
   return <div className="mt-1 flex flex-wrap justify-end gap-2 border-t pt-4">{children}</div>;
 }
 
+/** The settings tabs, in order; `?section=` picks one so a launch check or a health note can link straight to it. */
+export const SETTINGS_SECTIONS = ["readiness", "business", "people", "keys", "switches", "escalation", "inventory"] as const;
+
 export function SettingsStudio(props: Props) {
   const { tenant, readiness, platformReadiness } = props;
   const router = useRouter();
@@ -75,10 +78,11 @@ export function SettingsStudio(props: Props) {
   const required = readiness.filter((c) => c.level === "required");
   const passed = required.filter((c) => c.ok).length;
   const ready = required.every((c) => c.ok);
+  const section = useQueryTab("section", SETTINGS_SECTIONS, "readiness");
 
   return (
     <div className="flex flex-col gap-5">
-      <Tabs defaultValue="readiness">
+      <Tabs {...section}>
         <TabsList variant="line">
           <TabsTrigger value="readiness">
             Launch readiness {ready ? <Badge variant="green">Ready</Badge> : <Badge variant="amber">{passed}/{required.length}</Badge>}

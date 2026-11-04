@@ -1,6 +1,9 @@
 import { AppShell } from "@/components/shell/app-shell";
+import { ConsoleContext } from "@/components/shell/console-context";
 import { getConsoleContext } from "@/lib/auth/access";
 import { dataMode, repository } from "@/lib/data";
+import { toTenantOption } from "@/lib/types";
+import { humanize } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -11,13 +14,14 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     { limit: 500 },
   );
   const toReview = user.isPlatformAdmin ? (await repository.listOnboardings({ limit: 200 })).filter((o) => o.status === "SUBMITTED").length : 0;
+  const summary = `${tenants.length} workspace${tenants.length === 1 ? "" : "s"}${dataMode === "postgres" ? "" : " · demo data"}`;
   return (
     <AppShell
       user={user}
       tone="abyss"
       homeHref="/console"
       nav={[
-        { href: "/console", label: "Portfolio", hint: `${tenants.length} workspace${tenants.length === 1 ? "" : "s"}`, icon: "layoutGrid", exact: true },
+        { href: "/console", label: "Portfolio", hint: `${tenants.length} workspace${tenants.length === 1 ? "" : "s"}`, icon: "layoutGrid", exact: true, catchAll: true },
         { href: "/console/queue", label: "Queue", hint: "Needs an operator", icon: "inbox", badge: queue.length },
         ...(user.isPlatformAdmin
           ? [
@@ -26,18 +30,20 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
             ]
           : []),
       ]}
-      context={
-        <div className="flex items-center gap-2.5 rounded-md border border-sidebar-border bg-sidebar-active px-2.5 py-2">
-          <span aria-hidden="true" className="block size-2 bg-brand" />
-          <div className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-sm font-medium">Operator console</span>
-            <span className="truncate text-2xs text-sidebar-muted">
-              {tenants.length} workspace{tenants.length === 1 ? "" : "s"}
-              {dataMode === "postgres" ? "" : " · demo data"}
-            </span>
-          </div>
-        </div>
-      }
+      context={<ConsoleContext workspaces={tenants.map((t) => toTenantOption(t.tenant))} summary={summary} />}
+      commands={[
+        {
+          label: "Workspaces",
+          items: tenants.flatMap(({ tenant: t }) => [
+            { href: `/console/${t.slug}`, label: t.name, hint: humanize(t.industry) },
+            { href: `/console/${t.slug}?tab=content`, label: `${t.name} · Content`, keywords: "drafts posts inbox", secondary: true },
+            { href: `/console/${t.slug}?tab=money`, label: `${t.name} · Money`, keywords: "ads invoices links", secondary: true },
+            { href: `/console/${t.slug}/settings`, label: `${t.name} · Settings`, keywords: "people keys modules automations launch", secondary: true },
+            { href: `/console/queue?workspace=${t.slug}`, label: `${t.name} · Queue`, secondary: true },
+            { href: `/app/${t.slug}`, label: `${t.name} · Client portal`, hint: "As the client sees it", secondary: true },
+          ]),
+        },
+      ]}
     >
       {children}
     </AppShell>

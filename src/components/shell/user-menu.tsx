@@ -1,32 +1,64 @@
-import { LogOut } from "lucide-react";
-import { Avatar } from "@/components/shell/avatar";
-import { Button } from "@/components/ui/button";
-import { signOut } from "@/lib/auth/actions";
-import type { UserRecord } from "@/lib/types";
+"use client";
 
-/** Who is signed in, and the way out. Server component: the sign-out is a form action. */
-export function UserMenu({ user, compact = false }: { user: UserRecord; compact?: boolean }) {
-  if (compact) {
-    return (
-      <form action={signOut}>
-        <Button type="submit" variant="ghost" size="icon-sm" title={`Sign out ${user.email}`} aria-label="Sign out">
-          <LogOut />
-        </Button>
-      </form>
-    );
-  }
+import Link from "next/link";
+import { useTransition } from "react";
+import { ArrowLeftRight, ChevronsUpDown, LogOut } from "lucide-react";
+import { Avatar } from "@/components/shell/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { signOut } from "@/lib/auth/actions";
+import { cn } from "@/lib/utils";
+
+/** What the menu shows about the signed-in person; never the whole user record. */
+export interface MenuUser {
+  name: string;
+  email: string;
+  role: string;
+}
+
+/**
+ * Who is signed in, where else they can go, and the way out. Signing out sits
+ * behind the menu so a stray tap on a phone never ends the session.
+ */
+export function UserMenu({ user, links = [], compact = false }: { user: MenuUser; links?: { href: string; label: string }[]; compact?: boolean }) {
+  const [pending, start] = useTransition();
   return (
-    <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-      <Avatar name={user.name ?? user.email} photoUrl={null} size="sm" />
-      <div className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate text-sm font-medium">{user.name ?? user.email}</span>
-        <span className="truncate text-2xs text-sidebar-muted">{user.isPlatformAdmin ? "Platform admin" : user.isOperator ? "Operator" : user.email}</span>
-      </div>
-      <form action={signOut}>
-        <Button type="submit" variant="ghost" size="icon-sm" className="text-sidebar-muted hover:text-sidebar-foreground" title="Sign out" aria-label="Sign out">
-          <LogOut />
-        </Button>
-      </form>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {compact ? (
+          <button type="button" aria-label={`Account: ${user.name}`} className="rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <Avatar name={user.name} photoUrl={null} size="sm" />
+          </button>
+        ) : (
+          <button type="button" aria-label={`Account: ${user.name}`} className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <Avatar name={user.name} photoUrl={null} size="sm" />
+            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="truncate text-sm font-medium">{user.name}</span>
+              <span className="truncate text-2xs text-sidebar-muted">{user.role}</span>
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-sidebar-muted" aria-hidden="true" />
+          </button>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={compact ? "end" : "start"} side={compact ? "bottom" : "top"} className="w-60">
+        <DropdownMenuLabel className="flex flex-col leading-tight">
+          <span className="truncate text-sm font-medium text-foreground">{user.name}</span>
+          {user.email !== user.name && <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {links.map((link) => (
+          <DropdownMenuItem key={link.href} asChild>
+            <Link href={link.href}>
+              <ArrowLeftRight aria-hidden="true" />
+              {link.label}
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        {links.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuItem disabled={pending} onSelect={() => start(() => signOut())} className={cn(pending && "opacity-60")}>
+          <LogOut aria-hidden="true" />
+          {pending ? "Signing out…" : "Sign out"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

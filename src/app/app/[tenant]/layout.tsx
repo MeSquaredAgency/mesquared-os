@@ -16,6 +16,8 @@ export default async function PortalLayout({ children, params }: { children: Rea
   const config = await repository.getTenantConfig(access.tenant.id);
   const inventoryOn = moduleOn(config.modules, "inventory");
   const opportunitiesOn = moduleOn(config.modules, "opportunities");
+  const operator = user.isOperator || user.isPlatformAdmin;
+  const others = tenants.filter((t) => t.tenant.slug !== slug);
   return (
     <AppShell
       user={user}
@@ -30,7 +32,9 @@ export default async function PortalLayout({ children, params }: { children: Rea
         ...(inventoryOn ? [{ href: `${base}/inventory`, label: access.tenant.industry === "REAL_ESTATE" ? "Listings" : "Inventory", hint: "What is on the books", icon: "boxes" as const }] : []),
         { href: `${base}/activity`, label: COPY.activityLog, short: "Activity", hint: COPY.handledForYou, icon: "activity" },
       ]}
-      context={<WorkspaceSwitcher current={toTenantOption(access.tenant)} options={tenants.map((t) => toTenantOption(t.tenant))} basePath="/app" />}
+      back={operator ? { href: `/console/${slug}`, label: "Back to console" } : undefined}
+      context={<WorkspaceSwitcher current={toTenantOption(access.tenant)} options={tenants.map((t) => toTenantOption(t.tenant))} basePath="/app" keep={["/leads", "/content", "/activity"]} />}
+      commands={others.length ? [{ label: "Businesses", items: others.map(({ tenant: t }) => ({ href: `/app/${t.slug}`, label: t.name })) }] : []}
       footer={
         <span>
           {access.roleName ?? (access.via === "admin" ? "Platform admin" : "Operator")} · {access.tenant.timezone}
