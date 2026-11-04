@@ -1,9 +1,12 @@
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
+import { subjectIdOf } from "@/lib/opportunities/detail";
 import type { ExceptionRecord, MissedOpportunityType } from "@/lib/types";
 
 /** Opportunity types whose subject is a lead's SLA clock: settling them must stop that clock, or the detector raises the same lead again a week later. */
 const SLA_TYPES: ReadonlySet<MissedOpportunityType> = new Set<MissedOpportunityType>(["UNANSWERED_ENQUIRY", "NOT_BOOKED"]);
+/** Opportunity types whose subject is an inbox thread: settling them takes the thread off the inbox's waiting list too. */
+const INBOX_TYPES: ReadonlySet<MissedOpportunityType> = new Set<MissedOpportunityType>(["UNREPLIED_DM", "UNREPLIED_COMMENT"]);
 
 /** Closes one exception, settles its missed opportunity and logs the outcome. Returns null when it was already resolved. */
 export async function settleException(tenantId: string, exceptionId: string, resolution: string, recovered: boolean, userId: string): Promise<ExceptionRecord | null> {
@@ -16,6 +19,8 @@ export async function settleException(tenantId: string, exceptionId: string, res
     await repository.resolveMissedOpportunity(tenantId, ex.missedOpportunityId, recovered ? "RECOVERED" : "EXPIRED", recovered ? (mo?.estimatedValueCents ?? 0) : 0);
     // A person has dealt with this lead: the enquiry counts as answered, and a closed booking item stops the booking clock.
     if (mo && SLA_TYPES.has(mo.type) && mo.leadId) await repository.settleLeadSla(tenantId, mo.leadId, now, { booking: mo.type === "NOT_BOOKED" });
+    // Dealt with either way; a new message from them puts the thread back in the inbox on its own.
+    if (mo && INBOX_TYPES.has(mo.type)) await repository.updateConversation(tenantId, subjectIdOf(mo.dedupeKey), { awaitingReply: false, suggestedReply: null });
   } else if (ex.leadId) {
     await repository.settleLeadSla(tenantId, ex.leadId, now);
   }
