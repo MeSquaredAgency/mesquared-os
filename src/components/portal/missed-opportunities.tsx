@@ -1,19 +1,22 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Empty, Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
-import type { PortalHome } from "@/lib/types";
+import type { MissedOpportunityRecord, PortalHome } from "@/lib/types";
 import { cn, formatMoney, timeAgo, type FormatContext } from "@/lib/utils";
 
 interface Props {
   missed: PortalHome["missed"];
   fmt: FormatContext;
   allHref?: string;
+  /** Where each item's detail page lives (`${detailHref}/${id}`); without it the rows are plain text. */
+  detailHref?: string;
   limit?: number;
 }
 
-const STATUS_LABEL: Record<string, { text: string; variant: "red" | "secondary" | "green" | "muted" | "amber" }> = {
+export const STATUS_LABEL: Record<string, { text: string; variant: "red" | "secondary" | "green" | "muted" | "amber" }> = {
   DETECTED: { text: "Spotted", variant: "red" },
   RECOVERING: { text: "Recovering", variant: "secondary" },
   ESCALATED: { text: "With the Me² team", variant: "amber" },
@@ -39,8 +42,42 @@ function Totals({ missed, fmt }: Pick<Props, "missed" | "fmt">) {
   );
 }
 
+/** One item as a row: an open one shows when it was spotted, a closed one when it was closed. With `href` the whole row opens it. */
+export function OpportunityRow({ m, fmt, href }: { m: MissedOpportunityRecord; fmt: FormatContext; href?: string }) {
+  const s = STATUS_LABEL[m.status] ?? STATUS_LABEL.DETECTED;
+  const cents = m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents;
+  const body = (
+    <>
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-sm text-foreground/90">{m.summary}</p>
+        <p className="text-xs text-muted-foreground">
+          {MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type} · {timeAgo(m.resolvedAt ?? m.detectedAt)}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-col items-end gap-1.5">
+          {cents > 0 && <span className="text-sm font-medium num">{formatMoney(cents, fmt.currency, fmt.locale, { whole: true })}</span>}
+          <Badge variant={s.variant}>{s.text}</Badge>
+        </div>
+        {href && <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />}
+      </div>
+    </>
+  );
+  return (
+    <li>
+      {href ? (
+        <Link href={href} className="-mx-5 flex items-start justify-between gap-4 px-5 py-4 transition-colors duration-150 hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none">
+          {body}
+        </Link>
+      ) : (
+        <div className="flex items-start justify-between gap-4 py-4">{body}</div>
+      )}
+    </li>
+  );
+}
+
 /** Revenue leaking out, with the money at risk and what has been won back. */
-export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) {
+export function MissedOpportunities({ missed, fmt, allHref, detailHref, limit = 6 }: Props) {
   const shown = missed.open.slice(0, limit);
   const more = missed.open.length - shown.length;
   return (

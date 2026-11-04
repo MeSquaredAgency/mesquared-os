@@ -644,6 +644,7 @@ export interface Repository {
 
   upsertReview(tenantId: string, data: NewReview): Promise<{ record: ReviewRecord; created: boolean }>;
   listReviews(tenantId: string, opts?: { unansweredOnly?: boolean; receivedBefore?: Date; limit?: number }): Promise<ReviewRecord[]>;
+  findReviewById(tenantId: string, reviewId: string): Promise<ReviewRecord | null>;
   markReviewReplied(tenantId: string, reviewId: string, replyBody: string | null): Promise<ReviewRecord | null>;
 
   upsertFormSession(tenantId: string, data: { sessionKey: string; formName: string | null; pageUrl: string | null; partial: Record<string, unknown> }): Promise<FormSessionRecord>;
@@ -673,6 +674,8 @@ export interface Repository {
   /** `onlyAssigneeId` limits the list to items on leads assigned to that user (a member without VIEW_ALL_RECORDS). */
   listMissedOpportunities(tenantId: string, opts?: { status?: MissedOpportunityStatus[]; limit?: number; onlyAssigneeId?: string | null }): Promise<MissedOpportunityRecord[]>;
   findMissedOpportunityById(tenantId: string, id: string): Promise<MissedOpportunityRecord | null>;
+  /** What happened to one item, oldest first, and the exception raised for it: the story its detail page tells. */
+  getMissedOpportunityTrail(tenantId: string, id: string): Promise<{ runs: AutomationRunRecord[]; exception: ExceptionRecord | null }>;
   /** Open items detected before `before`, oldest first: what the daily expiry sweep closes. */
   listOpenMissedOpportunitiesBefore(tenantId: string, before: Date, limit?: number): Promise<MissedOpportunityRecord[]>;
   /** Open items about a lead or contact, optionally of certain types; what the reconciler closes when the person comes back. */
