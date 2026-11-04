@@ -33,11 +33,11 @@ export function PendingMark({ className }: { className?: string }) {
 
 const Count = ({ n }: { n: number }) => <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-soft px-1.5 text-2xs font-semibold text-red-text num">{n}</span>;
 
-/** The sidebar list. The active item gets the card tone and the coral square. */
+/** The sidebar list. The active item is raised on the card tone with the coral mark; the rest are quiet until hovered. */
 export function ShellNav({ items }: { items: NavItem[] }) {
   const isActive = useActive(items);
   return (
-    <nav aria-label="Main" className="flex flex-col gap-0.5 px-3 py-2">
+    <nav aria-label="Main" className="flex flex-col gap-1 px-4 py-2">
       {items.map((item) => {
         const Icon = ICONS[item.icon];
         const active = isActive(item);
@@ -48,15 +48,15 @@ export function ShellNav({ items }: { items: NavItem[] }) {
             aria-current={active ? "page" : undefined}
             title={item.hint}
             className={cn(
-              "group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-150",
-              active ? "bg-sidebar-active font-medium text-sidebar-foreground" : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+              "group relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-[background-color,color,box-shadow] duration-150",
+              active ? "bg-sidebar-active font-medium text-sidebar-foreground shadow-[0_1px_2px_#1b232c14,0_0_0_1px_var(--sidebar-border)]" : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
             )}
           >
-            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            <Icon className={cn("size-[18px] shrink-0 transition-colors", active && "text-brand")} aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
             <PendingMark />
             {item.badge ? <Count n={item.badge} /> : null}
-            {active && <span aria-hidden="true" className="absolute top-1/2 -left-3 h-4 w-0.5 -translate-y-1/2 bg-brand" />}
+            {active && <span aria-hidden="true" className="absolute top-1/2 -left-4 h-5 w-0.5 -translate-y-1/2 rounded-full bg-brand" />}
           </Link>
         );
       })}
@@ -71,20 +71,19 @@ export function MobileNav({ items }: { items: NavItem[] }) {
   const more = items.length > 5 ? items.slice(4) : [];
   const moreActive = more.some(isActive);
   return (
-    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 backdrop-blur md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/90 shadow-[0_-8px_24px_-16px_#1b232c33] backdrop-blur-md md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       <ul className="flex h-16 items-stretch">
         {shown.map((item) => {
           const Icon = ICONS[item.icon];
           const active = isActive(item);
           return (
             <li key={item.href} className="min-w-0 flex-1">
-              <Link href={item.href} aria-current={active ? "page" : undefined} className={cn("relative flex h-full flex-col items-center justify-center gap-1 px-1 text-2xs font-medium", active ? "text-foreground" : "text-muted-foreground")}>
-                <span className="relative">
-                  <Icon className="size-5" aria-hidden="true" />
-                  {item.badge ? <span className="absolute -top-1.5 -right-2.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-soft px-1 text-[10px] font-semibold text-red-text num">{item.badge}</span> : null}
+              <Link href={item.href} aria-current={active ? "page" : undefined} className={cn("relative flex h-full flex-col items-center justify-center gap-1 px-1 text-2xs font-medium transition-colors", active ? "text-foreground" : "text-muted-foreground")}>
+                <span className={cn("relative grid h-7 w-11 place-items-center rounded-full transition-colors", active && "bg-accent")}>
+                  <Icon className={cn("size-5", active && "text-brand")} aria-hidden="true" />
+                  {item.badge ? <span className="absolute -top-1 right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-soft px-1 text-[10px] font-semibold text-red-text num">{item.badge}</span> : null}
                 </span>
                 <span className="max-w-full truncate">{item.short ?? item.label}</span>
-                {active && <span aria-hidden="true" className="absolute top-0 h-0.5 w-8 bg-brand" />}
                 <PendingMark className="absolute top-2 right-[calc(50%-1.25rem)]" />
               </Link>
             </li>
@@ -94,9 +93,10 @@ export function MobileNav({ items }: { items: NavItem[] }) {
           <li className="min-w-0 flex-1">
             <DropdownMenu>
               <DropdownMenuTrigger className={cn("relative flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-2xs font-medium outline-none", moreActive ? "text-foreground" : "text-muted-foreground")}>
-                <MoreHorizontal className="size-5" aria-hidden="true" />
+                <span className={cn("grid h-7 w-11 place-items-center rounded-full", moreActive && "bg-accent")}>
+                  <MoreHorizontal className={cn("size-5", moreActive && "text-brand")} aria-hidden="true" />
+                </span>
                 More
-                {moreActive && <span aria-hidden="true" className="absolute top-0 h-0.5 w-8 bg-brand" />}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top" sideOffset={10} className="w-56">
                 {more.map((item) => {

@@ -3,20 +3,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Chips. State chips carry a meaning that matters and are tinted: `green`
- * (done, healthy, money in), `red` (at risk, failed, money out), `amber`
- * (watch, pending), `secondary` (in flight, navy). Attribute chips are quiet:
- * `outline` for a tag, `muted` for something finished or incidental.
+ * Chips. State chips carry a meaning that matters: they are tinted and lead
+ * with a dot — `green` (done, healthy, money in), `red` (at risk, failed,
+ * money out), `amber` (watch, pending), `secondary` (in flight, navy).
+ * Attribute chips are quiet and dotless: `outline` for a tag, `muted` for
+ * something finished or incidental.
  */
-const badgeVariants = cva("inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-[3px] text-2xs font-medium leading-none [&>svg]:size-3", {
+const badgeVariants = cva("inline-flex w-fit shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-2xs font-medium leading-none [&>svg]:size-3", {
   variants: {
     variant: {
       default: "border-transparent bg-primary text-primary-foreground",
-      secondary: "border-transparent bg-blue-soft text-blue-text",
+      secondary: "border-transparent bg-blue-soft text-blue-text before:size-1.5 before:shrink-0 before:rounded-full before:bg-blue before:content-['']",
       outline: "border-border-strong bg-transparent text-muted-foreground",
-      green: "border-transparent bg-green-soft text-green-text",
-      red: "border-transparent bg-red-soft text-red-text",
-      amber: "border-transparent bg-amber-soft text-amber-text",
+      green: "border-transparent bg-green-soft text-green-text before:size-1.5 before:shrink-0 before:rounded-full before:bg-green before:content-['']",
+      red: "border-transparent bg-red-soft text-red-text before:size-1.5 before:shrink-0 before:rounded-full before:bg-red before:content-['']",
+      amber: "border-transparent bg-amber-soft text-amber-text before:size-1.5 before:shrink-0 before:rounded-full before:bg-amber before:content-['']",
       muted: "border-transparent bg-muted text-muted-foreground",
     },
   },

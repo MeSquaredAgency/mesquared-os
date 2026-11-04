@@ -44,7 +44,7 @@ export function LinkTabs({ tabs, param = "tab", className }: { tabs: LinkTab[]; 
             aria-current={active ? "page" : undefined}
             className={cn(
               "-mb-px inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors duration-150 first:pl-0",
-              active ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              active ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {t.label}

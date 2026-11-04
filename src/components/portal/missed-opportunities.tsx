@@ -49,11 +49,11 @@ export function MissedOpportunities({ missed, fmt, allHref, limit = 6 }: Props) 
         <Empty>Nothing slipping through right now.</Empty>
       ) : (
         <div className="surface px-5">
-          <ul className="divide-y">
+          <ul className="rise-stagger divide-y">
             {shown.map((m) => {
               const s = STATUS_LABEL[m.status] ?? STATUS_LABEL.DETECTED;
               return (
-                <li key={m.id} className="flex items-start justify-between gap-4 py-4">
+                <li key={m.id} className="list-row flex items-start justify-between gap-4 py-4">
                   <div className="flex min-w-0 flex-col gap-1">
                     <p className="text-sm text-foreground/90">{m.summary}</p>
                     <p className="text-xs text-muted-foreground">

@@ -19,14 +19,14 @@ interface PageHeaderProps {
 export function PageHeader({ eyebrow, kicker, title, lede, actions, children, className }: PageHeaderProps) {
   const label = eyebrow ?? kicker;
   return (
-    <header className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-8">
-        <div className="flex min-w-0 flex-col gap-1.5">
+    <header className={cn("rise flex flex-col gap-5", className)}>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-8">
+        <div className="flex min-w-0 flex-col gap-2">
           {label && <p className="eyebrow">{label}</p>}
           <h1 className="page-title">{title}</h1>
           {lede && <p className="lede">{lede}</p>}
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 md:pt-5">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 md:pt-6">{actions}</div>}
       </div>
       {children}
     </header>
@@ -51,7 +51,7 @@ interface SectionProps {
 export function Section({ id, kicker, title, lede, action, level = "h2", children, className }: SectionProps) {
   const Heading = level;
   return (
-    <section aria-labelledby={id} className={cn("flex flex-col gap-3", className)}>
+    <section aria-labelledby={id} className={cn("rise flex flex-col gap-3.5", className)}>
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="flex min-w-0 flex-col gap-0.5">
           {kicker && <p className="eyebrow mb-1">{kicker}</p>}
@@ -67,7 +67,7 @@ export function Section({ id, kicker, title, lede, action, level = "h2", childre
   );
 }
 
-/** A cream card for a list or a table. Lists inside use `divide-y`. */
+/** A card for a list or a table. Lists inside use `divide-y`; rows use `list-row` so they tint edge to edge. */
 export function Panel({ children, className, ...props }: React.ComponentProps<"div">) {
   return (
     <div className={cn("surface px-5 py-1 text-card-foreground", className)} {...props}>
@@ -76,10 +76,13 @@ export function Panel({ children, className, ...props }: React.ComponentProps<"d
   );
 }
 
-/** What a panel says when it has nothing to show. */
-export function Empty({ children, action, className }: { children: ReactNode; action?: ReactNode; className?: string }) {
+/** What a panel says when it has nothing to show: a quiet mark, one line, at most one action. */
+export function Empty({ children, action, icon, className }: { children: ReactNode; action?: ReactNode; icon?: ReactNode; className?: string }) {
   return (
     <div className={cn("surface flex flex-col items-center gap-3 px-6 py-10 text-center", className)}>
+      <span aria-hidden="true" className="grid size-10 place-items-center rounded-full bg-accent text-muted-foreground [&_svg]:size-5">
+        {icon ?? <span className="grid grid-cols-2 gap-1 [&>i]:block [&>i]:size-1.5 [&>i]:bg-brand"><i /><i className="opacity-40" /><i className="opacity-40" /><i /></span>}
+      </span>
       <p className="max-w-md text-sm text-muted-foreground">{children}</p>
       {action}
     </div>
@@ -93,23 +96,33 @@ interface StatProps {
   tone?: "green" | "red" | "amber" | "neutral";
   /** An ornament at the right: a chip, a small chart. */
   aside?: ReactNode;
+  /** A small icon above the label, in a tinted square. */
+  icon?: ReactNode;
 }
 
-/** One number with its label, for a `StatStrip`. Colour only for money direction and risk. */
-export function Stat({ label, value, hint, tone = "neutral", aside }: StatProps) {
+/** One number with its label, as a tile in a `StatStrip`. Colour only for money direction and risk. */
+export function Stat({ label, value, hint, tone = "neutral", aside, icon }: StatProps) {
+  const ring = { neutral: "bg-accent text-muted-foreground", green: "bg-green-soft text-green-text", red: "bg-red-soft text-red-text", amber: "bg-amber-soft text-amber-text" }[tone];
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 bg-card px-5 py-4">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+    <div className="surface surface-lift flex min-w-0 flex-col gap-3 px-5 py-4.5">
+      <div className="flex items-center justify-between gap-3">
+        <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+        {icon && (
+          <span aria-hidden="true" className={cn("grid size-7 shrink-0 place-items-center rounded-md [&_svg]:size-4", ring)}>
+            {icon}
+          </span>
+        )}
+      </div>
       <dd className="flex items-baseline justify-between gap-3">
         <span className={cn("stat-value truncate", tone === "green" && "text-green-text", tone === "red" && "text-red-text", tone === "amber" && "text-amber-text")}>{value}</span>
         {aside}
       </dd>
-      {hint && <dd className="truncate text-xs text-muted-foreground">{hint}</dd>}
+      {hint && <dd className="-mt-1.5 truncate text-xs text-muted-foreground">{hint}</dd>}
     </div>
   );
 }
 
-/** Numbers side by side, separated by hairlines rather than boxes. */
+/** Numbers side by side as a row of tiles. */
 export function StatStrip({ children, columns = 3, label, className }: { children: ReactNode; columns?: 2 | 3 | 4 | 5; label?: string; className?: string }) {
   // Odd counts fill their last row on a two-column phone grid so no empty cell shows through.
   const cols = {
@@ -119,7 +132,7 @@ export function StatStrip({ children, columns = 3, label, className }: { childre
     5: "grid-cols-2 [&>*:nth-child(5)]:col-span-2 xl:grid-cols-5 xl:[&>*:nth-child(5)]:col-span-1",
   }[columns];
   return (
-    <dl role="group" aria-label={label} className={cn("surface grid gap-px overflow-hidden bg-border", cols, className)}>
+    <dl role="group" aria-label={label} className={cn("rise-stagger grid gap-3", cols, className)}>
       {children}
     </dl>
   );

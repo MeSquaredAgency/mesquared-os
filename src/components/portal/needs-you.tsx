@@ -27,11 +27,11 @@ function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: F
   const hot = (lead.intentScore ?? 0) >= 85;
   const name = leadDisplayName(lead);
   return (
-    <li className="flex items-start gap-3.5 py-4">
+    <li className="list-row flex flex-wrap items-start gap-x-3.5 gap-y-3 py-4 sm:flex-nowrap">
       <Avatar name={name} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-base font-medium">{name}</span>
+          <span className="text-md font-semibold tracking-[-0.01em]">{name}</span>
           {hot && <Badge variant="red">Hot</Badge>}
           {overdueResponse ? <Badge variant="red">No reply yet</Badge> : overdueBooking ? <Badge variant="red">Not booked</Badge> : lead.status === "BOOKING_SENT" ? <Badge variant="secondary">Link sent</Badge> : <Badge variant="green">{humanize(lead.status)}</Badge>}
         </div>
@@ -44,7 +44,7 @@ function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: F
           </details>
         )}
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+      <div className="flex w-full shrink-0 items-center gap-2 pl-[3.125rem] sm:w-auto sm:pl-0">
         {lead.phone && (
           <Button asChild variant="outline" size="sm">
             <a href={`tel:${lead.phone}`}>
@@ -76,7 +76,7 @@ export function NeedsYou({ leads, fmt, allHref, showReasons = true, tenantSlug }
       {leads.length === 0 ? (
         <Empty>Every enquiry has been answered. New ones that need a person land here.</Empty>
       ) : (
-        <ul className="surface divide-y px-5">
+        <ul className="surface rise-stagger divide-y px-5">
           {leads.map((l) => (
             <Lead key={l.id} lead={l} fmt={fmt} showReasons={showReasons} tenantSlug={tenantSlug} />
           ))}

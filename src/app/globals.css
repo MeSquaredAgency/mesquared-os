@@ -5,13 +5,16 @@
  *
  * The brand (Instrument Sans, warm paper, deep navy, one coral square) is
  * applied as a working tool, not a website: every content area is paper
- * with cream cards so it reads in daylight and on a phone; the operator
- * console is told apart by a navy sidebar, the client portal by a light one.
+ * with near-white cards that sit *on* it (a hairline and a soft shadow), so
+ * the page has depth without noise and reads in daylight and on a phone.
+ * The operator console is told apart by a navy sidebar, the client portal by
+ * a light one.
  *
  * Coral is a signal, never a fill: the 8px square on primary buttons and
- * eyebrows, the active-nav mark, focus rings. Green and red are reserved for
- * money direction and risk; navy-blue marks things in flight; amber marks
- * things to watch. Every text token passes 4.5:1 on its ground.
+ * eyebrows, the active-nav mark, the active tab, focus rings. Green and red
+ * are reserved for money direction and risk; navy-blue marks things in
+ * flight; amber marks things to watch. Every text token passes 4.5:1 on its
+ * ground.
  */
 :root,
 [data-theme="paper"] {
@@ -26,9 +29,9 @@
   --mist: #f4efe7;
   --haze: #a49c92;
   --slate: #5b5650;
-  --paper: #f6f1e9;
-  --paper-2: #ece5d8;
-  --cream: #fffdf9;
+  --paper: #f3ede3;
+  --paper-2: #e9e1d3;
+  --cream: #fffefb;
 
   --background: var(--paper);
   --foreground: var(--ink);
@@ -41,17 +44,17 @@
   --primary-hover: var(--navy);
   --secondary: var(--paper-2);
   --secondary-foreground: var(--ink);
-  --muted: #efe9de;
+  --muted: #ede6d9;
   --muted-foreground: #5d5851;
   --subtle-foreground: #7a746c;
-  --accent: #f0eadf;
+  --accent: #f3ede3;
   --accent-foreground: var(--ink);
   --brand: var(--coral-deep);
   --brand-on-primary: var(--coral);
   --destructive: var(--coral-deep);
-  --border: #1b232c1f;
-  --border-strong: #1b232c3d;
-  --input: #1b232c5c;
+  --border: #1b232c14;
+  --border-strong: #1b232c33;
+  --input: #1b232c40;
   --ring: var(--coral-deep);
 
   --green: #2e7d5b;
@@ -67,21 +70,22 @@
   --blue-text: #1b3853;
   --blue-soft: #e2e9f1;
 
-  --sidebar: #efe8dc;
+  --sidebar: #f8f4ec;
   --sidebar-foreground: var(--ink);
   --sidebar-muted: #6b655d;
-  --sidebar-active: var(--cream);
-  --sidebar-hover: #fffdf980;
-  --sidebar-border: #1b232c1a;
+  --sidebar-active: #ffffff;
+  --sidebar-hover: #1b232c0a;
+  --sidebar-border: #1b232c12;
 
   --radius-xs: 6px;
   --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-  --radius-2xl: 24px;
-  --shadow-card: 0 1px 2px #1b232c0a, 0 8px 24px -16px #1b232c33;
-  --shadow-pop: 0 2px 6px #1b232c14, 0 20px 48px -20px #1b232c47;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --shadow-card: 0 1px 1px #1b232c08, 0 2px 6px -1px #1b232c0d, 0 16px 40px -24px #1b232c40;
+  --shadow-lift: 0 2px 4px #1b232c0d, 0 10px 24px -8px #1b232c2e, 0 24px 56px -28px #1b232c40;
+  --shadow-pop: 0 2px 6px #1b232c14, 0 24px 56px -20px #1b232c52;
 }
 
 /* The dark tone: the console sidebar and the login panel. */
@@ -130,9 +134,10 @@
   --sidebar-muted: #a49c92;
   --sidebar-active: #f4efe714;
   --sidebar-hover: #f4efe70a;
-  --sidebar-border: #f4efe71a;
+  --sidebar-border: #f4efe714;
 
   --shadow-card: 0 1px #f4efe70f inset, 0 12px 32px -20px #00000099;
+  --shadow-lift: 0 1px #f4efe714 inset, 0 16px 40px -20px #000000b3;
   --shadow-pop: 0 2px 8px #00000066, 0 24px 56px -20px #000000b3;
 }
 
@@ -197,7 +202,10 @@
   --radius-2xl: var(--radius-2xl);
 
   --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
   --shadow-pop: var(--shadow-pop);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* A type scale the audience can read on a phone: nothing on screen below 12px, and 12px only for table labels. */
   --text-2xs: 0.75rem;
@@ -276,25 +284,25 @@
     font-stretch: 90%;
     text-wrap: balance;
   }
-  /* The page heading: one per screen. */
+  /* The page heading: one per screen. Big enough to carry the page, never shouting. */
   .page-title {
-    font-size: clamp(1.5rem, 2.2vw, 1.75rem);
-    line-height: 1.15;
-    letter-spacing: -0.025em;
+    font-size: clamp(1.75rem, 2.4vw, 2.125rem);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
     font-weight: 600;
     text-wrap: balance;
   }
   /* One per section. */
   .section-title {
-    font-size: 1.0625rem;
+    font-size: 1.125rem;
     line-height: 1.3;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     font-weight: 600;
   }
   /* The line under a title. */
   .lede {
     max-width: 60ch;
-    font-size: var(--text-base);
+    font-size: var(--text-md);
     line-height: 1.55;
     color: var(--muted-foreground);
     text-wrap: pretty;
@@ -335,9 +343,9 @@
   }
   /* A number that carries a tile. */
   .stat-value {
-    font-size: 1.5rem;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
+    font-size: 1.75rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
@@ -345,11 +353,73 @@
   .num {
     font-variant-numeric: tabular-nums;
   }
-  /* A hairline card: the one level of containment the app uses. */
+  /* A card that sits on the paper: the one level of containment the app uses. */
   .surface {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+  }
+  /* A surface that is a link or a button: it lifts a little under the pointer. */
+  .surface-lift {
+    transition:
+      transform 220ms var(--ease-out-soft),
+      box-shadow 220ms var(--ease-out-soft),
+      border-color 220ms var(--ease-out-soft);
+  }
+  @media (hover: hover) {
+    .surface-lift:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-lift);
+      border-color: var(--border-strong);
+    }
+  }
+  /* A row in a list inside a surface: bleeds to the card edge and tints under the pointer. */
+  .list-row {
+    margin-inline: calc(-1 * var(--row-bleed, 20px));
+    padding-inline: var(--row-bleed, 20px);
+    transition: background-color 150ms ease-out;
+  }
+  @media (hover: hover) {
+    .list-row:hover {
+      background-color: color-mix(in srgb, var(--accent) 70%, transparent);
+    }
+  }
+  /* The content area's light: a warm wash at the top so the paper is not one flat field. */
+  .page-wash {
+    background-image:
+      radial-gradient(900px 420px at 18% -8%, color-mix(in srgb, var(--coral) 9%, transparent), transparent 70%),
+      radial-gradient(700px 360px at 92% -12%, color-mix(in srgb, var(--navy) 7%, transparent), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  /* The console sidebar: a navy that falls off slightly towards the bottom. */
+  [data-theme="abyss"].sidebar-tone {
+    background-image: linear-gradient(180deg, #182533 0%, var(--abyss) 55%, #0f1820 100%);
+  }
+  [data-theme="paper"].sidebar-tone {
+    background-image: linear-gradient(180deg, #faf7f1 0%, var(--sidebar) 100%);
+  }
+  /* Things arriving on screen rise into place; lists stagger their rows. */
+  .rise {
+    animation: rise 480ms var(--ease-out-soft) both;
+  }
+  .rise-stagger > * {
+    animation: rise 480ms var(--ease-out-soft) both;
+  }
+  .rise-stagger > :nth-child(2) {
+    animation-delay: 50ms;
+  }
+  .rise-stagger > :nth-child(3) {
+    animation-delay: 100ms;
+  }
+  .rise-stagger > :nth-child(4) {
+    animation-delay: 150ms;
+  }
+  .rise-stagger > :nth-child(5) {
+    animation-delay: 200ms;
+  }
+  .rise-stagger > :nth-child(n + 6) {
+    animation-delay: 240ms;
   }
   /* Hide the scrollbar on horizontal pill rows without losing the scroll. */
   .scrollbar-none {
@@ -357,5 +427,16 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

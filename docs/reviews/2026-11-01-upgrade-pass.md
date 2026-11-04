@@ -219,6 +219,22 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   and number and goes through intake, so they are qualified, acknowledged and
   alerted like any enquiry.
 
+- **A design pass so the OS feels finished, not clunky (4 Nov).** Patrick's
+  note was "more sexy, less clunky". The structure stays (paper content,
+  navy console sidebar, compact page headers); what changed is depth, rhythm
+  and motion. Cards now sit on the paper with a soft layered shadow instead
+  of a flat hairline, and the content area has a faint warm wash at the top.
+  Numbers are separate tiles with an icon, not a hairline grid. The portal
+  home is two columns on a wide screen: the work (needs you, approvals,
+  handled) on the left, money at risk and this month's numbers beside it.
+  Handled-for-you reads as a timeline. Avatars get a colour from the name,
+  workspace rows show the business's mark, health bars are coloured by tone,
+  state chips lead with a dot, active tabs and nav icons carry the coral
+  mark. Buttons lift a hair on hover and settle on press; headers, sections
+  and list rows rise into place on load (off under reduced motion). On a
+  phone the lead actions drop under the lead instead of squeezing the text.
+  Checked in the browser against demo data at desktop and phone width.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
@@ -226,6 +242,3 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   a second text to the customer unless every handler is made idempotent
   first; today a thrown handler becomes an exception and the detector catches
   a missed acknowledgement five minutes later.
-- Visual verification of the UI changes in both batches: the dev server could
-  not bind a port in the sandbox this session, so they are verified by
-  typecheck, lint, tests and a production build only.

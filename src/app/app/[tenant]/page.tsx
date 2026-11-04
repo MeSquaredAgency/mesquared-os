@@ -17,8 +17,11 @@ export const metadata = { title: "Home" };
 
 /**
  * The client's home. It opens on what needs them; when nothing does, it says
- * so once and shows what was done for them. Numbers live inside the section
- * they explain, never in a strip of their own at the top.
+ * so once and shows what was done for them. On a wide screen the work (what
+ * needs you, what was handled) runs down the left and the money (at risk,
+ * won back, this month) sits beside it; on a phone it is one column, work
+ * first. Numbers live inside the section they explain, never in a strip of
+ * their own at the top.
  */
 export default async function PortalHomePage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant: slug } = await params;
@@ -47,7 +50,12 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
   const done = describeHandled(home.handled.byType);
   const lede = waiting > 0 ? "Everything else is handled, with a person checking the work." : done ? `This week we ${done}, with a person checking the work.` : "Everything is handled, with a person checking the work.";
 
-  const handled = <HandledForYou handled={home.handled} activityHref={`${base}/activity`} />;
+  const aside = (opportunitiesOn || home.money) && (
+    <div className="flex flex-col gap-10">
+      {opportunitiesOn && <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} limit={4} />}
+      {home.money && <MoneyPanel money={home.money} fmt={fmt} columns={2} />}
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -67,12 +75,14 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
         }
       />
 
-      {leads > 0 && <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />}
-      {home.contentAwaiting.length > 0 && <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={canApprove} isMember={access.via === "member"} />}
-      {waiting === 0 && handled}
-      {opportunitiesOn && <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />}
-      {home.money && <MoneyPanel money={home.money} fmt={fmt} />}
-      {waiting > 0 && handled}
+      <div className={aside ? "grid gap-10 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] xl:items-start xl:gap-x-8" : "flex flex-col gap-10"}>
+        <div className="flex min-w-0 flex-col gap-10">
+          {leads > 0 && <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />}
+          {home.contentAwaiting.length > 0 && <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={canApprove} isMember={access.via === "member"} />}
+          <HandledForYou handled={home.handled} activityHref={`${base}/activity`} />
+        </div>
+        {aside}
+      </div>
     </div>
   );
 }

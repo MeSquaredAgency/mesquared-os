@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Banknote, CircleAlert, FileCheck, Plus, Users } from "lucide-react";
 import { PortfolioTable } from "@/components/console/portfolio-table";
 import { Empty, PageHeader, Section, Stat, StatStrip } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,7 @@ export default async function ConsolePage() {
       <StatStrip label="Across the portfolio" columns={4}>
         <Stat
           label="Need a person"
+          icon={<CircleAlert />}
           value={
             totals.exceptions > 0 ? (
               <Link href="/console/queue" className="underline-offset-4 hover:underline" title="Open the queue">
@@ -76,9 +77,9 @@ export default async function ConsolePage() {
           tone={needsPerson ? "red" : "neutral"}
           hint={`${totals.breaches} breach${totals.breaches === 1 ? "" : "es"} · ${totals.exceptions} exception${totals.exceptions === 1 ? "" : "s"} · ${totals.failing} failing`}
         />
-        <Stat label="Money at risk" value={formatMoney(totals.atRisk, currency, locale)} tone={totals.atRisk ? "red" : "neutral"} hint={`${totals.missed} open missed opportunit${totals.missed === 1 ? "y" : "ies"}`} />
-        <Stat label="Content due" value={totals.content} hint="Drafts waiting on approval" />
-        <Stat label="Leads today" value={totals.leads} hint="Across every workspace" />
+        <Stat label="Money at risk" icon={<Banknote />} value={formatMoney(totals.atRisk, currency, locale, { whole: true })} tone={totals.atRisk ? "red" : "neutral"} hint={`${totals.missed} open missed opportunit${totals.missed === 1 ? "y" : "ies"}`} />
+        <Stat label="Content due" icon={<FileCheck />} value={totals.content} hint="Drafts waiting on approval" />
+        <Stat label="Leads today" icon={<Users />} value={totals.leads} hint="Across every workspace" />
       </StatStrip>
 
       <Section id="portfolio-title" title="Workspaces" lede="Worst health first. Health is 100 minus deductions for breaches, open missed opportunities, exceptions, failing integrations and ad pacing drift." action={<span className="text-xs text-muted-foreground">{workspaces}</span>}>
