@@ -697,6 +697,10 @@ export const memoryRepository: Repository = {
       .slice(0, opts.limit ?? 100);
   },
 
+  async findReviewById(tenantId, reviewId) {
+    return store().reviews.find((r) => r.id === reviewId && r.tenantId === tenantId) ?? null;
+  },
+
   async markReviewReplied(tenantId, reviewId) {
     const r = store().reviews.find((x) => x.id === reviewId && x.tenantId === tenantId);
     if (!r) return null;
@@ -821,6 +825,14 @@ export const memoryRepository: Repository = {
 
   async findMissedOpportunityById(tenantId, moId) {
     return store().missed.find((x) => x.id === moId && x.tenantId === tenantId) ?? null;
+  },
+
+  async getMissedOpportunityTrail(tenantId, moId) {
+    const runs = store()
+      .runs.filter((r) => r.tenantId === tenantId && r.missedOpportunityId === moId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, 50);
+    return { runs, exception: store().exceptions.find((e) => e.tenantId === tenantId && e.missedOpportunityId === moId) ?? null };
   },
 
   async listOpenMissedOpportunitiesBefore(tenantId, before, limit = 200) {

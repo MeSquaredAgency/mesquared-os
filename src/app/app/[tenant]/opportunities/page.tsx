@@ -1,15 +1,13 @@
 import { notFound } from "next/navigation";
-import { MissedOpportunities } from "@/components/portal/missed-opportunities";
+import { MissedOpportunities, OpportunityRow } from "@/components/portal/missed-opportunities";
 import { FilterChips, type FilterChip } from "@/components/shell/filter-chips";
 import { Empty, PageHeader, Section } from "@/components/shell/section";
-import { Badge } from "@/components/ui/badge";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { COPY, MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
 import { repository } from "@/lib/data";
 import { moduleOn } from "@/lib/modules/registry";
 import type { MissedOpportunityType } from "@/lib/types";
-import { formatMoney, timeAgo } from "@/lib/utils";
 
 export const metadata = { title: "Missed opportunities" };
 
@@ -50,25 +48,14 @@ export default async function OpportunitiesPage({ params, searchParams }: { para
       >
         {counts.size > 1 && <FilterChips param="type" label="Kind" chips={chips} />}
       </PageHeader>
-      <MissedOpportunities missed={{ open, atRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0), recoveredCents }} fmt={fmt} limit={50} />
+      <MissedOpportunities missed={{ open, atRiskCents: open.reduce((s, m) => s + m.estimatedValueCents, 0), recoveredCents }} fmt={fmt} detailHref={`/app/${slug}/opportunities`} limit={50} />
       <Section id="closed-title" title={`${COPY.recovered} and closed`} lede="Won back, or written off after we tried.">
         {closed.length === 0 ? (
           <Empty>Nothing closed yet.</Empty>
         ) : (
           <ul className="surface divide-y px-5">
             {closed.map((m) => (
-              <li key={m.id} className="flex items-start justify-between gap-4 py-4">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-sm text-foreground/90">{m.summary}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {MISSED_OPPORTUNITY_LABEL[m.type] ?? m.type} · {m.resolvedAt ? timeAgo(m.resolvedAt) : timeAgo(m.detectedAt)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  {(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents) > 0 && <span className="text-sm font-medium num">{formatMoney(m.status === "RECOVERED" ? m.recoveredValueCents : m.estimatedValueCents, fmt.currency, fmt.locale)}</span>}
-                  <Badge variant={m.status === "RECOVERED" ? "green" : "muted"}>{m.status === "RECOVERED" ? COPY.recovered : "Closed"}</Badge>
-                </div>
-              </li>
+              <OpportunityRow key={m.id} m={m} fmt={fmt} href={`/app/${slug}/opportunities/${m.id}`} />
             ))}
           </ul>
         )}
