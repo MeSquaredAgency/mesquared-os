@@ -70,7 +70,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ ten
       {leads > 0 && <NeedsYou leads={home.needsYou} fmt={fmt} allHref={`${base}/leads`} tenantSlug={slug} />}
       {home.contentAwaiting.length > 0 && <ContentApprovals tenantSlug={slug} assets={home.contentAwaiting} canApprove={canApprove} isMember={access.via === "member"} />}
       {waiting === 0 && handled}
-      {opportunitiesOn && <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} />}
+      {opportunitiesOn && <MissedOpportunities missed={home.missed} fmt={fmt} allHref={`${base}/opportunities`} detailHref={`${base}/opportunities`} />}
       {home.money && <MoneyPanel money={home.money} fmt={fmt} />}
       {waiting > 0 && handled}
     </div>

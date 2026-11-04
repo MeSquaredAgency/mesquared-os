@@ -1,3 +1,4 @@
+import { PLATFORM_LABEL } from "@/components/shell/platform";
 import { repository } from "@/lib/data";
 import { normalizePhone, toE164 } from "@/lib/intake/schema";
 import { leadDisplayName } from "@/lib/leads";
@@ -113,13 +114,15 @@ export async function detectForTenant(tenant: TenantSummary, now = new Date()): 
   for (const c of await repository.listConversationsAwaitingReply(tenant.id, { channels: ["SOCIAL_DM", "SOCIAL_COMMENT", "SMS", "WHATSAPP"], olderThan: inboxCutoff })) {
     const type: MissedOpportunityType = c.channel === "SOCIAL_COMMENT" ? "UNREPLIED_COMMENT" : "UNREPLIED_DM";
     const contact = c.contactId ? await repository.findContactById(tenant.id, c.contactId) : null;
-    const who = contact ? leadDisplayName(contact) : "Someone";
+    // Social threads have no contact record; the name the platform showed is what the inbox calls them too.
+    const who = contact ? leadDisplayName(contact) : (safeName(c.displayName) ?? "Someone");
+    const platform = c.platform ? ` on ${PLATFORM_LABEL[c.platform]}` : "";
     const r = await raiseMissedOpportunity(tenant, {
       type,
       leadId: null,
       contactId: c.contactId,
       subjectId: c.id,
-      summary: `${who} sent a ${c.channel === "SOCIAL_COMMENT" ? "comment" : c.channel === "SMS" ? "text" : c.channel === "WHATSAPP" ? "WhatsApp message" : "message"} ${agoPhrase(now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime()))} and hasn't had a reply.`,
+      summary: `${who} sent a ${c.channel === "SOCIAL_COMMENT" ? "comment" : c.channel === "SMS" ? "text" : c.channel === "WHATSAPP" ? "WhatsApp message" : "message"}${platform} ${agoPhrase(now.getTime() - (c.lastMessageAt?.getTime() ?? now.getTime()))} and hasn't had a reply.`,
       suggestedAction: c.channel === "SMS" || c.channel === "WHATSAPP" ? "They answered one of our messages; call or text them back from your own phone." : "Reply from the inbox. Public comments are seen by everyone who visits the page.",
     });
     if (r) note(type, c.id);

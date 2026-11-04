@@ -710,6 +710,11 @@ export const prismaRepository: Repository = {
     return rows.map(toReview);
   },
 
+  async findReviewById(tenantId, reviewId) {
+    const row = await getPrisma().review.findFirst({ where: { id: reviewId, tenantId } });
+    return row ? toReview(row) : null;
+  },
+
   async markReviewReplied(tenantId, reviewId, replyBody) {
     const { count } = await getPrisma().review.updateMany({ where: { id: reviewId, tenantId }, data: { repliedAt: new Date(), replyBody } });
     if (count === 0) return null;
@@ -835,6 +840,14 @@ export const prismaRepository: Repository = {
   async findMissedOpportunityById(tenantId, id) {
     const row = await getPrisma().missedOpportunity.findFirst({ where: { id, tenantId } });
     return row ? toMissed(row) : null;
+  },
+
+  async getMissedOpportunityTrail(tenantId, id) {
+    const [runs, exception] = await Promise.all([
+      getPrisma().automationRun.findMany({ where: { tenantId, missedOpportunityId: id }, orderBy: { createdAt: "asc" }, take: 50 }),
+      getPrisma().exceptionItem.findFirst({ where: { tenantId, missedOpportunityId: id } }),
+    ]);
+    return { runs: runs.map(toRun), exception: exception ? toException(exception) : null };
   },
 
   async listOpenMissedOpportunitiesBefore(tenantId, before, limit = 200) {
