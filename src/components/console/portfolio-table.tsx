@@ -3,8 +3,9 @@ import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Empty } from "@/components/shell/section";
+import { Mark } from "@/components/shell/workspace-switcher";
 import { HEALTH_TONE_LABEL as TONE_LABEL, healthBreakdown, healthTitle, healthTone, pacingDrift, type HealthDeduction } from "@/lib/health";
-import type { PortfolioRow } from "@/lib/types";
+import { toTenantOption, type PortfolioRow } from "@/lib/types";
 import { cn, formatMoney, humanize } from "@/lib/utils";
 
 /** The score as a labelled bar, so 68 means something at a glance; hover for where the points went. */
@@ -12,10 +13,18 @@ export function HealthBar({ score, deductions, compact = false }: { score: numbe
   const tone = healthTone(score);
   return (
     <span className="inline-flex items-center gap-2.5" title={healthTitle(score, deductions)}>
-      <span className="relative block h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        <span className={cn("absolute inset-y-0 left-0 rounded-full", tone === "good" && "bg-green", tone === "watch" && "bg-amber", tone === "bad" && "bg-red")} style={{ width: `${score}%` }} />
+      <span className="relative block h-2 w-20 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        <span
+          className={cn(
+            "absolute inset-y-0 left-0 rounded-full",
+            tone === "good" && "bg-[linear-gradient(90deg,#3f9a72,var(--green))]",
+            tone === "watch" && "bg-[linear-gradient(90deg,#d99a3a,var(--amber))]",
+            tone === "bad" && "bg-[linear-gradient(90deg,#e06a45,var(--red))]",
+          )}
+          style={{ width: `${score}%` }}
+        />
       </span>
-      <span className="text-sm font-medium num">{score}</span>
+      <span className={cn("text-sm font-semibold num", tone === "good" && "text-green-text", tone === "watch" && "text-amber-text", tone === "bad" && "text-red-text")}>{score}</span>
       {!compact && <span className="sr-only">, {TONE_LABEL[tone]}</span>}
     </span>
   );
@@ -99,10 +108,15 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
             {withBreakdown.map(({ row: r, deductions, href }) => (
               <TR key={r.tenant.id}>
                 <TD>
-                  <Link href={href} className="font-medium whitespace-nowrap hover:underline">
-                    {r.tenant.name}
-                  </Link>
-                  <RowNote row={r} deductions={deductions} />
+                  <div className="flex items-center gap-3">
+                    <Mark tenant={toTenantOption(r.tenant)} className="size-8 rounded-lg text-sm" />
+                    <div className="min-w-0">
+                      <Link href={href} className="font-medium whitespace-nowrap hover:underline">
+                        {r.tenant.name}
+                      </Link>
+                      <RowNote row={r} deductions={deductions} />
+                    </div>
+                  </div>
                 </TD>
                 <TD>
                   <HealthBar score={r.health} deductions={deductions} />
@@ -144,11 +158,14 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
         {withBreakdown.map(({ row: r, deductions, href }) => (
           <li key={r.tenant.id} className="surface flex flex-col gap-3 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <Link href={href} className="text-base font-medium hover:underline">
-                  {r.tenant.name}
-                </Link>
-                <RowNote row={r} deductions={deductions} />
+              <div className="flex min-w-0 items-center gap-3">
+                <Mark tenant={toTenantOption(r.tenant)} className="size-8 rounded-lg text-sm" />
+                <div className="min-w-0">
+                  <Link href={href} className="text-base font-medium hover:underline">
+                    {r.tenant.name}
+                  </Link>
+                  <RowNote row={r} deductions={deductions} />
+                </div>
               </div>
               <HealthBar score={r.health} deductions={deductions} compact />
             </div>

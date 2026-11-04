@@ -36,11 +36,11 @@ export function CommandTrigger({ variant = "field" }: { variant?: "field" | "ico
       type="button"
       onClick={openCommandMenu}
       aria-keyshortcuts="Meta+K Control+K"
-      className="flex h-9 w-full items-center gap-2 rounded-md border border-sidebar-border px-2.5 text-left text-sm text-sidebar-muted outline-none transition-colors hover:border-border-strong hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="flex h-9 w-full items-center gap-2.5 rounded-lg border border-transparent bg-sidebar-hover px-3 text-left text-sm text-sidebar-muted outline-none transition-colors hover:border-sidebar-border hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <Search className="size-4 shrink-0" aria-hidden="true" />
       <span className="flex-1">Jump to…</span>
-      {shortcut && <kbd className="font-sans text-2xs tracking-wide">{shortcut}</kbd>}
+      {shortcut && <kbd className="rounded-sm border border-sidebar-border px-1.5 py-0.5 font-sans text-[11px] leading-none tracking-wide">{shortcut}</kbd>}
     </button>
   );
 }

@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils";
 const Tabs = TabsPrimitive.Root;
 
 /**
- * Two looks. `line` (default) is a row of underlined tabs for switching the
- * whole view; `segment` is a small pill group for switching within a card.
+ * Two looks. `line` (default) is a row of tabs with a coral underline for
+ * switching the whole view; `segment` is a small pill group for switching
+ * within a card.
  */
 const TabsVariant = React.createContext<"line" | "segment">("line");
 
@@ -34,8 +35,8 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium text-muted-foreground transition-colors duration-200 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         variant === "line"
-          ? "-mb-px h-10 border-b-2 border-transparent px-3 first:pl-0 hover:text-foreground data-[state=active]:border-foreground data-[state=active]:text-foreground"
-          : "h-8 rounded-full px-3.5 hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-[0_1px_2px_#1b232c14]",
+          ? "-mb-px h-10 border-b-2 border-transparent px-3 first:pl-0 hover:text-foreground data-[state=active]:border-brand data-[state=active]:text-foreground"
+          : "h-8 rounded-full px-3.5 hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-[0_1px_2px_#1b232c14,0_2px_6px_-2px_#1b232c1f]",
         className,
       )}
       {...props}

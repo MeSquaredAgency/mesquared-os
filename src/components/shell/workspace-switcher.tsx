@@ -11,7 +11,7 @@ import { cn, readableTextOn } from "@/lib/utils";
 export function Mark({ tenant, className }: { tenant: TenantOption; className?: string }) {
   const color = tenant.primaryColor ?? "#1b3853";
   return (
-    <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold", className)} style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
+    <span data-slot="mark" className={cn("flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold shadow-[inset_0_0_0_1px_#ffffff1f,0_1px_2px_#1b232c1f]", className)} style={{ backgroundColor: color, color: readableTextOn(color) }} aria-hidden="true">
       {tenant.name.trim().charAt(0).toUpperCase()}
     </span>
   );
@@ -56,11 +56,11 @@ export function WorkspaceSwitcher({ current, options, basePath, noun = "business
   const trigger = (
     <button
       type="button"
-      className={cn("flex h-11 w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-sidebar-active px-2 text-left outline-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", !(single && !exit) && "hover:border-border-strong")}
+      className={cn("flex h-12 w-full items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-active px-2.5 text-left shadow-[0_1px_2px_#1b232c0f] outline-none transition-[border-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", !(single && !exit) && "hover:border-border-strong hover:shadow-[0_2px_6px_#1b232c14]")}
       aria-label={`${noun === "business" ? "Business" : "Workspace"}: ${current.name}${single && !exit ? "" : `. Switch ${noun}`}`}
       disabled={single && !exit}
     >
-      <Mark tenant={current} />
+      <Mark tenant={current} className="size-8 rounded-lg text-sm" />
       <span className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate text-sm font-medium">{current.name}</span>
         <span className="truncate text-2xs text-sidebar-muted">{single ? (noun === "business" ? "Your business" : "Workspace") : `${options.length} ${plural}`}</span>

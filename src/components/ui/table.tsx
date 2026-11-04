@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * A data table inside a card. The wrapper scrolls sideways on narrow screens;
  * numbers align right with `TD numeric`; the first column is the row's name.
+ * The header row sits on a faint band so the columns read before the rows.
  */
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -14,7 +15,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
 }
 
 function THead({ className, ...props }: React.ComponentProps<"thead">) {
-  return <thead className={cn("[&_tr]:border-b", className)} {...props} />;
+  return <thead className={cn("bg-accent/60 [&_tr]:border-b", className)} {...props} />;
 }
 
 function TBody({ className, ...props }: React.ComponentProps<"tbody">) {
@@ -34,7 +35,7 @@ function TH({ className, numeric = false, ...props }: React.ComponentProps<"th">
 }
 
 function TD({ className, numeric = false, ...props }: React.ComponentProps<"td"> & { numeric?: boolean }) {
-  return <td className={cn("px-3 py-3 align-middle first:pl-5 last:pr-5", numeric && "text-right num", className)} {...props} />;
+  return <td className={cn("px-3 py-3.5 align-middle first:pl-5 last:pr-5", numeric && "text-right num", className)} {...props} />;
 }
 
 export { Table, THead, TBody, TFoot, TR, TH, TD };
