@@ -42,6 +42,7 @@ import { materializeTemplate, type MaterializedTemplate } from "@/lib/templates/
 import {
   TenantMismatchError,
   type IntakeEventInput,
+  type NewAiUsage,
   type NewBooking,
   type NewContentAsset,
   type NewMessage,
@@ -93,6 +94,7 @@ interface MemoryStore {
   messages: (NewMessage & { id: string; tenantId: string; conversationId: string; createdAt: Date })[];
   missed: MissedOpportunityRecord[];
   runs: AutomationRunRecord[];
+  aiUsage: (NewAiUsage & { id: string; tenantId: string; createdAt: Date })[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -146,6 +148,7 @@ function store(): MemoryStore {
       messages: [],
       missed: [...demoMissed],
       runs: [...demoRuns],
+      aiUsage: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -170,6 +173,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.heartbeats ??= {};
   g.__msqMemoryStore.buckets ??= {};
   g.__msqMemoryStore.onboardings ??= [];
+  g.__msqMemoryStore.aiUsage ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -885,6 +889,24 @@ export const memoryRepository: Repository = {
     };
     pushBounded(store().runs, run);
     return run;
+  },
+
+  async recordAiUsage(tenantId, data) {
+    pushBounded(store().aiUsage, { ...data, id: id("ai"), tenantId, createdAt: new Date() });
+  },
+
+  async sumAiUsage(tenantId, since) {
+    const totals = { calls: 0, inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, costMicros: 0 };
+    for (const u of store().aiUsage) {
+      if (u.tenantId !== tenantId || u.createdAt < since) continue;
+      totals.calls += 1;
+      totals.inputTokens += u.inputTokens;
+      totals.outputTokens += u.outputTokens;
+      totals.cacheWriteTokens += u.cacheWriteTokens;
+      totals.cacheReadTokens += u.cacheReadTokens;
+      totals.costMicros += u.costMicros;
+    }
+    return totals;
   },
 
   async updateAutomationRun(tenantId, runId, patch) {

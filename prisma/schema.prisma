@@ -159,6 +159,7 @@ model Tenant {
   missedOpportunities MissedOpportunity[]
   automations         TenantAutomation[]
   automationRuns      AutomationRun[]
+  aiUsage             AiUsage[]
   exceptions          ExceptionItem[]
   events              DomainEvent[]
   channels            Channel[]
@@ -831,6 +832,28 @@ enum AutomationOutcome {
   SKIPPED
   ESCALATED
   FAILED
+}
+
+/// One row per Claude call: what it was for and what it cost (src/lib/ai/claude.ts).
+/// costMicros is millionths of a US dollar at the list price when the call was made.
+model AiUsage {
+  id               String   @id @default(cuid())
+  tenantId         String
+  feature          String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  cacheWriteTokens Int      @default(0)
+  cacheReadTokens  Int      @default(0)
+  costMicros       BigInt
+  latencyMs        Int
+  stopReason       String?
+  requestId        String?
+  createdAt        DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
 
 /// Every automation execution. `summary` is the human line that "Handled for you" shows.

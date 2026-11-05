@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { claudeClient, recordClaudeUsage } from "@/lib/ai/claude";
+import { routeFor } from "@/lib/ai/models";
 import type { QualificationRules } from "@/lib/types";
-import type { QualificationInput, QualificationResult, Qualifier } from "./types";
+import type { QualificationInput, QualificationResult, Qualifier, QualifyContext } from "./types";
 import { GREEN_THRESHOLD, scoreLead } from "./rules";
 
-const DEFAULT_MODEL = "claude-opus-5-5";
 const REASON_MAX_CHARS = 300;
 /** A lead the rule engine scores this low is never promoted to GREEN on the model's say-so alone. */
 const BASELINE_FLOOR = 20;
@@ -43,27 +44,24 @@ export interface AnthropicQualifierOptions {
 
 export function createAnthropicQualifier(opts: AnthropicQualifierOptions = {}): Qualifier {
   // The acknowledgement has to leave within the five-minute SLA, so a slow model answer falls back to the rule engine
-  // rather than holding intake: one try, a short deadline.
-  const client = new Anthropic({
-    ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
-    ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
-    timeout: Number.parseInt(process.env.QUALIFIER_TIMEOUT_MS ?? "", 10) || 8_000,
-    maxRetries: 1,
-  });
-  const model = opts.model ?? process.env.QUALIFIER_MODEL ?? DEFAULT_MODEL;
+  // rather than holding intake: the route sets one retry and a short deadline.
+  const route = routeFor("qualify");
+  const client = () => claudeClient({ apiKey: opts.apiKey, baseURL: opts.baseURL, timeoutMs: route.timeoutMs, maxRetries: route.maxRetries });
+  const model = opts.model ?? route.model;
   const name = `anthropic${opts.via ? `/${opts.via}` : ""}:${model}`;
 
   return {
     name,
-    async qualify(input: QualificationInput, rules: QualificationRules): Promise<QualificationResult> {
+    async qualify(input: QualificationInput, rules: QualificationRules, ctx?: QualifyContext): Promise<QualificationResult> {
       const baseline = scoreLead(input, rules);
       const fallback = (): QualificationResult => ({ ...baseline, classifier: `${baseline.classifier} (llm fallback)` });
       try {
-        const response = await client.messages.parse({
+        const startedAt = Date.now();
+        const response = await client().messages.parse({
           model,
-          max_tokens: 1024,
-          output_config: { effort: "low", format: zodOutputFormat(Verdict) },
-          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          max_tokens: route.maxTokens,
+          output_config: { effort: route.effort, format: zodOutputFormat(Verdict) },
+          system: SYSTEM_PROMPT,
           messages: [
             {
               role: "user",
@@ -77,6 +75,7 @@ export function createAnthropicQualifier(opts: AnthropicQualifierOptions = {}): 
             },
           ],
         });
+        await recordClaudeUsage({ tenantId: ctx?.tenantId, feature: "qualify", model, startedAt }, response);
 
         if (response.stop_reason === "refusal" || !response.parsed_output) return fallback();
         const v = response.parsed_output;

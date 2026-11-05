@@ -3,9 +3,12 @@ import { Banknote, CircleAlert, FileCheck, Plus, Users } from "lucide-react";
 import { PortfolioTable } from "@/components/console/portfolio-table";
 import { Empty, PageHeader, Section, Stat, StatStrip } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
+import { Table, TBody, TD, TFoot, TH, THead, TR } from "@/components/ui/table";
+import { formatUsdMicros } from "@/lib/ai/prices";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
-import { formatMoney } from "@/lib/utils";
+import type { AiUsageTotals, TenantSummary } from "@/lib/types";
+import { formatMoney, startOfMonthInZone } from "@/lib/utils";
 
 export const metadata = { title: "Portfolio" };
 
@@ -25,6 +28,12 @@ export default async function ConsolePage() {
     { breaches: 0, missed: 0, atRisk: 0, exceptions: 0, content: 0, failing: 0, leads: 0 },
   );
   const needsPerson = totals.breaches + totals.exceptions + totals.failing;
+  // What Claude cost each workspace this month (its own timezone), for platform admins: the ledger every call writes.
+  const usage: { tenant: TenantSummary; totals: AiUsageTotals }[] = [];
+  if (user.isPlatformAdmin) {
+    for (const r of rows) usage.push({ tenant: r.tenant, totals: await repository.sumAiUsage(r.tenant.id, startOfMonthInZone(r.tenant.timezone)) });
+    usage.sort((a, b) => b.totals.costMicros - a.totals.costMicros);
+  }
   const n = rows.length;
   const workspaces = `${n} workspace${n === 1 ? "" : "s"}`;
   // Money across workspaces is only comparable when they share a currency; fall back to the first one's.
@@ -99,6 +108,56 @@ export default async function ConsolePage() {
           <PortfolioTable rows={rows} />
         )}
       </Section>
+
+      {usage.length > 0 && <ClaudeUsage usage={usage} locale={locale} />}
     </div>
+  );
+}
+
+function ClaudeUsage({ usage, locale }: { usage: { tenant: TenantSummary; totals: AiUsageTotals }[]; locale: string }) {
+  const count = new Intl.NumberFormat(locale);
+  const promptTokens = (t: AiUsageTotals) => t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+  const sum = usage.reduce(
+    (acc, { totals: t }) => ({ calls: acc.calls + t.calls, prompt: acc.prompt + promptTokens(t), output: acc.output + t.outputTokens, cost: acc.cost + t.costMicros }),
+    { calls: 0, prompt: 0, output: 0, cost: 0 },
+  );
+  return (
+    <Section id="claude-usage-title" title="Claude usage" lede="This month so far in each workspace's own timezone: every call the qualifier, content engine and inbox triage made, at Anthropic's list prices in US dollars.">
+      <div className="surface overflow-hidden">
+        <Table>
+          <THead>
+            <TR className="hover:bg-transparent">
+              <TH>Workspace</TH>
+              <TH numeric>Calls</TH>
+              <TH numeric>Tokens in</TH>
+              <TH numeric>Tokens out</TH>
+              <TH numeric>Cost</TH>
+            </TR>
+          </THead>
+          <TBody>
+            {usage.map(({ tenant, totals }) => (
+              <TR key={tenant.id}>
+                <TD className="font-medium whitespace-nowrap">{tenant.name}</TD>
+                <TD numeric>{count.format(totals.calls)}</TD>
+                <TD numeric>{count.format(promptTokens(totals))}</TD>
+                <TD numeric>{count.format(totals.outputTokens)}</TD>
+                <TD numeric>{formatUsdMicros(totals.costMicros, locale)}</TD>
+              </TR>
+            ))}
+          </TBody>
+          {usage.length > 1 && (
+            <TFoot>
+              <TR className="hover:bg-transparent">
+                <TD>All workspaces</TD>
+                <TD numeric>{count.format(sum.calls)}</TD>
+                <TD numeric>{count.format(sum.prompt)}</TD>
+                <TD numeric>{count.format(sum.output)}</TD>
+                <TD numeric>{formatUsdMicros(sum.cost, locale)}</TD>
+              </TR>
+            </TFoot>
+          )}
+        </Table>
+      </div>
+    </Section>
   );
 }
