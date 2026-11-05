@@ -209,6 +209,18 @@ await step("read models: portal home (money gated) and portfolio", async () => {
   assert.ok(rows.every((r) => r.health >= 0 && r.health <= 100));
 });
 
+await step("usage ledger: one row per call, summed per tenant, cost survives the bigint column", async () => {
+  const since = new Date(Date.now() - 1000);
+  const [h, s] = await Promise.all([repository.sumAiUsage(harbor!.id, since), repository.sumAiUsage(summit!.id, since)]);
+  await repository.recordAiUsage(harbor!.id, { feature: "qualify", model: "claude-opus-5-5", inputTokens: 600, outputTokens: 120, cacheWriteTokens: 0, cacheReadTokens: 0, costMicros: 4800, latencyMs: 900, stopReason: "end_turn", requestId: null });
+  await repository.recordAiUsage(harbor!.id, { feature: "triage", model: "claude-haiku-5-5", inputTokens: 300, outputTokens: 40, cacheWriteTokens: 0, cacheReadTokens: 2000, costMicros: 70, latencyMs: 400, stopReason: "end_turn", requestId: "req_parity" });
+  const after = await repository.sumAiUsage(harbor!.id, since);
+  assert.equal(after.calls, h.calls + 2);
+  assert.equal(after.costMicros, h.costMicros + 4870);
+  assert.equal(after.cacheReadTokens, h.cacheReadTokens + 2000);
+  assert.deepEqual(await repository.sumAiUsage(summit!.id, since), s);
+});
+
 await step("content: create assets and decide", async () => {
   const [asset] = await repository.createContentAssets(harbor!.id, [{ kind: "POST_COPY", title: `Parity ${stamp}`, body: "x", targetPlatform: "FACEBOOK", status: "IN_REVIEW", needsClientSignoff: false, tags: [], scheduledFor: null }]);
   const updated = await repository.updateContentAssetStatus(harbor!.id, asset.id, "APPROVED");

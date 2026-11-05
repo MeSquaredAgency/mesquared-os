@@ -895,6 +895,26 @@ export const prismaRepository: Repository = {
     return toRun(row);
   },
 
+  async recordAiUsage(tenantId, data) {
+    await getPrisma().aiUsage.create({ data: { tenantId, ...data, costMicros: BigInt(data.costMicros) } });
+  },
+
+  async sumAiUsage(tenantId, since) {
+    const r = await getPrisma().aiUsage.aggregate({
+      where: { tenantId, createdAt: { gte: since } },
+      _count: { _all: true },
+      _sum: { inputTokens: true, outputTokens: true, cacheWriteTokens: true, cacheReadTokens: true, costMicros: true },
+    });
+    return {
+      calls: r._count._all,
+      inputTokens: r._sum.inputTokens ?? 0,
+      outputTokens: r._sum.outputTokens ?? 0,
+      cacheWriteTokens: r._sum.cacheWriteTokens ?? 0,
+      cacheReadTokens: r._sum.cacheReadTokens ?? 0,
+      costMicros: Number(r._sum.costMicros ?? 0),
+    };
+  },
+
   async updateAutomationRun(tenantId, runId, patch) {
     await getPrisma().automationRun.updateMany({ where: { id: runId, tenantId }, data: { outcome: patch.outcome, summary: patch.summary, ...(patch.details ? { details: json(patch.details) } : {}) } });
   },

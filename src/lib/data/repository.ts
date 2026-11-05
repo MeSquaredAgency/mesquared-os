@@ -5,6 +5,7 @@ import type {
   ApiKeyRecord,
   AssetGeneration,
   AutomationOutcome,
+  AiUsageTotals,
   AutomationRunRecord,
   BookingRecord,
   BookingStatus,
@@ -138,6 +139,21 @@ export interface NewAutomationRun {
   contactId?: string | null;
   leadId?: string | null;
   missedOpportunityId?: string | null;
+}
+
+/** One Claude call in the usage ledger. Cost is in millionths of a US dollar, priced by `src/lib/ai/prices.ts` when recorded. */
+export interface NewAiUsage {
+  /** What the call was for: "qualify", "content", "triage", later "agent:<role>". */
+  feature: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  costMicros: number;
+  latencyMs: number;
+  stopReason: string | null;
+  requestId: string | null;
 }
 
 export interface NewException {
@@ -685,6 +701,10 @@ export interface Repository {
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
   resolveMissedOpportunityByKey(tenantId: string, dedupeKey: string, status: "RECOVERED" | "EXPIRED", recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   recordAutomationRun(tenantId: string, data: NewAutomationRun): Promise<AutomationRunRecord>;
+  /** One row per Claude call; see src/lib/ai/claude.ts. */
+  recordAiUsage(tenantId: string, data: NewAiUsage): Promise<void>;
+  /** Calls, tokens and cost since `since`; the console shows the month to date. */
+  sumAiUsage(tenantId: string, since: Date): Promise<AiUsageTotals>;
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;

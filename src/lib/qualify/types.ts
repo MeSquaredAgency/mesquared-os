@@ -24,7 +24,12 @@ export interface QualificationResult {
   signals: string[];
 }
 
+/** Who the lead belongs to, so the Claude call lands on that workspace's usage ledger. */
+export interface QualifyContext {
+  tenantId: string;
+}
+
 export interface Qualifier {
   readonly name: string;
-  qualify(input: QualificationInput, rules: QualificationRules): Promise<QualificationResult>;
+  qualify(input: QualificationInput, rules: QualificationRules, ctx?: QualifyContext): Promise<QualificationResult>;
 }

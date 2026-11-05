@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { claudeClient, recordClaudeUsage } from "@/lib/ai/claude";
+import { routeFor } from "@/lib/ai/models";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
 import { quoteUntrusted } from "@/lib/messaging/templates";
@@ -55,14 +56,16 @@ export function stubTriage(text: string): Triage {
 export async function triageMessage(tenant: TenantSummary, text: string): Promise<Triage> {
   if (!process.env.ANTHROPIC_API_KEY || process.env.CONTENT_ENGINE === "stub") return stubTriage(text);
   try {
-    const client = new Anthropic();
-    const response = await client.messages.parse({
-      model: process.env.CONTENT_MODEL ?? "claude-opus-5-5",
-      max_tokens: 512,
-      output_config: { effort: "low", format: zodOutputFormat(TriageSchema) },
-      system: [{ type: "text", text: TRIAGE_PROMPT, cache_control: { type: "ephemeral" } }],
+    const route = routeFor("triage");
+    const startedAt = Date.now();
+    const response = await claudeClient({ timeoutMs: route.timeoutMs, maxRetries: route.maxRetries }).messages.parse({
+      model: route.model,
+      max_tokens: route.maxTokens,
+      output_config: { effort: route.effort, format: zodOutputFormat(TriageSchema) },
+      system: TRIAGE_PROMPT,
       messages: [{ role: "user", content: `Business (trusted): ${tenant.name}, ${tenant.industry}.\n\n<message>\n${text.slice(0, 2000)}\n</message>` }],
     });
+    await recordClaudeUsage({ tenantId: tenant.id, feature: "triage", model: route.model, startedAt }, response);
     if (response.stop_reason === "refusal" || !response.parsed_output) return stubTriage(text);
     const v = response.parsed_output;
     return { intent: v.intent, routine: v.routine && v.intent === "praise", suggestedReply: v.suggested_reply.trim().slice(0, 500), confidence: v.confidence };

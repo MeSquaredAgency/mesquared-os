@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { claudeClient, recordClaudeUsage } from "@/lib/ai/claude";
+import { routeFor } from "@/lib/ai/models";
 import type { BrandProfileRecord, SocialPlatform, TenantSummary } from "@/lib/types";
 import { PLATFORM_SPECS, specFor } from "./platforms";
 
@@ -106,8 +108,6 @@ export const stubGenerator: ContentGenerator = {
 // Claude
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = "claude-opus-5-5";
-
 const DraftSchema = z.object({
   drafts: z.array(
     z.object({
@@ -140,8 +140,9 @@ export interface AnthropicGeneratorOptions {
 }
 
 export function createAnthropicGenerator(opts: AnthropicGeneratorOptions = {}): ContentGenerator {
-  const client = new Anthropic({ ...(opts.apiKey ? { apiKey: opts.apiKey } : {}), ...(opts.baseURL ? { baseURL: opts.baseURL } : {}) });
-  const model = opts.model ?? process.env.CONTENT_MODEL ?? DEFAULT_MODEL;
+  const route = routeFor("content");
+  const client = () => claudeClient({ apiKey: opts.apiKey, baseURL: opts.baseURL, timeoutMs: route.timeoutMs, maxRetries: route.maxRetries });
+  const model = opts.model ?? route.model;
   return {
     name: `anthropic:${model}`,
     model,
@@ -152,11 +153,12 @@ export function createAnthropicGenerator(opts: AnthropicGeneratorOptions = {}): 
         return `- ${p}: ${s.guidance} Limit ${s.maxChars} characters, up to ${s.maxHashtags} hashtags.`;
       });
       try {
-        const response = await client.messages.parse({
+        const startedAt = Date.now();
+        const response = await client().messages.parse({
           model,
-          max_tokens: 4096,
-          output_config: { effort: "medium", format: zodOutputFormat(DraftSchema) },
-          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          max_tokens: route.maxTokens,
+          output_config: { effort: route.effort, format: zodOutputFormat(DraftSchema) },
+          system: SYSTEM_PROMPT,
           messages: [
             {
               role: "user",
@@ -171,6 +173,7 @@ export function createAnthropicGenerator(opts: AnthropicGeneratorOptions = {}): 
             },
           ],
         });
+        await recordClaudeUsage({ tenantId: req.tenant.id, feature: "content", model, startedAt }, response);
         if (response.stop_reason === "refusal" || !response.parsed_output) return stubGenerator.draft(req);
         const wanted = new Set(req.platforms);
         const drafts = response.parsed_output.drafts

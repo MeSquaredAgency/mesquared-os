@@ -109,6 +109,7 @@ export async function processIntake(tenant: TenantSummary, input: IntakeBody, ra
   const qualification = await qualifier.qualify(
     { source: body.source, firstName, lastName, email: body.email, phone: body.phone, company: body.company, message: body.message, attributes: body.fields },
     tenant.qualificationRules,
+    { tenantId: tenant.id },
   );
   if (body.dryRun) return { outcome: "dry_run", qualification };
 

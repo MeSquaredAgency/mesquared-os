@@ -511,6 +511,16 @@ export interface TenantAutomationRecord {
   settings: Record<string, unknown>;
 }
 
+/** Claude usage summed over a period. Cost is in millionths of a US dollar. */
+export interface AiUsageTotals {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  costMicros: number;
+}
+
 export type ExceptionStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED";
 
 export interface ExceptionRecord {
