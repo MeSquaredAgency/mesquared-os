@@ -2,10 +2,10 @@ import type {
   AdAccountRecord,
   AdPlatform,
   AdSpendSnapshotRecord,
+  AiUsageTotals,
   ApiKeyRecord,
   AssetGeneration,
   AutomationOutcome,
-  AiUsageTotals,
   AutomationRunRecord,
   BookingRecord,
   BookingStatus,
@@ -53,6 +53,7 @@ import type {
   SocialPlatform,
   SocialPostRecord,
   TenantAccess,
+  TenantAgentRecord,
   TenantAutomationRecord,
   TenantBranding,
   TenantModuleRecord,
@@ -141,6 +142,8 @@ export interface NewAutomationRun {
   missedOpportunityId?: string | null;
 }
 
+export type TenantAgentPatch = Partial<Pick<TenantAgentRecord, "enabled" | "autonomy" | "toolPolicy" | "instructions" | "settings" | "model" | "monthlyBudgetMicros" | "runTokenCap" | "schedule">>;
+
 /** One Claude call in the usage ledger. Cost is in millionths of a US dollar, priced by `src/lib/ai/prices.ts` when recorded. */
 export interface NewAiUsage {
   /** What the call was for: "qualify", "content", "triage", later "agent:<role>". */
@@ -190,12 +193,14 @@ export interface NewMessage {
   to?: string | null;
   channel: MessageChannel;
   direction: "INBOUND" | "OUTBOUND";
-  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF";
+  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF" | "AGENT";
   body: string;
   status: "QUEUED" | "SENT" | "DELIVERED" | "FAILED" | "RECEIVED";
   subject?: string | null;
   providerMessageId?: string | null;
   automationRunId?: string | null;
+  /** Unique per tenant; see `findMessageByIdempotencyKey`. */
+  idempotencyKey?: string | null;
   /** Thread id from the provider (email thread, DM thread) when known. */
   externalConversationId?: string | null;
 }
@@ -614,6 +619,8 @@ export interface Repository {
   recordIntakeEvent(tenantId: string, data: IntakeEventInput): Promise<void>;
   /** Appends a message to the contact's conversation on that channel, creating the conversation if needed. */
   recordMessage(tenantId: string, data: NewMessage): Promise<{ conversationId: string; messageId: string }>;
+  /** The message an earlier send with this key recorded, so a retried caller does not send twice. */
+  findMessageByIdempotencyKey(tenantId: string, key: string): Promise<{ id: string; status: string; providerMessageId: string | null } | null>;
   /** Tenant members holding RECEIVE_LEAD_ALERTS. */
   listAlertRecipients(tenantId: string): Promise<AlertRecipient[]>;
   /** Integration row (with encrypted credentials) for a provider, or null when not connected. */
@@ -701,6 +708,10 @@ export interface Repository {
   /** Resolves the open item for a dedupe key, if any (used when the thing it flagged has just happened). */
   resolveMissedOpportunityByKey(tenantId: string, dedupeKey: string, status: "RECOVERED" | "EXPIRED", recoveredValueCents?: number): Promise<MissedOpportunityRecord | null>;
   recordAutomationRun(tenantId: string, data: NewAutomationRun): Promise<AutomationRunRecord>;
+  /** Every agent role this tenant has a row for, switched on or not. */
+  listTenantAgents(tenantId: string): Promise<TenantAgentRecord[]>;
+  /** Creates the tenant's row for a role on first use; only the fields given change. */
+  upsertTenantAgent(tenantId: string, roleKey: string, patch: TenantAgentPatch, updatedById: string | null): Promise<TenantAgentRecord>;
   /** One row per Claude call; see src/lib/ai/claude.ts. */
   recordAiUsage(tenantId: string, data: NewAiUsage): Promise<void>;
   /** Calls, tokens and cost since `since`; the console shows the month to date. */

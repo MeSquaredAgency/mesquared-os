@@ -160,6 +160,7 @@ model Tenant {
   automations         TenantAutomation[]
   automationRuns      AutomationRun[]
   aiUsage             AiUsage[]
+  agents              TenantAgent[]
   exceptions          ExceptionItem[]
   events              DomainEvent[]
   channels            Channel[]
@@ -575,6 +576,8 @@ enum MessageSender {
   AUTOMATION
   OPERATOR
   CLIENT_STAFF
+  /// Written by a Claude agent (src/lib/agents), sent under the business's name like an automation.
+  AGENT
 }
 
 enum MessageStatus {
@@ -597,6 +600,8 @@ model Message {
   status            MessageStatus    @default(QUEUED)
   providerMessageId String?
   automationRunId   String?
+  /// Set by a caller that may retry (an agent step): a second send with the same key returns the first instead.
+  idempotencyKey    String?
   sentAt            DateTime?
   createdAt         DateTime         @default(now())
 
@@ -604,6 +609,7 @@ model Message {
   conversation  Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   automationRun AutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
 
+  @@unique([tenantId, idempotencyKey])
   @@index([tenantId, conversationId, createdAt])
   @@index([tenantId, direction, createdAt])
   @@index([tenantId, to, createdAt])
@@ -832,6 +838,40 @@ enum AutomationOutcome {
   SKIPPED
   ESCALATED
   FAILED
+}
+
+/// How far an agent may act on its own: SHADOW proposes and never acts; SUGGEST runs reads and drafts and asks for
+/// everything else; SUPERVISED also runs internal changes and asks before anything a customer sees; DELEGATED also
+/// runs the external actions a tenant names. See src/lib/agents/policy.ts.
+enum AgentAutonomy {
+  SHADOW
+  SUGGEST
+  SUPERVISED
+  DELEGATED
+}
+
+/// One agent role switched on for one tenant: the role is code (src/lib/agents/roles.ts), this row is the tenant's
+/// use of it. toolPolicy maps a tool name to "auto", "ask" or "off".
+model TenantAgent {
+  id                  String        @id @default(cuid())
+  tenantId            String
+  roleKey             String
+  enabled             Boolean       @default(false)
+  autonomy            AgentAutonomy @default(SHADOW)
+  toolPolicy          Json          @default("{}")
+  instructions        String        @default("")
+  settings            Json          @default("{}")
+  model               String?
+  monthlyBudgetMicros BigInt?
+  runTokenCap         Int?
+  schedule            Json          @default("{}")
+  updatedById         String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, roleKey])
 }
 
 /// One row per Claude call: what it was for and what it cost (src/lib/ai/claude.ts).

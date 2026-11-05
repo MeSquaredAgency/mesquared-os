@@ -1,6 +1,7 @@
 import {
   Prisma,
   type AutomationRun,
+  type TenantAgent,
   type Booking,
   type Contact,
   type Conversation,
@@ -72,6 +73,7 @@ import type {
   SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantAccess,
+  TenantAgentRecord,
   TenantBranding,
   TenantPersonRecord,
   TenantRoleRecord,
@@ -179,6 +181,21 @@ const toLead = (l: Lead): LeadRecord => ({
 });
 
 const toMissed = (m: MissedOpportunity): MissedOpportunityRecord => ({ id: m.id, tenantId: m.tenantId, type: m.type, status: m.status, dedupeKey: m.dedupeKey, contactId: m.contactId, leadId: m.leadId, estimatedValueCents: m.estimatedValueCents, recoveredValueCents: m.recoveredValueCents, summary: m.summary, detectedAt: m.detectedAt, resolvedAt: m.resolvedAt });
+const toTenantAgent = (a: TenantAgent): TenantAgentRecord => ({
+  tenantId: a.tenantId,
+  roleKey: a.roleKey,
+  enabled: a.enabled,
+  autonomy: a.autonomy,
+  toolPolicy: (a.toolPolicy ?? {}) as TenantAgentRecord["toolPolicy"],
+  instructions: a.instructions,
+  settings: (a.settings ?? {}) as Record<string, unknown>,
+  model: a.model,
+  monthlyBudgetMicros: a.monthlyBudgetMicros === null ? null : Number(a.monthlyBudgetMicros),
+  runTokenCap: a.runTokenCap,
+  schedule: (a.schedule ?? {}) as Record<string, unknown>,
+  updatedById: a.updatedById,
+  updatedAt: a.updatedAt,
+});
 const toRun = (r: AutomationRun): AutomationRunRecord => ({ id: r.id, tenantId: r.tenantId, typeKey: r.typeKey, outcome: r.outcome, summary: r.summary, leadId: r.leadId, contactId: r.contactId, missedOpportunityId: r.missedOpportunityId, createdAt: r.createdAt });
 const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, createdAt: e.createdAt });
 const toEvent = (e: DomainEvent): DomainEventRecord => ({ id: e.id, tenantId: e.tenantId, type: e.type, payload: obj(e.payload), causationId: e.causationId, occurredAt: e.occurredAt });
@@ -522,6 +539,7 @@ export const prismaRepository: Repository = {
           status: data.status,
           providerMessageId: data.providerMessageId ?? null,
           automationRunId: data.automationRunId ?? null,
+          idempotencyKey: data.idempotencyKey ?? null,
           sentAt: data.direction === "OUTBOUND" && data.status !== "QUEUED" && data.status !== "FAILED" ? new Date() : null,
         },
       }),
@@ -529,6 +547,11 @@ export const prismaRepository: Repository = {
       ...(data.contactId && data.direction === "INBOUND" ? [db.contact.updateMany({ where: { id: data.contactId, tenantId }, data: { lastActivityAt: new Date(), lapsedAt: null } })] : []),
     ]);
     return { conversationId: convo.id, messageId: message.id };
+  },
+
+  async findMessageByIdempotencyKey(tenantId, key) {
+    const m = await getPrisma().message.findUnique({ where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: key } }, select: { id: true, status: true, providerMessageId: true } });
+    return m ? { id: m.id, status: m.status, providerMessageId: m.providerMessageId } : null;
   },
 
   async listAlertRecipients(tenantId) {
@@ -893,6 +916,28 @@ export const prismaRepository: Repository = {
       data: { tenantId, typeKey: data.typeKey, outcome: data.outcome, summary: data.summary, details: json(data.details ?? {}), contactId: data.contactId ?? null, leadId: data.leadId ?? null, missedOpportunityId: data.missedOpportunityId ?? null },
     });
     return toRun(row);
+  },
+
+  async listTenantAgents(tenantId) {
+    const rows = await getPrisma().tenantAgent.findMany({ where: { tenantId }, orderBy: { roleKey: "asc" } });
+    return rows.map(toTenantAgent);
+  },
+
+  async upsertTenantAgent(tenantId, roleKey, patch, updatedById) {
+    const data = {
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      ...(patch.autonomy !== undefined ? { autonomy: patch.autonomy } : {}),
+      ...(patch.toolPolicy !== undefined ? { toolPolicy: json(patch.toolPolicy) } : {}),
+      ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
+      ...(patch.settings !== undefined ? { settings: json(patch.settings) } : {}),
+      ...(patch.model !== undefined ? { model: patch.model } : {}),
+      ...(patch.monthlyBudgetMicros !== undefined ? { monthlyBudgetMicros: patch.monthlyBudgetMicros === null ? null : BigInt(patch.monthlyBudgetMicros) } : {}),
+      ...(patch.runTokenCap !== undefined ? { runTokenCap: patch.runTokenCap } : {}),
+      ...(patch.schedule !== undefined ? { schedule: json(patch.schedule) } : {}),
+      updatedById,
+    };
+    const row = await getPrisma().tenantAgent.upsert({ where: { tenantId_roleKey: { tenantId, roleKey } }, create: { tenantId, roleKey, ...data }, update: data });
+    return toTenantAgent(row);
   },
 
   async recordAiUsage(tenantId, data) {

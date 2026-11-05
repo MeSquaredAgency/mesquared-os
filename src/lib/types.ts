@@ -404,7 +404,7 @@ export interface MessageRecord {
   tenantId: string;
   conversationId: string;
   direction: "INBOUND" | "OUTBOUND";
-  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF";
+  sender: "CONTACT" | "AUTOMATION" | "OPERATOR" | "CLIENT_STAFF" | "AGENT";
   body: string;
   status: string;
   providerMessageId: string | null;
@@ -509,6 +509,30 @@ export interface TenantAutomationRecord {
   typeKey: string;
   enabled: boolean;
   settings: Record<string, unknown>;
+}
+
+export type AgentAutonomy = "SHADOW" | "SUGGEST" | "SUPERVISED" | "DELEGATED";
+
+/** A tenant's override for one tool: run it within the ceiling, always ask a person, or never offer it. */
+export type AgentToolOverride = "auto" | "ask" | "off";
+
+/** One agent role as a tenant uses it (`TenantAgent`); the role itself is code in src/lib/agents/roles.ts. */
+export interface TenantAgentRecord {
+  tenantId: string;
+  roleKey: string;
+  enabled: boolean;
+  autonomy: AgentAutonomy;
+  toolPolicy: Record<string, AgentToolOverride>;
+  /** The operator's guidance for this client, in plain words. */
+  instructions: string;
+  settings: Record<string, unknown>;
+  /** Overrides the role's model; platform admins only. */
+  model: string | null;
+  monthlyBudgetMicros: number | null;
+  runTokenCap: number | null;
+  schedule: Record<string, unknown>;
+  updatedById: string | null;
+  updatedAt: Date;
 }
 
 /** Claude usage summed over a period. Cost is in millionths of a US dollar. */

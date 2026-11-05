@@ -30,6 +30,7 @@ import type {
   SiteMetricSnapshotRecord,
   SocialPostRecord,
   TenantAccess,
+  TenantAgentRecord,
   TenantPersonRecord,
   TenantSummary,
   TrackedLinkRecord,
@@ -95,6 +96,7 @@ interface MemoryStore {
   missed: MissedOpportunityRecord[];
   runs: AutomationRunRecord[];
   aiUsage: (NewAiUsage & { id: string; tenantId: string; createdAt: Date })[];
+  agents: TenantAgentRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -149,6 +151,7 @@ function store(): MemoryStore {
       missed: [...demoMissed],
       runs: [...demoRuns],
       aiUsage: [],
+      agents: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -174,6 +177,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.buckets ??= {};
   g.__msqMemoryStore.onboardings ??= [];
   g.__msqMemoryStore.aiUsage ??= [];
+  g.__msqMemoryStore.agents ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -524,6 +528,11 @@ export const memoryRepository: Repository = {
     const message = { ...data, id: id("msg"), tenantId, conversationId: convo.id, createdAt: new Date() };
     pushBounded(s.messages, message, false);
     return { conversationId: convo.id, messageId: message.id };
+  },
+
+  async findMessageByIdempotencyKey(tenantId, key) {
+    const m = store().messages.find((x) => x.tenantId === tenantId && x.idempotencyKey === key);
+    return m ? { id: m.id, status: m.status, providerMessageId: m.providerMessageId ?? null } : null;
   },
 
   async listAlertRecipients(tenantId) {
@@ -889,6 +898,22 @@ export const memoryRepository: Repository = {
     };
     pushBounded(store().runs, run);
     return run;
+  },
+
+  async listTenantAgents(tenantId) {
+    return store().agents.filter((a) => a.tenantId === tenantId).map((a) => ({ ...a }));
+  },
+
+  async upsertTenantAgent(tenantId, roleKey, patch, updatedById) {
+    const s = store();
+    let row = s.agents.find((a) => a.tenantId === tenantId && a.roleKey === roleKey);
+    if (!row) {
+      row = { tenantId, roleKey, enabled: false, autonomy: "SHADOW", toolPolicy: {}, instructions: "", settings: {}, model: null, monthlyBudgetMicros: null, runTokenCap: null, schedule: {}, updatedById: null, updatedAt: new Date() };
+      s.agents.push(row);
+    }
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    Object.assign(row, defined, { updatedById, updatedAt: new Date() });
+    return { ...row };
   },
 
   async recordAiUsage(tenantId, data) {

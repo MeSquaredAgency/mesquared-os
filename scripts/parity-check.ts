@@ -10,6 +10,7 @@ import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib
 import { dataMode, repository } from "@/lib/data";
 import { TenantMismatchError } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
+import { sendMessage } from "@/lib/messaging";
 import { processIntake } from "@/lib/intake/process";
 import { intakeSchema } from "@/lib/intake/schema";
 import { tick } from "@/lib/jobs/tick";
@@ -219,6 +220,27 @@ await step("usage ledger: one row per call, summed per tenant, cost survives the
   assert.equal(after.costMicros, h.costMicros + 4870);
   assert.equal(after.cacheReadTokens, h.cacheReadTokens + 2000);
   assert.deepEqual(await repository.sumAiUsage(summit!.id, since), s);
+});
+
+await step("agents: a tenant's agent settings, and a send that goes out once per idempotency key", async () => {
+  const role = `parity_${stamp}`;
+  const created = await repository.upsertTenantAgent(harbor!.id, role, { instructions: "Parity check.", monthlyBudgetMicros: 150_000_000 }, null);
+  assert.equal(created.enabled, false);
+  assert.equal(created.autonomy, "SHADOW");
+  const updated = await repository.upsertTenantAgent(harbor!.id, role, { enabled: true, autonomy: "SUPERVISED", toolPolicy: { get_lead: "ask" } }, null);
+  assert.equal(updated.instructions, "Parity check.");
+  assert.equal(updated.monthlyBudgetMicros, 150_000_000);
+  assert.deepEqual(updated.toolPolicy, { get_lead: "ask" });
+  assert.ok((await repository.listTenantAgents(harbor!.id)).some((a) => a.roleKey === role));
+  assert.ok(!(await repository.listTenantAgents(summit!.id)).some((a) => a.roleKey === role));
+  const key = `parity:${stamp}`;
+  const send = () => sendMessage({ tenant: harbor!, contactId: null, channel: "EMAIL", to: "owner@harbor-realty.example", body: `Parity ${stamp}`, transactional: true, sender: "AGENT", idempotencyKey: key });
+  const first = await send();
+  const second = await send();
+  assert.equal(second.duplicate, true);
+  assert.equal(second.messageId, first.messageId);
+  assert.equal((await repository.findMessageByIdempotencyKey(harbor!.id, key))?.id, first.messageId);
+  assert.equal(await repository.findMessageByIdempotencyKey(summit!.id, key), null);
 });
 
 await step("content: create assets and decide", async () => {
