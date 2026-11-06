@@ -3,6 +3,8 @@ import type {
   AgentAutonomy,
   AgentGuidanceRecord,
   AgentMessageRecord,
+  LeadNoteKind,
+  LeadNoteRecord,
   AgentRunRecord,
   AgentRunStatus,
   AgentToolCallRecord,
@@ -199,7 +201,19 @@ export interface NewAgentToolCall {
   status: AgentToolCallStatus;
   result?: unknown;
   isError?: boolean;
+  signoff?: string | null;
 }
+
+export interface NewLeadNote {
+  kind: LeadNoteKind;
+  body: string;
+  authorType: "AGENT" | "USER";
+  agentRunId?: string | null;
+  createdById?: string | null;
+}
+
+/** A message with the channel of the conversation it is in. */
+export type ContactMessage = MessageRecord & { channel: ConversationRecord["channel"] };
 
 export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "editedInput" | "result" | "isError" | "decidedById" | "decidedAt">>;
 
@@ -792,6 +806,12 @@ export interface Repository {
    * marks the guidance it carries as delivered in the same write. Throws AgentTurnConflict when that seq is taken.
    */
   appendAgentMessage(tenantId: string, runId: string, message: NewAgentMessage, toolCalls?: NewAgentToolCall[], deliversGuidance?: string[]): Promise<AgentMessageRecord>;
+  /** Adds a note to a lead in this tenant; throws TenantMismatchError for a lead elsewhere. */
+  addLeadNote(tenantId: string, leadId: string, data: NewLeadNote): Promise<LeadNoteRecord>;
+  /** Notes on these leads, newest first. */
+  listLeadNotes(tenantId: string, leadIds: string[], opts?: { kind?: LeadNoteKind; limit?: number }): Promise<LeadNoteRecord[]>;
+  /** The latest messages with a contact across all their conversations, oldest first. */
+  listContactMessages(tenantId: string, contactId: string, limit?: number): Promise<ContactMessage[]>;
   /** Guidance for a run, oldest first, delivered or not. */
   listAgentGuidance(tenantId: string, runId: string): Promise<AgentGuidanceRecord[]>;
   addAgentGuidance(tenantId: string, runId: string, data: { text: string; createdById: string }): Promise<AgentGuidanceRecord>;

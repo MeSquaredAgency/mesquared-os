@@ -18,6 +18,7 @@ import { assignOperatorAction, importInventoryAction, inviteMemberAction, issueA
 import type { OperatorOption, SettingsView } from "@/lib/tenants/settings-view";
 import type { ApiKeyRecord, InventoryItemRecord, ReadinessCheck, ResponseMode, TenantAutomationRecord, TenantModuleRecord, TenantPersonRecord, TenantRoleRecord } from "@/lib/types";
 import { cn, formatDateTime, humanize, type FormatContext } from "@/lib/utils";
+import { AGENT_SIGNOFF_RULE } from "@/lib/agents/rules";
 
 interface Props {
   tenant: SettingsView;
@@ -565,10 +566,12 @@ function EscalationPanel({ tenant, people, fmt, pending, run }: Props & { pendin
       <Block id="who-at-the-client-hears-about-what-title" title="Who at the client hears about what" lede="By default missed opportunities go to Me² operators. Name a client person here and they are emailed as well.">
         {members.length === 0 && <p className="text-sm text-muted-foreground">Invite someone from the client first.</p>}
         <ul className="divide-y">
-          {["*", ...OPPORTUNITY_TYPES].map((t) => (
+          {["*", ...OPPORTUNITY_TYPES, AGENT_SIGNOFF_RULE].map((t) => (
             <li key={t}>
               <label className="flex items-center justify-between gap-4 py-2.5 text-sm">
-                <span className="min-w-0 truncate">{t === "*" ? "Everything" : humanize(t)}</span>
+                <span className="min-w-0 truncate" title={t === AGENT_SIGNOFF_RULE ? "Agent messages that mention a price, make a promise or answer a complaint go only with this person's OK, in their portal." : undefined}>
+                  {t === "*" ? "Everything" : t === AGENT_SIGNOFF_RULE ? "Agent messages needing sign-off" : humanize(t)}
+                </span>
                 <Select className="w-56 shrink-0" value={rules[t] ?? ""} onChange={(e) => setRules({ ...rules, [t]: e.target.value })}>
                   <option value="">Operators only</option>
                   {members.map((m) => (

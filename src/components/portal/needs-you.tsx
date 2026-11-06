@@ -18,9 +18,11 @@ interface Props {
   showReasons?: boolean;
   /** When set, each lead gets an "I've called them" action that settles it. */
   tenantSlug?: string;
+  /** Lead id → the newest call brief, shown open above the call button. */
+  briefs?: Record<string, string>;
 }
 
-function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: FormatContext; showReasons: boolean; tenantSlug?: string }) {
+function Lead({ lead, fmt, showReasons, tenantSlug, brief }: { lead: LeadRecord; fmt: FormatContext; showReasons: boolean; tenantSlug?: string; brief?: string }) {
   const now = Date.now();
   const overdueResponse = lead.respondBy && !lead.firstResponseAt && lead.respondBy.getTime() < now;
   const overdueBooking = lead.bookBy && !lead.bookedAt && lead.bookBy.getTime() < now;
@@ -37,6 +39,12 @@ function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: F
         </div>
         {lead.message && <p className="line-clamp-2 text-sm text-foreground/85">{lead.message}</p>}
         <Meta parts={[humanize(lead.source), timeAgo(lead.createdAt), lead.valueCents > 0 ? `worth about ${formatMoney(lead.valueCents, fmt.currency, fmt.locale)}` : null]} />
+        {brief && (
+          <details open className="mt-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <summary className="w-fit cursor-pointer text-xs font-medium text-muted-foreground">Before you call</summary>
+            <p className="mt-1.5 max-w-prose whitespace-pre-wrap">{brief}</p>
+          </details>
+        )}
         {showReasons && lead.qualificationReason && (
           <details className="text-xs text-muted-foreground">
             <summary className="w-fit">Why this one needs you</summary>
@@ -59,7 +67,7 @@ function Lead({ lead, fmt, showReasons, tenantSlug }: { lead: LeadRecord; fmt: F
 }
 
 /** New and hot leads waiting on a person: the top of the client portal. */
-export function NeedsYou({ leads, fmt, allHref, showReasons = true, tenantSlug }: Props) {
+export function NeedsYou({ leads, fmt, allHref, showReasons = true, tenantSlug, briefs = {} }: Props) {
   return (
     <Section
       id="needs-you-title"
@@ -78,7 +86,7 @@ export function NeedsYou({ leads, fmt, allHref, showReasons = true, tenantSlug }
       ) : (
         <ul className="surface rise-stagger divide-y px-5">
           {leads.map((l) => (
-            <Lead key={l.id} lead={l} fmt={fmt} showReasons={showReasons} tenantSlug={tenantSlug} />
+            <Lead key={l.id} lead={l} fmt={fmt} showReasons={showReasons} tenantSlug={tenantSlug} brief={briefs[l.id]} />
           ))}
         </ul>
       )}

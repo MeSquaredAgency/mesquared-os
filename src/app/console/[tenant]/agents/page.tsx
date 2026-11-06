@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { AgentRoster } from "@/components/console/agent-roster";
 import { Empty, PageHeader, Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatUsdMicros } from "@/lib/ai/prices";
 import { agentsMode } from "@/lib/agents/policy";
+import { AGENT_ROLES } from "@/lib/agents/roles";
 import { agentName, runStatus } from "@/lib/agents/views";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
@@ -27,7 +29,11 @@ export default async function AgentRunsPage({ params }: { params: Promise<{ tena
   if (!access) notFound();
   const tenant = access.tenant;
   const base = `/console/${tenant.slug}`;
-  const [runs, open] = await Promise.all([repository.listAgentRuns(tenant.id, { limit: 50 }), repository.listExceptions([tenant.id], { limit: 500 })]);
+  const [runs, open, agents] = await Promise.all([repository.listAgentRuns(tenant.id, { limit: 50 }), repository.listExceptions([tenant.id], { limit: 500 }), repository.listTenantAgents(tenant.id)]);
+  const roster = AGENT_ROLES.map((role) => {
+    const row = agents.find((a) => a.roleKey === role.key);
+    return { key: role.key, name: role.name, responsibilities: role.responsibilities, startsOn: role.startsOn ?? null, ready: Boolean(role.startsOn), maxAutonomy: role.maxAutonomy, enabled: row?.enabled ?? false, autonomy: row?.autonomy ?? "SHADOW" };
+  });
   const awaiting = new Set(open.filter((e) => e.agentToolCallId && e.agentRunId).map((e) => e.agentRunId));
   const note = MODE_NOTE[agentsMode()];
 
@@ -55,17 +61,20 @@ export default async function AgentRunsPage({ params }: { params: Promise<{ tena
           </Button>
         }
       />
+      <Section id="roster-title" title="This workspace's agents" lede="Each starts off and in shadow. Supervised is the launch setting: a person approves anything a customer will see.">
+        <AgentRoster tenantId={tenant.id} rows={roster} />
+      </Section>
       <Section id="runs-title" title="Runs" lede={awaiting.size > 0 ? `${awaiting.size} waiting for a person in the queue.` : undefined}>
         {runs.length === 0 ? (
           <Empty>No agent has worked in this workspace yet.</Empty>
         ) : (
-          <ul className="surface divide-y">
+          <ul className="surface divide-y px-5">
             {runs.map((run) => {
               const status = runStatus(run, awaiting.has(run.id));
               const outcome = run.status === "FAILED" ? run.error : run.summary;
               return (
                 <li key={run.id}>
-                  <Link href={`${base}/agents/runs/${run.id}`} className="list-row flex flex-col gap-1.5 px-5 py-3.5 sm:flex-row sm:items-center sm:gap-6">
+                  <Link href={`${base}/agents/runs/${run.id}`} className="list-row flex flex-col gap-1.5 py-3.5 sm:flex-row sm:items-center sm:gap-6">
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                         {agentName(run.roleKey)}

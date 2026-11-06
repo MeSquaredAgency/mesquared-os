@@ -11,8 +11,10 @@ import { z } from "zod";
 import { _setClaudeClientForTests } from "@/lib/ai/claude";
 import { AGENT_LEASE_MS, addAgentGuidance, decideAgentAction, driveAgentRun, pauseAgentRun, resumeAgentRun, startAgentRun } from "@/lib/agents/runtime";
 import { ROLE_BY_KEY } from "@/lib/agents/roles";
-import { defineTool, type AgentTool } from "@/lib/agents/tool";
+import { defineTool, runTool, type AgentTool } from "@/lib/agents/tool";
 import { TOOL_BY_NAME } from "@/lib/agents/tools";
+import { latestCallBriefs } from "@/lib/agents/briefs";
+import { TOOL_BY_NAME as TOOLS } from "@/lib/agents/tools";
 import { isOpenAgentApproval } from "@/lib/console/resolve";
 import { dataMode, repository } from "@/lib/data";
 import { AgentTurnConflict, TenantMismatchError } from "@/lib/data/repository";
@@ -379,6 +381,35 @@ await step("agent approvals: the queue can't close one; a pause, guidance and an
     if (mode === undefined) delete process.env.AGENTS_MODE;
     else process.env.AGENTS_MODE = mode;
   }
+});
+
+await step("customer relations: call briefs, a contact's messages across conversations, and a sign-off flag through Postgres", async () => {
+  const lead = await repository.findLeadById(harbor!.id, greenLeadId);
+  assert.ok(lead?.contactId);
+  const ctx = { tenant: harbor!, callKey: `parity_cr_${stamp}:toolu_1`, runId: undefined, subjectLeadId: lead.id };
+  const brief = { leadId: lead.id, who: "Parity — ünïcode", asked: "An appraisal", property: null, opener: "Hi, it’s Harbor", watchOut: null };
+  const wrote = await runTool(TOOLS.write_call_brief, ctx, brief);
+  assert.ok(wrote.ok);
+  assert.ok((await runTool(TOOLS.write_call_brief, ctx, brief)).ok);
+  assert.equal((await repository.listLeadNotes(harbor!.id, [lead.id], { kind: "CALL_BRIEF" })).filter((n) => n.body.includes("Parity — ünïcode")).length, 1, "a retried step writes once");
+  assert.match((await latestCallBriefs(harbor!.id, [lead.id]))[lead.id], /Parity — ünïcode/);
+  assert.deepEqual(await repository.listLeadNotes(summit!.id, [lead.id]), []);
+  await assert.rejects(repository.addLeadNote(summit!.id, lead.id, { kind: "NOTE", body: "x", authorType: "AGENT" }), TenantMismatchError);
+
+  await repository.recordMessage(harbor!.id, { contactId: lead.contactId, channel: "SMS", direction: "INBOUND", sender: "CONTACT", body: `Parity text ${stamp}`, status: "RECEIVED" });
+  await repository.recordMessage(harbor!.id, { contactId: lead.contactId, to: "x@example.com", channel: "EMAIL", direction: "OUTBOUND", sender: "AGENT", body: `Parity email ${stamp}`, status: "SENT" });
+  const thread = await repository.listContactMessages(harbor!.id, lead.contactId, 50);
+  const mine = thread.filter((m) => m.body.endsWith(stamp));
+  assert.deepEqual(mine.map((m) => [m.channel, m.direction]), [["SMS", "INBOUND"], ["EMAIL", "OUTBOUND"]], "both conversations, oldest first, with their channels");
+  assert.deepEqual(await repository.listContactMessages(summit!.id, lead.contactId, 50), []);
+  const read = await runTool(TOOLS.get_conversation, ctx, { leadId: lead.id });
+  assert.ok(read.ok && JSON.stringify(read.result).includes(`<untrusted>Parity text ${stamp}</untrusted>`));
+
+  const { run } = await repository.createAgentRun(harbor!.id, { roleKey: "customer_relations", trigger: "parity", autonomy: "SUPERVISED", model: "claude-sonnet-5-5", leadId: lead.id, opening: [{ type: "text", text: "x" }] });
+  await repository.appendAgentMessage(harbor!.id, run.id, { seq: 1, role: "assistant", content: [{ type: "tool_use", id: "toolu_s", name: "send_message", input: {} }], stopReason: "tool_use" }, [{ toolUseId: "toolu_s", name: "send_message", input: {}, risk: "external", decision: "ask", reason: "x", status: "AWAITING_APPROVAL", signoff: "Mentions a price ($550 per week): the client signs this off." }]);
+  const [call] = await repository.listAgentToolCalls(harbor!.id, run.id);
+  assert.equal(call.signoff, "Mentions a price ($550 per week): the client signs this off.");
+  await repository.updateAgentRun(harbor!.id, run.id, { status: "CANCELLED", finishedAt: new Date() });
 });
 
 await step("content: create assets and decide", async () => {

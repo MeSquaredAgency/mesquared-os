@@ -38,6 +38,8 @@ export function AgentApprovalCard({ item, view, tenant, disabled, onDone }: Prop
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(view.edit?.value ?? "");
   const busy = pending || disabled;
+  // Only the client approves these; an operator can still decline or take over.
+  const clientOnly = Boolean(view.signoff);
 
   const decide = (action: "approve" | "decline" | "take_over") =>
     startTransition(async () => {
@@ -87,6 +89,12 @@ export function AgentApprovalCard({ item, view, tenant, disabled, onDone }: Prop
               <span className="font-medium text-foreground">Why:</span> {view.why}
             </p>
           )}
+          {view.signoff && (
+            <p className="text-sm text-amber-text">
+              <span className="font-medium">Needs the client’s sign-off:</span> {view.signoff}{" "}
+              {view.signoffBy ? `${view.signoffBy} has it in their portal.` : "Nobody at the client is named for agent sign-off, so anyone there who approves content can approve it in their portal."}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             {view.policy}{" "}
             {tenant && (
@@ -100,10 +108,10 @@ export function AgentApprovalCard({ item, view, tenant, disabled, onDone }: Prop
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:flex-col lg:items-stretch">
           <Input placeholder="If declining, tell the agent why" value={note} onChange={(e) => setNote(e.target.value)} className="sm:w-64" aria-label="Why you are declining" disabled={busy} />
           <div className="flex gap-2">
-            <Button onClick={() => decide("approve")} disabled={busy} className="flex-1">
+            <Button onClick={() => decide("approve")} disabled={busy || clientOnly} className="flex-1" title={clientOnly ? "Only the client can approve this one" : undefined}>
               <Check /> {editing ? "Approve edit" : "Approve"}
             </Button>
-            {view.edit && (
+            {view.edit && !clientOnly && (
               <Button variant="outline" onClick={editing ? cancelEdit : () => setEditing(true)} disabled={busy}>
                 {editing ? "Undo edit" : (
                   <>

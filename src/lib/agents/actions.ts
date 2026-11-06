@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getConsoleContext } from "@/lib/auth/access";
+import { getConsoleContext, getPortalContext } from "@/lib/auth/access";
+import { hasPermission } from "@/lib/auth/permissions";
+import { repository } from "@/lib/data";
+import { AUTONOMY_LEVELS } from "./policy";
+import { ROLE_BY_KEY } from "./roles";
 import type { ActionResult } from "@/lib/console/actions";
 import { addAgentGuidance, cancelAgentRun, decideAgentAction, pauseAgentRun, resumeAgentRun, takeOverAgentRun } from "./runtime";
+import { maySignOff } from "./views";
 
 /**
  * What an operator does about agent work from the queue and a run's page. Each checks the workspace is theirs.
@@ -45,6 +50,42 @@ export async function decideAgentApproval(tenantId: string, toolCallId: string, 
   if (!decided.ok) return { ok: false, message: decided.reason };
   revalidatePath("/console", "layout");
   return { ok: true, message: action === "approve" ? "Approved. The agent carries on at its next step." : "Declined. The agent will read your note." };
+}
+
+const agentSchema = z.object({ enabled: z.boolean().optional(), autonomy: z.enum(["SHADOW", "SUGGEST", "SUPERVISED", "DELEGATED"]).optional() });
+
+/** Switches one of a workspace's agents on or off, or sets how much it may do alone, never above the role's ceiling. */
+export async function setWorkspaceAgent(tenantId: string, roleKey: string, patch: z.input<typeof agentSchema>): Promise<ActionResult> {
+  const checked = agentSchema.safeParse(patch);
+  const role = ROLE_BY_KEY[roleKey];
+  if (!checked.success || !role) return { ok: false, message: "That change couldn’t be read. Try again." };
+  const ctx = await workspace(tenantId);
+  if (!ctx) return NOT_YOURS;
+  const { enabled, autonomy } = checked.data;
+  if (enabled && !role.startsOn) return { ok: false, message: `${role.name} isn’t ready yet, so it can’t be switched on.` };
+  if (autonomy && AUTONOMY_LEVELS.indexOf(autonomy) > AUTONOMY_LEVELS.indexOf(role.maxAutonomy)) return { ok: false, message: `${role.name} can work at most ${role.maxAutonomy.toLowerCase()}.` };
+  await repository.upsertTenantAgent(tenantId, roleKey, { ...(enabled !== undefined ? { enabled } : {}), ...(autonomy ? { autonomy } : {}) }, ctx.user.id);
+  revalidatePath("/console", "layout");
+  return { ok: true, message: enabled === true ? `${role.name} is on.` : enabled === false ? `${role.name} is off. Runs it had not finished are cancelled at their next step.` : `${role.name} now works ${autonomy?.toLowerCase()}.` };
+}
+
+const signoffSchema = z.object({ approve: z.boolean(), note: z.string().trim().max(500).optional(), edit: z.string().max(5000).optional() });
+
+/**
+ * The client's own sign-off on an agent message, from their portal. Only a member of the client's team may give it,
+ * and only the person the workspace names for it (or, when nobody is named, someone who approves content).
+ */
+export async function decideAgentSignoff(tenantSlug: string, toolCallId: string, input: z.input<typeof signoffSchema>): Promise<ActionResult> {
+  const checked = signoffSchema.safeParse(input);
+  if (!checked.success || !id.safeParse(toolCallId).success) return { ok: false, message: "That decision couldn’t be read. Try again." };
+  const { access, user } = await getPortalContext(tenantSlug);
+  if (access.via !== "member") return { ok: false, message: `Only someone at ${access.tenant.name} can sign this off.` };
+  if (!(await maySignOff(access.tenant, toolCallId, { userId: user.id, canApprove: hasPermission(access, "APPROVE_CONTENT") }))) return { ok: false, message: "This one isn’t yours to sign off." };
+  const { approve, note, edit } = checked.data;
+  const decided = await decideAgentAction(access.tenant, toolCallId, { approve, userId: user.id, asClient: true, note, edit });
+  if (!decided.ok) return { ok: false, message: decided.reason };
+  revalidatePath(`/app/${tenantSlug}`);
+  return { ok: true, message: approve ? "Approved. It goes out in a minute or two." : "Declined. Nothing was sent." };
 }
 
 export async function pauseRun(tenantId: string, runId: string): Promise<ActionResult> {

@@ -111,7 +111,7 @@ afterEach(() => {
 describe("an approval card", () => {
   it("shows what would happen, why the agent wants it, and what may be edited", async () => {
     const { run, call, exception } = await parked("c1");
-    const views = await loadApprovalViews([exception]);
+    const views = await loadApprovalViews([exception], [harbor]);
     const view = views[exception.id];
     assert.ok(view, "the queue item gets a card");
     assert.equal(view.toolCallId, call.id);
@@ -124,7 +124,7 @@ describe("an approval card", () => {
     assert.deepEqual(view.edit, { label: "Message", value: "Hi Robin, can we book your appraisal?" });
     assert.equal(view.expiresAt.getTime(), call.createdAt.getTime() + APPROVAL_TTL_MS);
     await cancelAgentRun(harbor, run.id, "test over.");
-    assert.deepEqual(await loadApprovalViews([exception]), {}, "a decided approval has no card");
+    assert.deepEqual(await loadApprovalViews([exception], [harbor]), {}, "a decided approval has no card");
   });
 
   it("cannot be closed by the queue's generic buttons, one at a time or in bulk", async () => {
@@ -319,7 +319,7 @@ describe("the run timeline", () => {
     script(reply([text("Texted Robin with Sam's wording.")]));
     assert.equal(await drive(run), "done");
 
-    const page = await loadRunPage(harbor.id, run.id);
+    const page = await loadRunPage(harbor, run.id);
     assert.ok(page);
     assert.equal(page.status.label, "Done");
     assert.deepEqual(page.timeline.map((e) => e.kind), ["task", "thinking", "said", "action", "guidance", "said"]);
@@ -337,7 +337,7 @@ describe("the run timeline", () => {
     assert.ok(guidance.kind === "guidance" && guidance.read && guidance.text === "Use Sam's name.");
     assert.ok(last.kind === "said" && last.text === "Texted Robin with Sam's wording.", "its last words are its summary");
 
-    assert.equal(await loadRunPage(summit.id, run.id), null, "another workspace cannot open it");
+    assert.equal(await loadRunPage(summit, run.id), null, "another workspace cannot open it");
   });
 
   it("shows guidance nobody has read yet at the end, and a call the model made that was never recorded", () => {

@@ -2,10 +2,25 @@ import { moduleOn } from "@/lib/modules/registry";
 import type { AgentToolOverride, TenantModuleRecord } from "@/lib/types";
 import type { AgentRoleDefinition } from "../roles";
 import type { AgentTool } from "../tool";
+import { addLeadNote, assignLead, escalateToPerson, findListing, getConversation, getMissedOpportunity, listTeam, remindTeamToCall, sendCustomerMessage, writeCallBrief } from "./customer";
 import { getLead, listMissedOpportunities, listOpenExceptions } from "./workspace";
 
 /** Every tool an agent can be offered. A role's own list picks from these. */
-export const AGENT_TOOLS: AgentTool[] = [getLead, listMissedOpportunities, listOpenExceptions] as AgentTool[];
+export const AGENT_TOOLS: AgentTool[] = [
+  getLead,
+  listMissedOpportunities,
+  listOpenExceptions,
+  getMissedOpportunity,
+  getConversation,
+  findListing,
+  listTeam,
+  writeCallBrief,
+  addLeadNote,
+  remindTeamToCall,
+  assignLead,
+  escalateToPerson,
+  sendCustomerMessage,
+] as AgentTool[];
 
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(AGENT_TOOLS.map((t) => [t.name, t]));
 

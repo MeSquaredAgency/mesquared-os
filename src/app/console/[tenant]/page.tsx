@@ -16,6 +16,7 @@ import { LinkTabs } from "@/components/shell/link-tabs";
 import { PageHeader, Row, Section } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { pacingStatus } from "@/lib/ads/sync";
+import { latestCallBriefs } from "@/lib/agents/briefs";
 import { getConsoleContext } from "@/lib/auth/access";
 import { AUTOMATION_BY_KEY } from "@/lib/automations/registry";
 import { repository } from "@/lib/data";
@@ -50,6 +51,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
     tab === "overview" ? null : repository.listNeedsYou(tenant.id, { onlyAssigneeId: null, limit: 8 }),
   ]);
   const row = portfolio[0];
+  const briefs = home ? await latestCallBriefs(tenant.id, home.needsYou.map((l) => l.id)) : {};
   const health = row?.health ?? null;
   const fmt = { timezone: tenant.timezone, locale: tenant.locale, currency: tenant.currency };
   const base = `/console/${tenant.slug}`;
@@ -119,7 +121,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
       {tab === "overview" && home && (
         <div className="flex flex-col gap-8">
           {row && <HealthNotes deductions={healthBreakdown(row)} base={base} slug={tenant.slug} />}
-          <NeedsYou leads={home.needsYou} fmt={fmt} tenantSlug={tenant.slug} />
+          <NeedsYou leads={home.needsYou} fmt={fmt} tenantSlug={tenant.slug} briefs={briefs} />
           <MissedOpportunities missed={home.missed} fmt={fmt} />
           <HandledForYou handled={home.handled} activityHref={`/app/${tenant.slug}/activity`} />
         </div>

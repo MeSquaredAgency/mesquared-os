@@ -469,6 +469,7 @@ model Lead {
   missedOpportunities MissedOpportunity[]
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
+  notes               LeadNote[]
   agentRuns           AgentRun[]
   transactions        Transaction[]
   informationRequests InformationRequest[]
@@ -972,6 +973,8 @@ model AgentToolCall {
   input       Json
   /// What ran instead, when the person approving edited the input; the transcript keeps what the model asked for.
   editedInput Json?
+  /// Why only the client may approve it (a price, a complaint…), decided when it was asked; null when an operator may.
+  signoff     String?
   risk        String
   decision    String
   reason      String
@@ -988,6 +991,25 @@ model AgentToolCall {
 
   @@unique([runId, toolUseId])
   @@index([tenantId, status])
+}
+
+/// A note on a lead for whoever deals with them next. A CALL_BRIEF is what to know before calling: who they are,
+/// what they asked, the property, a suggested opener. Agents write them; the newest brief is the one shown.
+model LeadNote {
+  id          String   @id @default(cuid())
+  tenantId    String
+  leadId      String
+  kind        String
+  body        String
+  /// "AGENT" or "USER".
+  authorType  String
+  agentRunId  String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, leadId, createdAt])
 }
 
 /// Guidance a person added to a run while it worked. It reaches the model in the next turn the runtime writes,

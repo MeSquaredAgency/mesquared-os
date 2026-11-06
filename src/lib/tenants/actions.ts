@@ -1,5 +1,6 @@
 "use server";
 
+import { AGENT_SIGNOFF_RULE } from "@/lib/agents/rules";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getConsoleContext } from "@/lib/auth/access";
@@ -174,12 +175,15 @@ export async function setLeadAssignmentAction(tenantId: string, mode: "none" | "
 
 const OPPORTUNITY_TYPES: MissedOpportunityType[] = ["UNANSWERED_ENQUIRY", "MISSED_CALL", "ABANDONED_FORM", "NOT_BOOKED", "NO_SHOW", "QUIET_QUOTE", "UNREPLIED_DM", "UNREPLIED_COMMENT", "UNANSWERED_REVIEW", "LAPSED_CUSTOMER"];
 
-/** Which missed-opportunity types escalate to a named client person. "*" means all of them. */
+/**
+ * Which missed-opportunity types escalate to a named client person. "*" means all of them; "agent:signoff" names who
+ * signs off agent messages that mention a price, make a promise or answer a complaint.
+ */
 export async function saveEscalationRulesAction(tenantId: string, rules: { when: string; notifyUserId: string }[]): Promise<ActionResult> {
   try {
     const { tenant } = await operatorTenant(tenantId);
     const people = await repository.listTenantPeople(tenantId);
-    const clean = rules.filter((r) => (r.when === "*" || OPPORTUNITY_TYPES.includes(r.when as MissedOpportunityType)) && people.some((p) => p.via === "member" && p.userId === r.notifyUserId)).slice(0, 20);
+    const clean = rules.filter((r) => (r.when === "*" || r.when === AGENT_SIGNOFF_RULE || OPPORTUNITY_TYPES.includes(r.when as MissedOpportunityType)) && people.some((p) => p.via === "member" && p.userId === r.notifyUserId)).slice(0, 20);
     await repository.updateTenant(tenantId, { escalationRules: clean });
     refresh(tenant);
     return { ok: true, message: `${clean.length} escalation rule${clean.length === 1 ? "" : "s"} saved.` };
