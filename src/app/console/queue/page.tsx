@@ -50,7 +50,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const items = sort === "value" ? [...filtered].sort((a, b) => valueOf(b) - valueOf(a) || a.createdAt.getTime() - b.createdAt.getTime()) : filtered;
   const atStakeCents = filtered.reduce((sum, i) => sum + valueOf(i), 0);
   const money = selected ?? tenants[0]?.tenant;
-  const approvals = await loadApprovalViews(items);
+  const approvals = await loadApprovalViews(items, tenants.map((t) => t.tenant));
 
   const workspaceChips: FilterChip[] = [
     { label: "All workspaces", count: all.filter(matchesView).length, urgent: true },

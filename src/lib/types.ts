@@ -588,6 +588,8 @@ export interface AgentToolCallRecord {
   input: Record<string, unknown>;
   /** What ran instead, when the person approving edited it. */
   editedInput: Record<string, unknown> | null;
+  /** Why only the client may approve it (a price, a complaint…); null when an operator may. */
+  signoff: string | null;
   risk: string;
   decision: string;
   reason: string;
@@ -597,6 +599,20 @@ export interface AgentToolCallRecord {
   isError: boolean;
   decidedById: string | null;
   decidedAt: Date | null;
+  createdAt: Date;
+}
+
+export type LeadNoteKind = "CALL_BRIEF" | "NOTE";
+
+/** A note on a lead for whoever deals with them next; the newest CALL_BRIEF is shown beside the lead. */
+export interface LeadNoteRecord {
+  id: string;
+  leadId: string;
+  kind: LeadNoteKind;
+  body: string;
+  authorType: "AGENT" | "USER";
+  agentRunId: string | null;
+  createdById: string | null;
   createdAt: Date;
 }
 

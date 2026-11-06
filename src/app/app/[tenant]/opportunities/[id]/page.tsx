@@ -5,6 +5,7 @@ import { STATUS_LABEL } from "@/components/portal/missed-opportunities";
 import { Empty, PageHeader, Section } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { latestCallBriefs } from "@/lib/agents/briefs";
 import { getPortalContext } from "@/lib/auth/access";
 import { hasPermission } from "@/lib/auth/permissions";
 import { MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
@@ -34,6 +35,7 @@ export default async function OpportunityPage({ params }: { params: Promise<{ te
   const status = STATUS_LABEL[item.status] ?? STATUS_LABEL.DETECTED;
   const cents = item.status === "RECOVERED" ? item.recoveredValueCents : item.estimatedValueCents;
   const said = lead?.message?.trim() || null;
+  const brief = lead ? (await latestCallBriefs(tenant.id, [lead.id]))[lead.id] : undefined;
 
   const facts: [string, React.ReactNode][] = [
     ["Who", person ? person.name : "We don’t have a name for them"],
@@ -105,6 +107,12 @@ export default async function OpportunityPage({ params }: { params: Promise<{ te
         <Section id="todo-title" title="What to do">
           <div className="surface flex flex-col gap-3 p-5">
             {detail.suggestedAction && <p className="text-sm">{detail.suggestedAction}</p>}
+            {brief && (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                <p className="text-xs font-medium text-muted-foreground">Before you call</p>
+                <p className="mt-1.5 max-w-prose whitespace-pre-wrap">{brief}</p>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {detail.awaitingReply && hasPermission(access, "VIEW_ALL_RECORDS") && (
                 <Button asChild size="sm">

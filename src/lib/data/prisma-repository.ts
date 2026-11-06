@@ -2,6 +2,7 @@ import {
   Prisma,
   type AgentGuidance,
   type AgentMessage,
+  type LeadNote,
   type AgentRun,
   type AgentToolCall,
   type AutomationRun,
@@ -47,6 +48,7 @@ import type {
   AdSpendSnapshotRecord,
   AgentGuidanceRecord,
   AgentMessageRecord,
+  LeadNoteRecord,
   AgentRunRecord,
   AgentRunStatus,
   AgentToolCallRecord,
@@ -231,6 +233,7 @@ const toAgentRun = (r: AgentRun): AgentRunRecord => ({
   createdAt: r.createdAt,
 });
 const toAgentMessage = (m: AgentMessage): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role === "assistant" ? "assistant" : "user", content: (m.content ?? []) as Record<string, unknown>[], stopReason: m.stopReason, createdAt: m.createdAt });
+const toLeadNote = (n: LeadNote): LeadNoteRecord => ({ id: n.id, leadId: n.leadId, kind: n.kind === "CALL_BRIEF" ? "CALL_BRIEF" : "NOTE", body: n.body, authorType: n.authorType === "AGENT" ? "AGENT" : "USER", agentRunId: n.agentRunId, createdById: n.createdById, createdAt: n.createdAt });
 const toAgentGuidance = (g: AgentGuidance): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
   id: c.id,
@@ -240,6 +243,7 @@ const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
   name: c.name,
   input: (c.input ?? {}) as Record<string, unknown>,
   editedInput: c.editedInput && typeof c.editedInput === "object" && !Array.isArray(c.editedInput) ? (c.editedInput as Record<string, unknown>) : null,
+  signoff: c.signoff,
   risk: c.risk,
   decision: c.decision,
   reason: c.reason,
@@ -1102,7 +1106,7 @@ export const prismaRepository: Repository = {
         ...(toolCalls.length > 0
           ? [
               db.agentToolCall.createMany({
-                data: toolCalls.map((c) => ({ tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: json(c.input), risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined || c.result === null ? Prisma.JsonNull : json(c.result), isError: c.isError ?? false })),
+                data: toolCalls.map((c) => ({ tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: json(c.input), risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined || c.result === null ? Prisma.JsonNull : json(c.result), isError: c.isError ?? false, signoff: c.signoff ?? null })),
               }),
             ]
           : []),
@@ -1113,6 +1117,24 @@ export const prismaRepository: Repository = {
       if (isUniqueViolation(error)) throw new AgentTurnConflict(runId, message.seq);
       throw error;
     }
+  },
+
+  async addLeadNote(tenantId, leadId, data) {
+    const db = getPrisma();
+    const lead = await db.lead.findFirst({ where: { id: leadId, tenantId }, select: { id: true } });
+    if (!lead) throw new TenantMismatchError("Lead", leadId);
+    return toLeadNote(await db.leadNote.create({ data: { tenantId, leadId, kind: data.kind, body: data.body, authorType: data.authorType, agentRunId: data.agentRunId ?? null, createdById: data.createdById ?? null } }));
+  },
+
+  async listLeadNotes(tenantId, leadIds, opts = {}) {
+    if (leadIds.length === 0) return [];
+    const rows = await getPrisma().leadNote.findMany({ where: { tenantId, leadId: { in: leadIds }, ...(opts.kind ? { kind: opts.kind } : {}) }, orderBy: { createdAt: "desc" }, take: opts.limit ?? 100 });
+    return rows.map(toLeadNote);
+  },
+
+  async listContactMessages(tenantId, contactId, limit = 20) {
+    const rows = await getPrisma().message.findMany({ where: { tenantId, conversation: { contactId } }, include: { conversation: { select: { channel: true } } }, orderBy: { createdAt: "desc" }, take: limit });
+    return rows.reverse().map((m) => ({ ...toMessage(m), channel: m.conversation.channel }));
   },
 
   async listAgentGuidance(tenantId, runId) {

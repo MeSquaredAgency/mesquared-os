@@ -13,6 +13,15 @@ export interface ToolContext {
   tenant: TenantSummary;
   /** `${runId}:${toolUseId}`, the idempotency key for anything this call sends or creates. */
   callKey: string;
+  /** The run making the call, for records that link back to it. */
+  runId?: string;
+  /** The lead the run is about, when it is about one: a customer message may only go to them. */
+  subjectLeadId?: string | null;
+}
+
+export interface ToolPreview {
+  title: string;
+  body: string;
 }
 
 /** A failure the agent should read and adapt to ("no such lead"); anything else is a fault the runtime retries. */
@@ -26,8 +35,15 @@ export interface AgentTool<I extends z.ZodType = z.ZodType> {
   risk: ToolRisk;
   /** The module that must be on for the tool to be offered, or null. */
   module: string | null;
-  /** What a person approving the call sees: the exact effect. */
-  preview?: (input: z.infer<I>) => { title: string; body: string };
+  /** What a person approving the call sees: the exact effect. `title` reads after "<agent> wants to". */
+  preview?: (input: z.infer<I>, ctx: Pick<ToolContext, "tenant">) => ToolPreview | Promise<ToolPreview>;
+  /**
+   * The words a customer would read. They are checked as content is before anyone is asked: banned phrases and
+   * hype send the call back to the agent, and prices or claims mean only the client may approve it.
+   */
+  customerText?: (input: z.infer<I>) => string;
+  /** Reasons the call itself gives for the client's own sign-off, such as answering a complaint. */
+  signoffReasons?: (input: z.infer<I>) => string[];
   /**
    * The one text field a person approving the call may change before it runs, such as a message's wording. The
    * edited input is checked against `input` again, and the agent is told what changed.

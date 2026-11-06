@@ -5,11 +5,13 @@ import { formatUsdMicros } from "@/lib/ai/prices";
 import { repository } from "@/lib/data";
 import { AgentTurnConflict, TenantMismatchError, type NewAgentToolCall } from "@/lib/data/repository";
 import { errorText, log } from "@/lib/log";
+import { sendMessage, templates } from "@/lib/messaging";
 import { moduleOn } from "@/lib/modules/registry";
-import type { AgentAutonomy, AgentGuidanceRecord, AgentMessageRecord, AgentRunRecord, AgentRunStatus, AgentToolCallRecord, TenantAgentRecord, TenantModuleRecord, TenantSummary } from "@/lib/types";
+import type { AgentAutonomy, AgentGuidanceRecord, BrandProfileRecord, AgentMessageRecord, AgentRunRecord, AgentRunStatus, AgentToolCallRecord, TenantAgentRecord, TenantModuleRecord, TenantSummary } from "@/lib/types";
 import { startOfMonthInZone } from "@/lib/utils";
 import { agentsMode, decideTool, effectiveAutonomy, type AgentsMode } from "./policy";
 import { ROLE_BY_KEY, type AgentRoleDefinition } from "./roles";
+import { checkCustomerText, signoffApprover } from "./signoff";
 import { claudeToolDefinition, runTool } from "./tool";
 import { offeredTools, TOOL_BY_NAME } from "./tools";
 
@@ -92,7 +94,8 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
     dedupeKey: input.dedupeKey ?? null,
     autonomy: effectiveAutonomy(agent.autonomy, role.maxAutonomy, mode),
     // The run keeps the model it started on: thinking blocks only mean something to the model that wrote them.
-    model: agent.model?.trim() || routeFor("agent").model,
+    // The workspace's choice, then the deployment's AGENT_MODEL, then the role's own, then the default.
+    model: agent.model?.trim() || process.env.AGENT_MODEL?.trim() || role.model || routeFor("agent").model,
     leadId: input.leadId ?? null,
     contactId: input.contactId ?? null,
     missedOpportunityId: input.missedOpportunityId ?? null,
@@ -128,6 +131,7 @@ export function agentSystemPrompt(role: AgentRoleDefinition, tenant: TenantSumma
     ].join("\n"),
     `Write the way this business writes (locale ${tenant.locale}).`,
   ];
+  if (role.guide) parts.splice(3, 0, role.guide);
   const instructions = agent.instructions.trim();
   if (instructions) parts.push(`The operator's instructions for this business:\n<operator_instructions>\n${instructions}\n</operator_instructions>`);
   return parts.join("\n\n");
@@ -139,6 +143,8 @@ interface StepContext {
   agent: TenantAgentRecord;
   autonomy: AgentAutonomy;
   modules: TenantModuleRecord[];
+  /** The workspace's brand rules, which customer-facing text is checked against. */
+  brand: BrandProfileRecord | null;
 }
 
 /**
@@ -310,15 +316,24 @@ function decideToolCalls(ctx: StepContext, uses: ToolUse[]): NewAgentToolCall[] 
       const reason = "That tool isn't available to this agent.";
       return { ...base, risk: tool?.risk ?? "unknown", decision: "refuse", reason, status: "REFUSED", result: reason, isError: true };
     }
-    const { decision, reason } = decideTool({ risk: tool.risk, autonomy: ctx.autonomy, override: ctx.agent.toolPolicy[tool.name], moduleOn: tool.module === null || moduleOn(ctx.modules, tool.module) });
+    let { decision, reason } = decideTool({ risk: tool.risk, autonomy: ctx.autonomy, override: ctx.agent.toolPolicy[tool.name], moduleOn: tool.module === null || moduleOn(ctx.modules, tool.module) });
     // A call that can never run as asked goes straight back to the model, before anyone is asked to approve it.
     const parsed = tool.input.safeParse(use.input);
     if (decision !== "refuse" && !parsed.success) {
       const error = `Invalid input for ${tool.name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"} ${i.message}`).join("; ")}`;
       return { ...base, risk: tool.risk, decision, reason, status: "ERROR", result: error, isError: true };
     }
+    // Words a customer would read: checked like content before anyone sees them.
+    let signoff: string | null = null;
+    if (decision !== "refuse" && parsed.success && (tool.customerText || tool.signoffReasons)) {
+      const check = checkCustomerText(tool, parsed.data, ctx);
+      if (check.blocked) return { ...base, risk: tool.risk, decision, reason, status: "ERROR", result: `Not sent, and nobody was asked: ${check.blocked} Rewrite it without that and ask again.`, isError: true };
+      signoff = check.signoff;
+      // Something only the client may approve is never sent on the workspace's say-so alone.
+      if (signoff && decision === "run") ({ decision, reason } = { decision: "ask", reason: "This needs the client's own sign-off." });
+    }
     if (decision === "run") return { ...base, risk: tool.risk, decision, reason, status: "PENDING" };
-    if (decision === "ask") return { ...base, risk: tool.risk, decision, reason, status: "AWAITING_APPROVAL" };
+    if (decision === "ask") return { ...base, risk: tool.risk, decision, reason, status: "AWAITING_APPROVAL", signoff };
     if (decision === "propose") return { ...base, risk: tool.risk, decision, reason, status: "PROPOSED", result: reason };
     return { ...base, risk: tool.risk, decision, reason, status: "REFUSED", result: reason, isError: true };
   });
@@ -372,7 +387,7 @@ async function execute(run: AgentRunRecord, ctx: StepContext, call: AgentToolCal
   const tool = TOOL_BY_NAME[call.name];
   // A ToolError or bad input comes back as an outcome; anything else throws, the call stays as it was, and the step
   // is retried with the same idempotency key.
-  const outcome = tool ? await runTool(tool, { tenant: ctx.tenant, callKey: `${run.id}:${call.toolUseId}` }, call.editedInput ?? call.input) : ({ ok: false, error: "That tool no longer exists." } as const);
+  const outcome = tool ? await runTool(tool, { tenant: ctx.tenant, callKey: `${run.id}:${call.toolUseId}`, runId: run.id, subjectLeadId: run.leadId }, call.editedInput ?? call.input) : ({ ok: false, error: "That tool no longer exists." } as const);
   const patch = outcome.ok ? { status: "DONE" as const, result: outcome.result ?? null, isError: false } : { status: "ERROR" as const, result: outcome.error, isError: true };
   const updated = await repository.updateAgentToolCall(run.tenantId, call.id, patch, ["PENDING", "APPROVED"]);
   log("info", "agent.tool_ran", { tenantId: run.tenantId, runId: run.id, tool: call.name, ok: outcome.ok });
@@ -390,19 +405,31 @@ export function changedFields(before: Record<string, unknown>, after: Record<str
   return Object.fromEntries(Object.entries(after).filter(([key, value]) => JSON.stringify(before[key]) !== JSON.stringify(value)));
 }
 
-/** One exception per call in the operator queue; asking again finds the one already there. */
+/**
+ * One exception per call in the operator queue; asking again finds the one already there. Something only the client
+ * may approve goes to the person the escalation rules name for agent sign-off, who is emailed once.
+ */
 async function askForApproval(run: AgentRunRecord, ctx: StepContext, call: AgentToolCallRecord): Promise<void> {
   const tool = TOOL_BY_NAME[call.name];
   const parsed = tool?.input.safeParse(call.input);
-  const preview = tool?.preview && parsed?.success ? tool.preview(parsed.data) : null;
+  const preview = tool?.preview && parsed?.success ? await tool.preview(parsed.data, ctx) : null;
+  const what = `${ctx.role.name} wants to ${preview?.title ?? call.name.replace(/_/g, " ")}.`;
+  const approver = call.signoff ? await signoffApprover(ctx.tenant) : null;
   await repository.createException(run.tenantId, {
-    reason: `${ctx.role.name} wants to ${preview?.title ?? call.name.replace(/_/g, " ")}. ${call.reason}`,
+    reason: `${what} ${call.signoff ? `Needs the client's sign-off: ${call.signoff}` : call.reason}`,
     suggestedAction: preview?.body ?? null,
     agentRunId: run.id,
     agentToolCallId: call.id,
     leadId: run.leadId,
     contactId: run.contactId,
+    escalatedToUserId: approver?.userId ?? null,
   });
+  if (approver) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    const mail = templates.escalationEmail({ tenant: ctx.tenant, summary: `${what} Only you can approve it: ${call.signoff}`, suggestedAction: preview?.body ? `Read it, then approve or decline: "${preview.body.slice(0, 600)}"` : "Read it, then approve or decline.", portalUrl: `${appUrl}/app/${ctx.tenant.slug}` });
+    // Keyed by the call, so the hourly look at a waiting run never emails twice.
+    await sendMessage({ tenant: ctx.tenant, contactId: null, channel: "EMAIL", to: approver.email, subject: mail.subject, body: mail.body, transactional: true, idempotencyKey: `signoff:${call.id}` });
+  }
 }
 
 async function expireApproval(tenantId: string, call: AgentToolCallRecord): Promise<AgentToolCallRecord> {
@@ -419,6 +446,8 @@ async function expireApproval(tenantId: string, call: AgentToolCallRecord): Prom
 export interface AgentActionDecision {
   approve: boolean;
   userId: string;
+  /** Decided by a member of the client's own team, in the portal. Only they may approve something marked for sign-off. */
+  asClient?: boolean;
   /** Why, when declining; the agent reads it. */
   note?: string;
   /** When approving: new text for the tool's editable field. What ran, and what changed, are both kept. */
@@ -438,6 +467,7 @@ export async function decideAgentAction(tenant: TenantSummary, toolCallId: strin
     await wake(tenant.id, found.runId, now);
     return { ok: false, reason: "That approval had expired, so nothing was done and the agent has been told." };
   }
+  if (decision.approve && found.signoff && !decision.asClient) return { ok: false, reason: `Only the client can approve this one: ${found.signoff} Decline it or take it over instead.` };
   let editedInput: Record<string, unknown> | null = null;
   if (decision.approve && decision.edit !== undefined) {
     const edited = applyEdit(found, decision.edit);
@@ -638,7 +668,8 @@ async function drive(runId: string, tenantId: string, deadline: number, mode: Ag
     }
     const autonomy = effectiveAutonomy(agent.autonomy, role.maxAutonomy, mode);
     if (autonomy !== run.autonomy) await repository.updateAgentRun(tenantId, run.id, { autonomy }, ["RUNNING"]);
-    const ctx: StepContext = { tenant, role, agent, autonomy, modules: (await repository.getTenantConfig(tenantId)).modules };
+    const config = await repository.getTenantConfig(tenantId);
+    const ctx: StepContext = { tenant, role, agent, autonomy, modules: config.modules, brand: config.brand };
     let outcome: StepOutcome;
     try {
       outcome = await step(run, ctx);

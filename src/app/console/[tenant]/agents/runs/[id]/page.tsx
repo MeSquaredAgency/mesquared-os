@@ -24,7 +24,7 @@ export default async function AgentRunPage({ params }: { params: Promise<{ tenan
   const access = tenants.find((t) => t.tenant.slug === slug);
   if (!access) notFound();
   const tenant = access.tenant;
-  const page = await loadRunPage(tenant.id, id);
+  const page = await loadRunPage(tenant, id);
   if (!page) notFound();
   const { run, timeline } = page;
   const base = `/console/${tenant.slug}`;

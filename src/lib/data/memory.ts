@@ -4,6 +4,7 @@ import { countsAsHandled } from "@/lib/portal/handled";
 import type {
   AgentGuidanceRecord,
   AgentMessageRecord,
+  LeadNoteRecord,
   AgentRunRecord,
   AgentToolCallRecord,
   AdAccountRecord,
@@ -106,6 +107,7 @@ interface MemoryStore {
   agentMessages: (AgentMessageRecord & { tenantId: string })[];
   agentToolCalls: AgentToolCallRecord[];
   agentGuidance: (AgentGuidanceRecord & { tenantId: string })[];
+  leadNotes: (LeadNoteRecord & { tenantId: string })[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -165,6 +167,7 @@ function store(): MemoryStore {
       agentMessages: [],
       agentToolCalls: [],
       agentGuidance: [],
+      leadNotes: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -195,6 +198,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.agentMessages ??= [];
   g.__msqMemoryStore.agentToolCalls ??= [];
   g.__msqMemoryStore.agentGuidance ??= [];
+  g.__msqMemoryStore.leadNotes ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -250,6 +254,7 @@ function assertMissedInTenant(tenantId: string, missedOpportunityId: string | nu
 }
 
 const toAgentMessage = (m: AgentMessageRecord): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role, content: structuredClone(m.content), stopReason: m.stopReason, createdAt: m.createdAt });
+const toLeadNote = (n: LeadNoteRecord): LeadNoteRecord => ({ id: n.id, leadId: n.leadId, kind: n.kind, body: n.body, authorType: n.authorType, agentRunId: n.agentRunId, createdById: n.createdById, createdAt: n.createdAt });
 const toAgentGuidance = (g: AgentGuidanceRecord): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 
 /** A run with a step due: queued or parked and its time has come, or running on a lease that has run out. */
@@ -1062,10 +1067,37 @@ export const memoryRepository: Repository = {
     const row = { id: id("amsg"), tenantId, runId, seq: message.seq, role: message.role, content: structuredClone(message.content), stopReason: message.stopReason ?? null, createdAt: now };
     pushBounded(s.agentMessages, row);
     for (const c of toolCalls) {
-      pushBounded(s.agentToolCalls, { id: id("atc"), tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: structuredClone(c.input), editedInput: null, risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined ? null : structuredClone(c.result), isError: c.isError ?? false, decidedById: null, decidedAt: null, createdAt: now });
+      pushBounded(s.agentToolCalls, { id: id("atc"), tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: structuredClone(c.input), editedInput: null, signoff: c.signoff ?? null, risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined ? null : structuredClone(c.result), isError: c.isError ?? false, decidedById: null, decidedAt: null, createdAt: now });
     }
     for (const g of s.agentGuidance) if (g.runId === runId && g.tenantId === tenantId && g.deliveredSeq === null && deliversGuidance.includes(g.id)) g.deliveredSeq = message.seq;
     return toAgentMessage(row);
+  },
+
+  async addLeadNote(tenantId, leadId, data) {
+    const s = store();
+    if (!s.leads.some((l) => l.id === leadId && l.tenantId === tenantId)) throw new TenantMismatchError("Lead", leadId);
+    const row = { id: id("note"), tenantId, leadId, kind: data.kind, body: data.body, authorType: data.authorType, agentRunId: data.agentRunId ?? null, createdById: data.createdById ?? null, createdAt: new Date() };
+    pushBounded(s.leadNotes, row);
+    return toLeadNote(row);
+  },
+
+  async listLeadNotes(tenantId, leadIds, opts = {}) {
+    const wanted = new Set(leadIds);
+    return store()
+      .leadNotes.filter((n) => n.tenantId === tenantId && wanted.has(n.leadId) && (!opts.kind || n.kind === opts.kind))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, opts.limit ?? 100)
+      .map(toLeadNote);
+  },
+
+  async listContactMessages(tenantId, contactId, limit = 20) {
+    const s = store();
+    const convos = new Map(s.conversations.filter((c) => c.tenantId === tenantId && c.contactId === contactId).map((c) => [c.id, c.channel]));
+    return s.messages
+      .filter((m) => m.tenantId === tenantId && convos.has(m.conversationId))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(-limit)
+      .map((m) => ({ id: m.id, tenantId: m.tenantId, conversationId: m.conversationId, channel: convos.get(m.conversationId)!, direction: m.direction, sender: m.sender, body: m.body, status: m.status, providerMessageId: m.providerMessageId ?? null, createdAt: m.createdAt }));
   },
 
   async listAgentGuidance(tenantId, runId) {

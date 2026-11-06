@@ -1,3 +1,4 @@
+import { registerAgentTriggers } from "@/lib/agents/triggers";
 import { repository } from "@/lib/data";
 import type { NewScheduledAction } from "@/lib/data/repository";
 import { emit, subscribe } from "@/lib/events";
@@ -528,6 +529,8 @@ export function registerAutomations() {
   registerReconciler();
   // Completed appointments and payments move the lead along its pipeline.
   registerPipelineAdvancement();
+  // Agents start after the automatic reply and the call-first chase, never instead of them.
+  registerAgentTriggers();
 
   // A payment or a win is as good a moment to ask for a review as an attended appointment; one ask per person per quarter.
   const askForReview = async (tenantId: string, contactId: string | null, leadId: string | null, key: string) => {
