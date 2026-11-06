@@ -1,6 +1,7 @@
 import { dataMode, repository } from "@/lib/data";
 import type { TenantConfig } from "@/lib/data/repository";
 import { moduleOn } from "@/lib/modules/registry";
+import { getTemplate } from "@/lib/templates";
 import type { ReadinessCheck, TenantSummary } from "@/lib/types";
 
 /**
@@ -34,7 +35,9 @@ export async function tenantReadiness(tenant: TenantSummary, knownConfig?: Tenan
   add("sla", "Service levels set", "required", tenant.sla.firstResponseMinutes > 0 && tenant.sla.bookingWindowHours > 0, `${tenant.sla.firstResponseMinutes} min to first response, ${tenant.sla.bookingWindowHours} h to book, quiet ${tenant.sla.quietHours ? `${tenant.sla.quietHours.start}:00–${tenant.sla.quietHours.end}:00` : "by region"}`);
   add("channels", "Social channels connected", "recommended", channels.length > 0, channels.length ? channels.map((c) => c.platform.toLowerCase().replace("_", " ")).join(", ") : "Connect at least one channel for the content engine to draft for");
   const footer = config.brand?.complianceBlock.requiredFooter?.trim();
-  add("footer", "Compliance footer set", tenant.industry === "REAL_ESTATE" ? "required" : "optional", Boolean(footer), footer ? `"${footer}"` : "Every asset must carry the licence line for a real-estate business");
+  const template = getTemplate(tenant.templateKey);
+  const licenceRequired = tenant.industry === "REAL_ESTATE" || Boolean(template.licence?.required);
+  add("footer", "Compliance footer set", licenceRequired ? "required" : "optional", Boolean(footer), footer ? `"${footer}"` : licenceRequired ? `${template.name}: every asset must carry the licence line` : "Optional: an ABN or registration line on every asset");
   add("content-engine", "Content engine on", "recommended", config.automations.some((a) => a.typeKey === "content_engine" && a.enabled), process.env.ANTHROPIC_API_KEY ? "Claude drafts" : "Drafting with the stub; add ANTHROPIC_API_KEY for Claude");
   add("ads", "Ad accounts connected with budgets", "recommended", adAccounts.length > 0 && adAccounts.every((a) => (a.monthlyBudgetCents ?? 0) > 0), adAccounts.length ? `${adAccounts.length} account${adAccounts.length === 1 ? "" : "s"}${adAccounts.some((a) => !a.monthlyBudgetCents) ? ", some without a budget" : ""}` : "Connect Meta and Google Ads to tie spend to leads");
   add("finance", "Finance provider connected", "optional", ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].some(connected), ["SQUARE", "STRIPE", "XERO", "QUICKBOOKS"].filter(connected).join(", ") || "Revenue stays at pipeline value until one is connected");

@@ -27,6 +27,30 @@ describe("industry templates", () => {
     assert.equal(getTemplate("nope").key, "generic");
   });
 
+  it("every template is ready for the picker and stays within the general template's automations and modules", () => {
+    const keys = new Set(TEMPLATES.map((t) => t.key));
+    assert.equal(keys.size, TEMPLATES.length, "template keys are unique");
+    assert.ok(TEMPLATES.length >= 10);
+    assert.equal(TEMPLATES.at(-1)?.key, "generic", "general business is offered last");
+    const automationKeys = new Set(AUTOMATIONS.map((a) => a.key));
+    const moduleKeys = new Set(MODULES.map((m) => m.key));
+    for (const t of TEMPLATES) {
+      assert.ok(t.group && t.examples && t.summary, `${t.key} has picker copy`);
+      for (const a of t.automations) assert.ok(automationKeys.has(a.key), `${t.key}: automation ${a.key} exists`);
+      for (const m of t.modules) assert.ok(moduleKeys.has(m.key), `${t.key}: module ${m.key} exists`);
+      assert.ok((t.opportunityValues.UNANSWERED_ENQUIRY ?? 0) > 0, `${t.key} values an unanswered enquiry`);
+    }
+  });
+
+  it("licensed industries require the licence line, and clinics never ask for testimonials", () => {
+    for (const key of ["real_estate", "trades", "construction", "finance"]) assert.equal(getTemplate(key).licence?.required, true, key);
+    const clinic = getTemplate("clinic");
+    assert.ok(!clinic.automations.some((a) => a.key === "review_request"), "no review requests by default");
+    assert.equal(clinic.automations.find((a) => a.key === "content_engine")?.settings?.draftFromReviews, false);
+    assert.ok(clinic.brand.complianceBlock.mustNot?.some((m) => m.includes("testimonials")));
+    assert.ok(!getTemplate("retail").automations.some((a) => a.key === "booking_lifecycle"));
+  });
+
   it("real estate template names roles the way the brief describes and keeps management as default", () => {
     const t = getTemplate("real_estate");
     assert.deepEqual(t.roles.map((r) => r.name), ["Director", "Region Manager", "Property Manager", "Team member", "External accountant"]);

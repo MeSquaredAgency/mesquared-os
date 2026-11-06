@@ -235,6 +235,17 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   phone the lead actions drop under the lead instead of squeezing the text.
   Checked in the browser against demo data at desktop and phone width.
 
+## Thirteen templates instead of three (7 Nov)
+
+Setting up a client offered three choices, so a plumber, a dentist and a café all landed on "General business". The onboarding form already asked for twenty business types, and seventeen of them fell through to the general template.
+
+- Ten new templates: trades, building, clinics and allied health, salons, professional services, mortgage and finance brokers, hospitality, retail, automotive, and education. Each has its own pipeline stages, response window, posting rhythm, missed-opportunity values, voice and compliance rules.
+- Trades, building and finance join real estate in requiring the licence line before launch.
+- The clinic template follows health advertising rules: no testimonials, no outcome claims, no clinical advice by message. Review requests start off.
+- The dropdown is now a searchable card picker, grouped by sector, with a summary of what the chosen template sets up. "Plumber" finds trades.
+- The onboarding form maps its business types to the new templates, and the portfolio, console and AI prompts show the template name instead of the coarse industry.
+- No database change: tenants already store the template key.
+
 ## Not done (candidates for a later pass)
 
 - An outbox for event subscribers, so an acknowledgement survives a crash

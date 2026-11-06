@@ -3,7 +3,7 @@ import { ConsoleContext } from "@/components/shell/console-context";
 import { getConsoleContext } from "@/lib/auth/access";
 import { dataMode, repository } from "@/lib/data";
 import { toTenantOption } from "@/lib/types";
-import { humanize } from "@/lib/utils";
+import { templateName } from "@/lib/templates";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
         {
           label: "Workspaces",
           items: tenants.flatMap(({ tenant: t }) => [
-            { href: `/console/${t.slug}`, label: t.name, hint: humanize(t.industry) },
+            { href: `/console/${t.slug}`, label: t.name, hint: templateName(t.templateKey) },
             { href: `/console/${t.slug}?tab=content`, label: `${t.name} · Content`, keywords: "drafts posts inbox", secondary: true },
             { href: `/console/${t.slug}?tab=money`, label: `${t.name} · Money`, keywords: "ads invoices links", secondary: true },
             { href: `/console/${t.slug}/settings`, label: `${t.name} · Settings`, keywords: "people keys modules automations launch", secondary: true },

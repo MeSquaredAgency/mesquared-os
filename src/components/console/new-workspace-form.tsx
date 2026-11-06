@@ -7,10 +7,11 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Select } from "@/components/ui/select";
+import { TemplatePicker, type TemplateChoice } from "@/components/console/template-picker";
 import { provisionTenantAction } from "@/lib/tenants/actions";
 
 interface Props {
-  templates: { key: string; name: string; industry: string }[];
+  templates: TemplateChoice[];
   regions: { region: string; timezone: string; locale: string; currency: string; label: string }[];
 }
 
@@ -21,27 +22,19 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [form, setForm] = useState({ templateKey: templates[0]?.key ?? "generic", name: "", slug: "", preset: 0, fromName: "", replyTo: "", primaryColor: "", serviceAreas: "", requiredFooter: "" });
   const preset = regions[form.preset] ?? regions[0];
-  const isRealEstate = templates.find((t) => t.key === form.templateKey)?.industry === "REAL_ESTATE";
+  const licence = templates.find((t) => t.key === form.templateKey)?.licence;
 
   return (
-    <section aria-labelledby="new-ws-title" className="surface flex w-full max-w-2xl flex-col p-5 sm:p-6">
+    <section aria-labelledby="new-ws-title" className="surface flex w-full max-w-3xl flex-col p-5 sm:p-6">
       <h2 id="new-ws-title" className="section-title">
         New workspace
       </h2>
-      <p className="mt-0.5 text-sm text-muted-foreground">Pick the industry template, name the business, and set where it is. Everything else is filled in from the template and can be changed in Settings.</p>
+      <p className="mt-0.5 text-sm text-muted-foreground">Pick the closest kind of business, name it, and set where it is. Everything else is filled in from the template and can be changed in Settings.</p>
       <div className="mt-5 flex flex-col gap-4">
         {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-        <Field label="Template">
-          <Select value={form.templateKey} onChange={(e) => setForm({ ...form, templateKey: e.target.value })}>
-            {templates.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <TemplatePicker templates={templates} value={form.templateKey} onChange={(templateKey) => setForm({ ...form, templateKey })} />
         <Field label="Business name">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Harbor Realty Group" />
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Harbor Plumbing" />
         </Field>
         <Field label="Workspace address (optional)" hint="Letters, numbers and dashes; made from the name if left blank.">
           <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="letters, numbers and dashes; made from the name if left blank" />
@@ -69,8 +62,8 @@ export function NewWorkspaceForm({ templates, regions }: Props) {
             <Input value={form.serviceAreas} onChange={(e) => setForm({ ...form, serviceAreas: e.target.value })} placeholder="Adelaide, Glenelg, Mount Gambier" />
           </Field>
         </FieldGrid>
-        <Field label={`Line every asset must carry ${isRealEstate ? "(licence number)" : "(optional)"}`}>
-          <Input value={form.requiredFooter} onChange={(e) => setForm({ ...form, requiredFooter: e.target.value })} placeholder={isRealEstate ? "Business Name | RLA 000000" : "e.g. ABN or registration line"} />
+        <Field label={`${licence?.label ?? "Registration line"} on every asset ${licence?.required ? "(required before launch)" : "(optional)"}`}>
+          <Input value={form.requiredFooter} onChange={(e) => setForm({ ...form, requiredFooter: e.target.value })} placeholder={licence?.placeholder ?? "e.g. ABN or registration line"} />
         </Field>
         <div className="mt-1 flex justify-end border-t pt-4">
           <Button
