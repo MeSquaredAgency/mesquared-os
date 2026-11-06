@@ -5,6 +5,9 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { COPY } from "@/lib/copy";
 import { repository } from "@/lib/data";
 import { moduleOn } from "@/lib/modules/registry";
+import { urgentTaskCount } from "@/lib/tasks";
+import { sideOf } from "@/lib/collab/people";
+import { OPEN_TASK_STATUSES } from "@/lib/types";
 import { toTenantOption } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +21,9 @@ export default async function PortalLayout({ children, params }: { children: Rea
   const opportunitiesOn = moduleOn(config.modules, "opportunities");
   const operator = user.isOperator || user.isPlatformAdmin;
   const others = tenants.filter((t) => t.tenant.slug !== slug);
+  const side = sideOf(access);
+  const [openTasks, unread] = await Promise.all([repository.listTasks(access.tenant.id, { status: OPEN_TASK_STATUSES }), repository.countUnreadChat(access.tenant.id, user.id, side)]);
+  const tasksDue = urgentTaskCount(openTasks, side);
   return (
     <AppShell
       user={user}
@@ -30,10 +36,12 @@ export default async function PortalLayout({ children, params }: { children: Rea
         ...(hasPermission(access, "VIEW_FINANCES") ? [{ href: `${base}/money`, label: "Money", hint: "Revenue, ads, invoices", icon: "wallet" as const }] : []),
         { href: `${base}/content`, label: "Content", hint: "Approve drafts", icon: "fileCheck" },
         ...(inventoryOn ? [{ href: `${base}/inventory`, label: access.tenant.industry === "REAL_ESTATE" ? "Listings" : "Inventory", hint: "What is on the books", icon: "boxes" as const }] : []),
+        { href: `${base}/tasks`, label: "Tasks", hint: "Work with Me², with deadlines", icon: "listChecks", badge: tasksDue || undefined },
+        { href: `${base}/messages`, label: "Messages", hint: side === "CLIENT" ? "Talk to Me²" : "Talk to the client", icon: "messageSquare", badge: unread || undefined },
         { href: `${base}/activity`, label: COPY.activityLog, short: "Activity", hint: COPY.handledForYou, icon: "activity" },
       ]}
       back={operator ? { href: `/console/${slug}`, label: "Back to console" } : undefined}
-      context={<WorkspaceSwitcher current={toTenantOption(access.tenant)} options={tenants.map((t) => toTenantOption(t.tenant))} basePath="/app" keep={["/leads", "/content", "/activity"]} />}
+      context={<WorkspaceSwitcher current={toTenantOption(access.tenant)} options={tenants.map((t) => toTenantOption(t.tenant))} basePath="/app" keep={["/leads", "/content", "/activity", "/tasks", "/messages"]} />}
       commands={others.length ? [{ label: "Businesses", items: others.map(({ tenant: t }) => ({ href: `/app/${t.slug}`, label: t.name })) }] : []}
       footer={
         <span>

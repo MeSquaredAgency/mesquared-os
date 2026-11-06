@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight, Bot, Settings } from "lucide-react";
+import { ArrowUpRight, Bot, ListChecks, MessageSquare, Settings } from "lucide-react";
+import { urgentTaskCount } from "@/lib/tasks";
+import { OPEN_TASK_STATUSES } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContentStudio } from "@/components/console/content-studio";
@@ -36,10 +38,12 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
   const { tenant: slug } = await params;
   const { tab: rawTab } = await searchParams;
   const tab: Tab = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as Tab) : "overview";
-  const { tenants } = await getConsoleContext();
+  const { tenants, user } = await getConsoleContext();
   const access = tenants.find((t) => t.tenant.slug === slug);
   if (!access) notFound();
   const tenant = access.tenant;
+  const [openTasks, unreadChat] = await Promise.all([repository.listTasks(access.tenant.id, { status: OPEN_TASK_STATUSES }), repository.countUnreadChat(access.tenant.id, user.id, "ME2")]);
+  const tasksDue = urgentTaskCount(openTasks, "ME2");
 
   // The header needs the config, the portfolio row and the launch checks on every tab; the full portal home (a dozen
   // queries) only on the overview. The other tabs fetch just the "needs you" leads for the tab count.
@@ -89,6 +93,18 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
         }
         actions={
           <>
+            <Button asChild variant="outline">
+              <Link href={`${base}/tasks`}>
+                <ListChecks /> Tasks
+                {openTasks.length > 0 && <span className={tasksDue ? "rounded-full bg-red-soft px-1.5 text-xs font-semibold text-red-text num" : "text-xs text-muted-foreground num"}>{tasksDue || openTasks.length}</span>}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={`${base}/messages`}>
+                <MessageSquare /> Messages
+                {unreadChat > 0 && <span className="rounded-full bg-brand px-1.5 text-xs font-semibold text-white num">{unreadChat}</span>}
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href={`${base}/agents`}>
                 <Bot /> Agents

@@ -235,7 +235,21 @@ is covered by `src/test/upgrades.test.ts` unless marked otherwise.
   phone the lead actions drop under the lead instead of squeezing the text.
   Checked in the browser against demo data at desktop and phone width.
 
+## Tasks with reminders, and an encrypted client chat (8 Nov)
+
+Work between a client and Me² lived in email and texts, with no shared record of who owed what or when.
+
+- **Tasks.** Every workspace has a task list in the client portal and the console. A task says who it is waiting on (the client or Me²), who has it, and when it is due, shown in the workspace's own timezone. Filters split "waiting on you" from "waiting on the other side".
+- **Activity log.** Each task keeps a log of every change and comment, with who made it and which side they are on.
+- **Reminders.** The scheduler emails a day before a deadline and again when it passes, once each per deadline. Overdue work Me² owes also lands in the operator queue. When the client owes it, Me² hears too, so someone can chase.
+- **Chat.** One thread per workspace between the client's team and Me², with unread badges and live refresh. Each message is encrypted with AES-256-GCM before it is stored, bound to its workspace and message id, under a key derived from the existing integration secret, so it works from the first deploy. This is encryption at rest, not end-to-end: the server decrypts to show messages to the people allowed to read them.
+- **Notifications.** The other side gets an email when someone writes, at most once per half-hour burst. The email names the writer and never includes the text.
+- **Nav.** The portal gains Tasks and Messages with badges. The console workspace page gains Tasks and Messages buttons with counts.
+- **Database.** One migration adds the Task, TaskEvent, ChatMessage and ChatRead tables. Nothing existing changes.
+
 ## Not done (candidates for a later pass)
+
+- Chat attachments and @-mentions; tasks linked to a lead or a piece of content; a task digest in the Monday email.
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
   between the event and the send. Deliberately left: replaying handlers risks

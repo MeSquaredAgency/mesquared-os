@@ -1022,3 +1022,57 @@ export interface PortfolioRow {
   integrations: IntegrationHealth[];
   leadsToday: number;
 }
+
+// ---------------------------------------------------------------------------
+// Tasks and the client chat: work between the client and Me²
+// ---------------------------------------------------------------------------
+
+/** Which side of the relationship someone is on: the client's team, or Me². */
+export type Side = "ME2" | "CLIENT";
+
+export type TaskStatus = "OPEN" | "IN_PROGRESS" | "WAITING" | "DONE" | "CANCELLED";
+export const TASK_STATUSES: TaskStatus[] = ["OPEN", "IN_PROGRESS", "WAITING", "DONE", "CANCELLED"];
+export const OPEN_TASK_STATUSES: TaskStatus[] = ["OPEN", "IN_PROGRESS", "WAITING"];
+
+export interface TaskRecord {
+  id: string;
+  tenantId: string;
+  title: string;
+  details: string | null;
+  status: TaskStatus;
+  /** Who owes the next move. */
+  owner: Side;
+  assigneeId: string | null;
+  dueAt: Date | null;
+  /** The last reminder sent for the current deadline. */
+  reminded: "DUE_SOON" | "OVERDUE" | null;
+  createdById: string | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type TaskEventKind = "CREATED" | "STATUS" | "ASSIGNED" | "OWNER" | "DUE" | "EDITED" | "COMMENT" | "REMINDER";
+
+export interface TaskEventRecord {
+  id: string;
+  taskId: string;
+  kind: TaskEventKind;
+  actorId: string | null;
+  actorName: string;
+  actorSide: Side | "SYSTEM";
+  body: string | null;
+  data: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/** A chat message as stored: the text is ciphertext; only src/lib/chat decrypts it. */
+export interface ChatMessageRecord {
+  id: string;
+  tenantId: string;
+  authorId: string | null;
+  authorName: string;
+  side: Side;
+  ciphertext: string;
+  createdAt: Date;
+}
