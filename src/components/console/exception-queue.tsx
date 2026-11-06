@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Empty, Meta } from "@/components/shell/section";
 import { closeExceptions, resolveException } from "@/lib/console/actions";
+import type { AgentApprovalView } from "@/lib/agents/views";
 import type { ExceptionRecord, TenantOption } from "@/lib/types";
 import { formatMoney, timeAgo } from "@/lib/utils";
+import { AgentApprovalCard } from "./agent-approval-card";
 
 /** The money behind a queue item: the open missed opportunity it was raised for. */
 export interface QueueStake {
@@ -25,12 +27,14 @@ interface Props {
   tenants: TenantOption[];
   /** Missed opportunity id → what it is worth; items without one are automation failures. */
   stakes?: Record<string, QueueStake>;
+  /** Exception id → the action an agent is waiting on. Only a decision closes these, so they get their own card. */
+  approvals?: Record<string, AgentApprovalView>;
 }
 
 const CHECKBOX = "size-4 shrink-0 accent-[var(--navy)]";
 
 /** The operator queue: everything automation was not confident about, across the portfolio. */
-export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
+export function ExceptionQueue({ items, tenants, stakes = {}, approvals = {} }: Props) {
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -52,8 +56,10 @@ export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
     });
 
   const visible = items.filter((i) => !hidden.has(i.id));
-  const chosen = visible.filter((i) => selected.has(i.id));
-  const allChosen = visible.length > 0 && chosen.length === visible.length;
+  // An agent's approval is never closed in bulk: it needs its own yes or no.
+  const selectable = visible.filter((i) => !i.agentToolCallId);
+  const chosen = selectable.filter((i) => selected.has(i.id));
+  const allChosen = selectable.length > 0 && chosen.length === selectable.length;
 
   const toggle = (id: string, on: boolean) =>
     setSelected((prev) => {
@@ -63,7 +69,7 @@ export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
       return next;
     });
 
-  const toggleAll = (on: boolean) => setSelected(on ? new Set(visible.map((i) => i.id)) : new Set());
+  const toggleAll = (on: boolean) => setSelected(on ? new Set(selectable.map((i) => i.id)) : new Set());
 
   const closeChosen = () => {
     if (chosen.length === 0) return;
@@ -85,36 +91,58 @@ export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
       ) : (
         <>
           {/* Selection bar: pick several, close them with one note. */}
-          <div className="surface sticky top-14 z-10 flex flex-wrap items-center gap-3 px-4 py-2.5 md:top-0">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={allChosen}
-                ref={(el) => {
-                  if (el) el.indeterminate = chosen.length > 0 && !allChosen;
-                }}
-                onChange={(e) => toggleAll(e.target.checked)}
-                disabled={pending}
-                className={CHECKBOX}
-              />
-              {chosen.length > 0 ? <span className="font-medium">{chosen.length} selected</span> : "Select all"}
-            </label>
-            {chosen.length > 0 && (
-              <div className="flex flex-1 flex-wrap items-center gap-2 sm:justify-end">
-                <Input placeholder="Why you are closing these (optional)" value={bulkNote} onChange={(e) => setBulkNote(e.target.value)} className="h-8 sm:w-72" aria-label="Note for the selected items" />
-                <Button variant="outline" size="sm" onClick={closeChosen} disabled={pending}>
-                  <X /> Close selected
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => toggleAll(false)} disabled={pending}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </div>
+          {selectable.length > 0 && (
+            <div className="surface sticky top-14 z-10 flex flex-wrap items-center gap-3 px-4 py-2.5 md:top-0">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allChosen}
+                  ref={(el) => {
+                    if (el) el.indeterminate = chosen.length > 0 && !allChosen;
+                  }}
+                  onChange={(e) => toggleAll(e.target.checked)}
+                  disabled={pending}
+                  className={CHECKBOX}
+                />
+                {chosen.length > 0 ? <span className="font-medium">{chosen.length} selected</span> : "Select all"}
+              </label>
+              {chosen.length > 0 && (
+                <div className="flex flex-1 flex-wrap items-center gap-2 sm:justify-end">
+                  <Input placeholder="Why you are closing these (optional)" value={bulkNote} onChange={(e) => setBulkNote(e.target.value)} className="h-8 sm:w-72" aria-label="Note for the selected items" />
+                  <Button variant="outline" size="sm" onClick={closeChosen} disabled={pending}>
+                    <X /> Close selected
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => toggleAll(false)} disabled={pending}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           <ul className="flex flex-col gap-3">
             {visible.map((item) => {
               const tenant = tenantById.get(item.tenantId);
+              if (item.agentToolCallId) {
+                const approval = approvals[item.id];
+                return approval ? (
+                  <AgentApprovalCard
+                    key={item.id}
+                    item={item}
+                    view={approval}
+                    tenant={tenant}
+                    disabled={pending}
+                    onDone={(result) => {
+                      setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
+                      if (result.ok) hide([item.id]);
+                    }}
+                  />
+                ) : (
+                  <li key={item.id} className="surface p-5 text-sm text-muted-foreground">
+                    {item.reason} Someone has already decided this; refresh to clear it.
+                  </li>
+                );
+              }
               const stake = item.missedOpportunityId ? stakes[item.missedOpportunityId] : undefined;
               return (
                 <li key={item.id} className="surface flex gap-4 p-5">
@@ -145,6 +173,11 @@ export function ExceptionQueue({ items, tenants, stakes = {} }: Props) {
                         </p>
                       )}
                       {item.escalatedToUserId && <Badge variant="secondary">Escalated to the client</Badge>}
+                      {item.agentRunId && tenant && (
+                        <Link href={`/console/${tenant.slug}/agents/runs/${item.agentRunId}`} className="w-fit text-sm underline underline-offset-4 hover:text-foreground">
+                          See what the agent did
+                        </Link>
+                      )}
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:flex-col lg:items-stretch">
                       <Input placeholder="What you did (optional)" value={notes[item.id] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [item.id]: e.target.value }))} className="sm:w-64" aria-label="Resolution note" />

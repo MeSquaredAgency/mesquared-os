@@ -28,6 +28,11 @@ export interface AgentTool<I extends z.ZodType = z.ZodType> {
   module: string | null;
   /** What a person approving the call sees: the exact effect. */
   preview?: (input: z.infer<I>) => { title: string; body: string };
+  /**
+   * The one text field a person approving the call may change before it runs, such as a message's wording. The
+   * edited input is checked against `input` again, and the agent is told what changed.
+   */
+  editable?: { field: Extract<keyof z.infer<I>, string>; label: string };
   run(ctx: ToolContext, input: z.infer<I>): Promise<unknown>;
 }
 

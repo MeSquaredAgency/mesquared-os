@@ -1,6 +1,7 @@
 import type {
   AdAccountRecord,
   AgentAutonomy,
+  AgentGuidanceRecord,
   AgentMessageRecord,
   AgentRunRecord,
   AgentRunStatus,
@@ -200,7 +201,7 @@ export interface NewAgentToolCall {
   isError?: boolean;
 }
 
-export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "result" | "isError" | "decidedById" | "decidedAt">>;
+export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "editedInput" | "result" | "isError" | "decidedById" | "decidedAt">>;
 
 /** Another worker appended this turn first: the caller has lost the run and should stop. */
 export class AgentTurnConflict extends Error {
@@ -786,8 +787,14 @@ export interface Repository {
   addAgentRunUsage(tenantId: string, runId: string, usage: { tokens: number; costMicros: number }): Promise<void>;
   /** The run's turns in order. */
   listAgentMessages(tenantId: string, runId: string): Promise<AgentMessageRecord[]>;
-  /** Appends one turn and, for an assistant turn, its tool calls, all or nothing. Throws AgentTurnConflict when that seq is taken. */
-  appendAgentMessage(tenantId: string, runId: string, message: NewAgentMessage, toolCalls?: NewAgentToolCall[]): Promise<AgentMessageRecord>;
+  /**
+   * Appends one turn and, for an assistant turn, its tool calls, all or nothing; for a user turn, `deliversGuidance`
+   * marks the guidance it carries as delivered in the same write. Throws AgentTurnConflict when that seq is taken.
+   */
+  appendAgentMessage(tenantId: string, runId: string, message: NewAgentMessage, toolCalls?: NewAgentToolCall[], deliversGuidance?: string[]): Promise<AgentMessageRecord>;
+  /** Guidance for a run, oldest first, delivered or not. */
+  listAgentGuidance(tenantId: string, runId: string): Promise<AgentGuidanceRecord[]>;
+  addAgentGuidance(tenantId: string, runId: string, data: { text: string; createdById: string }): Promise<AgentGuidanceRecord>;
   listAgentToolCalls(tenantId: string, runId: string): Promise<AgentToolCallRecord[]>;
   findAgentToolCall(tenantId: string, id: string): Promise<AgentToolCallRecord | null>;
   /** With `onlyIf`, changes the call only while its status is one of those. Null when missing or nothing changed. */
@@ -803,7 +810,11 @@ export interface Repository {
   createException(tenantId: string, data: NewException): Promise<ExceptionRecord>;
   /** Across several tenants for the operator queue. */
   listExceptions(tenantIds: string[], opts?: { status?: ExceptionStatus[]; limit?: number }): Promise<ExceptionRecord[]>;
-  /** Resolves an open or in-progress exception; null when it is missing or already resolved. */
+  findException(tenantId: string, id: string): Promise<ExceptionRecord | null>;
+  /**
+   * Resolves an open or in-progress exception; null when it is missing or already resolved. An agent's approval
+   * request is never resolved here: only a decision on the action closes it (resolveAgentToolCallException).
+   */
   resolveException(tenantId: string, id: string, resolution: string): Promise<ExceptionRecord | null>;
   /** Resolves the approval exception for an agent tool call, if it is still open. */
   resolveAgentToolCallException(tenantId: string, toolCallId: string, resolution: string): Promise<void>;

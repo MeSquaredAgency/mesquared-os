@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import { countsAsHandled } from "@/lib/portal/handled";
 import type {
+  AgentGuidanceRecord,
   AgentMessageRecord,
   AgentRunRecord,
   AgentToolCallRecord,
@@ -104,6 +105,7 @@ interface MemoryStore {
   agentRuns: AgentRunRecord[];
   agentMessages: (AgentMessageRecord & { tenantId: string })[];
   agentToolCalls: AgentToolCallRecord[];
+  agentGuidance: (AgentGuidanceRecord & { tenantId: string })[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -162,6 +164,7 @@ function store(): MemoryStore {
       agentRuns: [],
       agentMessages: [],
       agentToolCalls: [],
+      agentGuidance: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -191,6 +194,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.agentRuns ??= [];
   g.__msqMemoryStore.agentMessages ??= [];
   g.__msqMemoryStore.agentToolCalls ??= [];
+  g.__msqMemoryStore.agentGuidance ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -246,6 +250,7 @@ function assertMissedInTenant(tenantId: string, missedOpportunityId: string | nu
 }
 
 const toAgentMessage = (m: AgentMessageRecord): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role, content: structuredClone(m.content), stopReason: m.stopReason, createdAt: m.createdAt });
+const toAgentGuidance = (g: AgentGuidanceRecord): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 
 /** A run with a step due: queued or parked and its time has come, or running on a lease that has run out. */
 function agentRunDue(run: AgentRunRecord, now: Date, leaseMs: number): boolean {
@@ -1049,7 +1054,7 @@ export const memoryRepository: Repository = {
       .map(toAgentMessage);
   },
 
-  async appendAgentMessage(tenantId, runId, message, toolCalls = []) {
+  async appendAgentMessage(tenantId, runId, message, toolCalls = [], deliversGuidance = []) {
     const s = store();
     if (!s.agentRuns.some((r) => r.id === runId && r.tenantId === tenantId)) throw new TenantMismatchError("AgentRun", runId);
     if (s.agentMessages.some((m) => m.runId === runId && m.seq === message.seq)) throw new AgentTurnConflict(runId, message.seq);
@@ -1057,9 +1062,25 @@ export const memoryRepository: Repository = {
     const row = { id: id("amsg"), tenantId, runId, seq: message.seq, role: message.role, content: structuredClone(message.content), stopReason: message.stopReason ?? null, createdAt: now };
     pushBounded(s.agentMessages, row);
     for (const c of toolCalls) {
-      pushBounded(s.agentToolCalls, { id: id("atc"), tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: structuredClone(c.input), risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined ? null : structuredClone(c.result), isError: c.isError ?? false, decidedById: null, decidedAt: null, createdAt: now });
+      pushBounded(s.agentToolCalls, { id: id("atc"), tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: structuredClone(c.input), editedInput: null, risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined ? null : structuredClone(c.result), isError: c.isError ?? false, decidedById: null, decidedAt: null, createdAt: now });
     }
+    for (const g of s.agentGuidance) if (g.runId === runId && g.tenantId === tenantId && g.deliveredSeq === null && deliversGuidance.includes(g.id)) g.deliveredSeq = message.seq;
     return toAgentMessage(row);
+  },
+
+  async listAgentGuidance(tenantId, runId) {
+    return store()
+      .agentGuidance.filter((g) => g.runId === runId && g.tenantId === tenantId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(toAgentGuidance);
+  },
+
+  async addAgentGuidance(tenantId, runId, data) {
+    const s = store();
+    if (!s.agentRuns.some((r) => r.id === runId && r.tenantId === tenantId)) throw new TenantMismatchError("AgentRun", runId);
+    const row = { id: id("agd"), tenantId, runId, text: data.text, createdById: data.createdById, deliveredSeq: null, createdAt: new Date() };
+    pushBounded(s.agentGuidance, row);
+    return toAgentGuidance(row);
   },
 
   async listAgentToolCalls(tenantId, runId) {
@@ -1147,8 +1168,13 @@ export const memoryRepository: Repository = {
       .slice(0, opts.limit ?? 100);
   },
 
+  async findException(tenantId, exId) {
+    const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId);
+    return ex ? { ...ex } : null;
+  },
+
   async resolveException(tenantId, exId, resolution) {
-    const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
+    const ex = store().exceptions.find((e) => e.id === exId && e.tenantId === tenantId && !e.agentToolCallId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
     if (!ex) return null;
     ex.status = "RESOLVED";
     (ex as ExceptionRecord & { resolution?: string }).resolution = resolution;

@@ -535,7 +535,7 @@ export interface TenantAgentRecord {
   updatedAt: Date;
 }
 
-export type AgentRunStatus = "QUEUED" | "RUNNING" | "WAITING" | "DONE" | "FAILED" | "CANCELLED";
+export type AgentRunStatus = "QUEUED" | "RUNNING" | "WAITING" | "PAUSED" | "DONE" | "FAILED" | "CANCELLED";
 
 /** One piece of work an agent does; see src/lib/agents/runtime.ts. */
 export interface AgentRunRecord {
@@ -584,7 +584,10 @@ export interface AgentToolCallRecord {
   runId: string;
   toolUseId: string;
   name: string;
+  /** What the model asked for. */
   input: Record<string, unknown>;
+  /** What ran instead, when the person approving edited it. */
+  editedInput: Record<string, unknown> | null;
   risk: string;
   decision: string;
   reason: string;
@@ -594,6 +597,16 @@ export interface AgentToolCallRecord {
   isError: boolean;
   decidedById: string | null;
   decidedAt: Date | null;
+  createdAt: Date;
+}
+
+/** Guidance a person added to a run; `deliveredSeq` is the turn that carried it to the model, null until then. */
+export interface AgentGuidanceRecord {
+  id: string;
+  runId: string;
+  text: string;
+  createdById: string;
+  deliveredSeq: number | null;
   createdAt: Date;
 }
 

@@ -79,7 +79,7 @@ Open `/console` to watch leads arrive.
 docs/product-spec.md             What we are building and for whom (read first)
 docs/architecture.md             Domain model, surfaces, module system, phased plan
 prisma/schema.prisma             Tenant-scoped data model
-src/app/console                  Operator Console: portfolio, queue, workspace drill-in
+src/app/console                  Operator Console: portfolio, queue, workspace drill-in, agent runs
 src/app/app/[tenant]             Client Portal: home, leads, missed opportunities, content, activity
 src/app/api/v1/intake            Lead intake: API key → zod → dedupe → qualify → contact → lead → playbook
 src/app/api/jobs/tick            Scheduler tick: missed-opportunity detectors + due scheduled actions (JOB_SECRET)

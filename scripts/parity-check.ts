@@ -9,10 +9,11 @@ import assert from "node:assert/strict";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
 import { z } from "zod";
 import { _setClaudeClientForTests } from "@/lib/ai/claude";
-import { AGENT_LEASE_MS, decideAgentAction, driveAgentRun, startAgentRun } from "@/lib/agents/runtime";
+import { AGENT_LEASE_MS, addAgentGuidance, decideAgentAction, driveAgentRun, pauseAgentRun, resumeAgentRun, startAgentRun } from "@/lib/agents/runtime";
 import { ROLE_BY_KEY } from "@/lib/agents/roles";
 import { defineTool, type AgentTool } from "@/lib/agents/tool";
 import { TOOL_BY_NAME } from "@/lib/agents/tools";
+import { isOpenAgentApproval } from "@/lib/console/resolve";
 import { dataMode, repository } from "@/lib/data";
 import { AgentTurnConflict, TenantMismatchError } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
@@ -319,6 +320,62 @@ await step("agent runs: a supervised run on a scripted Claude, parked for approv
     _setClaudeClientForTests(null);
     delete ROLE_BY_KEY[role];
     delete TOOL_BY_NAME[send.name];
+    if (mode === undefined) delete process.env.AGENTS_MODE;
+    else process.env.AGENTS_MODE = mode;
+  }
+});
+
+await step("agent approvals: the queue can't close one; a pause, guidance and an edit round-trip through Postgres", async () => {
+  const role = `parity_appr_${stamp}`;
+  const sends: string[] = [];
+  const text = defineTool({ name: `parity_text_${stamp}`, description: "Texts.", input: z.object({ body: z.string().min(1) }), risk: "external", module: null, preview: (i) => ({ title: "send a text", body: i.body }), editable: { field: "body", label: "Message" }, run: async (_ctx, i) => (sends.push(i.body), { sent: true }) }) as AgentTool;
+  TOOL_BY_NAME[text.name] = text;
+  ROLE_BY_KEY[role] = { key: role, name: "Parity Approvals", responsibilities: "Checks approvals on Postgres.", tools: [text.name], maxAutonomy: "SUPERVISED", canDelegateTo: [] };
+  const mode = process.env.AGENTS_MODE;
+  process.env.AGENTS_MODE = "live";
+  const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: null };
+  const answers = [
+    { id: "msg_a1", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "tool_use", id: "toolu_a1", name: text.name, input: { body: "Draft" } }], stop_reason: "tool_use", stop_sequence: null, stop_details: null, usage, _request_id: "req_a1" },
+    { id: "msg_a2", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "Sent.", citations: null }], stop_reason: "end_turn", stop_sequence: null, stop_details: null, usage, _request_id: "req_a2" },
+  ];
+  const requests: { messages: { role: string; content: Record<string, unknown>[] }[] }[] = [];
+  _setClaudeClientForTests({ messages: { create: async (params: { messages: { role: string; content: Record<string, unknown>[] }[] }) => (requests.push(structuredClone(params)), answers.shift()) } });
+  try {
+    await repository.upsertTenantAgent(harbor!.id, role, { enabled: true, autonomy: "SUPERVISED" }, null);
+    const started = await startAgentRun({ tenant: harbor!, roleKey: role, trigger: "parity", task: "Text them." });
+    assert.ok(started.ok);
+    const run = started.run;
+    assert.equal(await repository.claimAgentRun(run.id, new Date(), AGENT_LEASE_MS), true);
+    assert.equal(await driveAgentRun(run.id, harbor!.id, Date.now() + 30_000), "waiting");
+    const [call] = await repository.listAgentToolCalls(harbor!.id, run.id);
+    const card = (await repository.listExceptions([harbor!.id], { limit: 500 })).find((e) => e.agentToolCallId === call.id)!;
+    assert.equal(await repository.resolveException(harbor!.id, card.id, "x"), null, "the generic resolve never closes an approval");
+    assert.equal((await repository.findException(harbor!.id, card.id))?.status, "OPEN");
+    assert.equal(await repository.findException(summit!.id, card.id), null);
+    assert.equal(await isOpenAgentApproval(harbor!.id, card.id), true);
+
+    assert.equal(await pauseAgentRun(harbor!, run.id), true);
+    assert.ok(!(await repository.listDueAgentRuns(new Date(), AGENT_LEASE_MS)).some((r) => r.id === run.id), "a paused run is never due");
+    assert.ok((await addAgentGuidance(harbor!, run.id, "Say it’s from Sam — ünïcode.", "parity")).ok);
+    await assert.rejects(repository.addAgentGuidance(summit!.id, run.id, { text: "x", createdById: "x" }), TenantMismatchError);
+    assert.deepEqual(await repository.listAgentGuidance(summit!.id, run.id), []);
+    const edit = "Hi, it’s Sam — “Thursday” at 4?";
+    assert.ok((await decideAgentAction(harbor!, call.id, { approve: true, userId: "parity", edit })).ok);
+    assert.deepEqual((await repository.findAgentToolCall(harbor!.id, call.id))?.editedInput, { body: edit }, "the edit comes back from jsonb unchanged");
+    assert.equal((await repository.findAgentRun(harbor!.id, run.id))?.status, "PAUSED");
+
+    assert.equal(await resumeAgentRun(harbor!, run.id), true);
+    assert.equal(await repository.claimAgentRun(run.id, new Date(), AGENT_LEASE_MS), true);
+    assert.equal(await driveAgentRun(run.id, harbor!.id, Date.now() + 30_000), "done");
+    assert.deepEqual(sends, [edit]);
+    assert.deepEqual((await repository.listAgentGuidance(harbor!.id, run.id)).map((g) => g.deliveredSeq), [2], "delivered with the results, in the same write");
+    assert.deepEqual(requests[1].messages.at(-1)!.content.map((b) => b.type), ["tool_result", "text"]);
+    assert.equal((await repository.findAgentToolCall(harbor!.id, call.id))?.input.body, "Draft", "what the model asked for is kept");
+  } finally {
+    await repository.upsertTenantAgent(harbor!.id, role, { enabled: false }, null).catch(() => {});
+    _setClaudeClientForTests(null);
+    delete ROLE_BY_KEY[role];
+    delete TOOL_BY_NAME[text.name];
     if (mode === undefined) delete process.env.AGENTS_MODE;
     else process.env.AGENTS_MODE = mode;
   }

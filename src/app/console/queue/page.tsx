@@ -1,6 +1,7 @@
 import { ExceptionQueue, type QueueStake } from "@/components/console/exception-queue";
 import { FilterChips, type FilterChip } from "@/components/shell/filter-chips";
 import { PageHeader } from "@/components/shell/section";
+import { loadApprovalViews } from "@/lib/agents/views";
 import { getConsoleContext } from "@/lib/auth/access";
 import { MISSED_OPPORTUNITY_LABEL } from "@/lib/copy";
 import { repository } from "@/lib/data";
@@ -8,7 +9,7 @@ import { toTenantOption } from "@/lib/types";
 
 export const metadata = { title: "Queue" };
 
-const VIEWS = ["", "client", "automation"] as const;
+const VIEWS = ["", "agent", "client", "automation"] as const;
 type View = (typeof VIEWS)[number];
 const SORTS = ["", "value"] as const;
 type Sort = (typeof SORTS)[number];
@@ -41,13 +42,15 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
     }),
   );
 
-  const matchesView = (item: (typeof all)[number]) => (view === "client" ? Boolean(item.escalatedToUserId) : view === "automation" ? !item.missedOpportunityId : true);
+  const isAutomation = (item: (typeof all)[number]) => !item.missedOpportunityId && !item.agentToolCallId;
+  const matchesView = (item: (typeof all)[number]) => (view === "agent" ? Boolean(item.agentToolCallId) : view === "client" ? Boolean(item.escalatedToUserId) : view === "automation" ? isAutomation(item) : true);
   const inWorkspace = selected ? all.filter((i) => i.tenantId === selected.id) : all;
   const filtered = inWorkspace.filter(matchesView);
   const valueOf = (item: (typeof all)[number]) => (item.missedOpportunityId ? stakes[item.missedOpportunityId]?.valueCents ?? 0 : 0);
   const items = sort === "value" ? [...filtered].sort((a, b) => valueOf(b) - valueOf(a) || a.createdAt.getTime() - b.createdAt.getTime()) : filtered;
   const atStakeCents = filtered.reduce((sum, i) => sum + valueOf(i), 0);
   const money = selected ?? tenants[0]?.tenant;
+  const approvals = await loadApprovalViews(items);
 
   const workspaceChips: FilterChip[] = [
     { label: "All workspaces", count: all.filter(matchesView).length, urgent: true },
@@ -57,8 +60,9 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   ];
   const viewChips: FilterChip[] = [
     { label: "Everything", count: inWorkspace.length },
+    { value: "agent", label: "Agent approvals", count: inWorkspace.filter((i) => Boolean(i.agentToolCallId)).length },
     { value: "client", label: "Escalated to the client", count: inWorkspace.filter((i) => Boolean(i.escalatedToUserId)).length },
-    { value: "automation", label: "Automation failures", count: inWorkspace.filter((i) => !i.missedOpportunityId).length },
+    { value: "automation", label: "Automation failures", count: inWorkspace.filter(isAutomation).length },
   ];
   const sortChips: FilterChip[] = [
     { label: "Oldest first" },
@@ -83,7 +87,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </div>
         )}
       </PageHeader>
-      <ExceptionQueue key={`${selected?.id ?? "all"}:${view}:${sort}`} items={items} tenants={tenants.map((t) => toTenantOption(t.tenant))} stakes={stakes} />
+      <ExceptionQueue key={`${selected?.id ?? "all"}:${view}:${sort}`} items={items} tenants={tenants.map((t) => toTenantOption(t.tenant))} stakes={stakes} approvals={approvals} />
     </div>
   );
 }

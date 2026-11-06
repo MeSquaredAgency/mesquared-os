@@ -882,6 +882,8 @@ enum AgentRunStatus {
   QUEUED
   RUNNING
   WAITING
+  /// A person paused it from the run's page; nothing happens until they resume it.
+  PAUSED
   DONE
   FAILED
   CANCELLED
@@ -935,6 +937,7 @@ model AgentRun {
   missedOpportunity MissedOpportunity? @relation(fields: [missedOpportunityId], references: [id], onDelete: SetNull)
   messages          AgentMessage[]
   toolCalls         AgentToolCall[]
+  guidance          AgentGuidance[]
   exceptions        ExceptionItem[]
 
   @@unique([tenantId, dedupeKey])
@@ -967,6 +970,8 @@ model AgentToolCall {
   toolUseId   String
   name        String
   input       Json
+  /// What ran instead, when the person approving edited the input; the transcript keeps what the model asked for.
+  editedInput Json?
   risk        String
   decision    String
   reason      String
@@ -983,6 +988,22 @@ model AgentToolCall {
 
   @@unique([runId, toolUseId])
   @@index([tenantId, status])
+}
+
+/// Guidance a person added to a run while it worked. It reaches the model in the next turn the runtime writes,
+/// and deliveredSeq is that turn, so each note is delivered once.
+model AgentGuidance {
+  id           String   @id @default(cuid())
+  tenantId     String
+  runId        String
+  text         String
+  createdById  String
+  deliveredSeq Int?
+  createdAt    DateTime @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
 }
 
 /// One row per Claude call: what it was for and what it cost (src/lib/ai/claude.ts).
