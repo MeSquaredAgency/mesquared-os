@@ -5,7 +5,10 @@ import type { ExceptionRecord, MissedOpportunityType } from "@/lib/types";
 /** Opportunity types whose subject is a lead's SLA clock: settling them must stop that clock, or the detector raises the same lead again a week later. */
 const SLA_TYPES: ReadonlySet<MissedOpportunityType> = new Set<MissedOpportunityType>(["UNANSWERED_ENQUIRY", "NOT_BOOKED"]);
 
-/** Closes one exception, settles its missed opportunity and logs the outcome. Returns null when it was already resolved. */
+/**
+ * Closes one exception, settles its missed opportunity and logs the outcome. Returns null when it was already
+ * resolved, or when it is an agent asking for approval (the repository never closes those this way).
+ */
 export async function settleException(tenantId: string, exceptionId: string, resolution: string, recovered: boolean, userId: string): Promise<ExceptionRecord | null> {
   const note = resolution.trim();
   const ex = await repository.resolveException(tenantId, exceptionId, note || "Resolved");
@@ -36,11 +39,19 @@ export interface BulkCloseResult {
   closedIds: string[];
   alreadyResolved: number;
   outsidePortfolio: number;
+  /** Agents asking for approval: only approving or declining closes those, so a bulk close leaves them. */
+  agentApprovals: number;
+}
+
+/** Whether an exception is an agent waiting on a decision, which settleException never closes. */
+export async function isOpenAgentApproval(tenantId: string, exceptionId: string): Promise<boolean> {
+  const ex = await repository.findException(tenantId, exceptionId);
+  return Boolean(ex?.agentToolCallId && (ex.status === "OPEN" || ex.status === "IN_PROGRESS"));
 }
 
 /** Closes many exceptions at once without recovering them. Items in workspaces outside the caller's portfolio are skipped, never touched. */
 export async function closeExceptionsInBulk(allowedTenantIds: ReadonlySet<string>, items: { tenantId: string; exceptionId: string }[], resolution: string, userId: string): Promise<BulkCloseResult> {
-  const result: BulkCloseResult = { closedIds: [], alreadyResolved: 0, outsidePortfolio: 0 };
+  const result: BulkCloseResult = { closedIds: [], alreadyResolved: 0, outsidePortfolio: 0, agentApprovals: 0 };
   const seen = new Set<string>();
   for (const item of items) {
     const key = `${item.tenantId}:${item.exceptionId}`;
@@ -52,6 +63,7 @@ export async function closeExceptionsInBulk(allowedTenantIds: ReadonlySet<string
     }
     const ex = await settleException(item.tenantId, item.exceptionId, resolution, false, userId);
     if (ex) result.closedIds.push(item.exceptionId);
+    else if (await isOpenAgentApproval(item.tenantId, item.exceptionId)) result.agentApprovals++;
     else result.alreadyResolved++;
   }
   return result;

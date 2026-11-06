@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight, Settings } from "lucide-react";
+import { ArrowUpRight, Bot, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContentStudio } from "@/components/console/content-studio";
@@ -87,6 +87,11 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
         }
         actions={
           <>
+            <Button asChild variant="outline">
+              <Link href={`${base}/agents`}>
+                <Bot /> Agents
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href={`${base}/settings`}>
                 <Settings /> Settings

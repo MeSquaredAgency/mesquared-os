@@ -1,5 +1,6 @@
 import {
   Prisma,
+  type AgentGuidance,
   type AgentMessage,
   type AgentRun,
   type AgentToolCall,
@@ -44,6 +45,7 @@ import { getPrisma } from "@/lib/prisma";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
+  AgentGuidanceRecord,
   AgentMessageRecord,
   AgentRunRecord,
   AgentRunStatus,
@@ -229,6 +231,7 @@ const toAgentRun = (r: AgentRun): AgentRunRecord => ({
   createdAt: r.createdAt,
 });
 const toAgentMessage = (m: AgentMessage): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role === "assistant" ? "assistant" : "user", content: (m.content ?? []) as Record<string, unknown>[], stopReason: m.stopReason, createdAt: m.createdAt });
+const toAgentGuidance = (g: AgentGuidance): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
   id: c.id,
   tenantId: c.tenantId,
@@ -236,6 +239,7 @@ const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
   toolUseId: c.toolUseId,
   name: c.name,
   input: (c.input ?? {}) as Record<string, unknown>,
+  editedInput: c.editedInput && typeof c.editedInput === "object" && !Array.isArray(c.editedInput) ? (c.editedInput as Record<string, unknown>) : null,
   risk: c.risk,
   decision: c.decision,
   reason: c.reason,
@@ -1088,7 +1092,7 @@ export const prismaRepository: Repository = {
     return rows.map(toAgentMessage);
   },
 
-  async appendAgentMessage(tenantId, runId, message, toolCalls = []) {
+  async appendAgentMessage(tenantId, runId, message, toolCalls = [], deliversGuidance = []) {
     const db = getPrisma();
     const run = await db.agentRun.findFirst({ where: { id: runId, tenantId }, select: { id: true } });
     if (!run) throw new TenantMismatchError("AgentRun", runId);
@@ -1102,12 +1106,25 @@ export const prismaRepository: Repository = {
               }),
             ]
           : []),
+        ...(deliversGuidance.length > 0 ? [db.agentGuidance.updateMany({ where: { id: { in: deliversGuidance }, runId, tenantId, deliveredSeq: null }, data: { deliveredSeq: message.seq } })] : []),
       ]);
       return toAgentMessage(row as AgentMessage);
     } catch (error) {
       if (isUniqueViolation(error)) throw new AgentTurnConflict(runId, message.seq);
       throw error;
     }
+  },
+
+  async listAgentGuidance(tenantId, runId) {
+    const rows = await getPrisma().agentGuidance.findMany({ where: { runId, tenantId }, orderBy: { createdAt: "asc" } });
+    return rows.map(toAgentGuidance);
+  },
+
+  async addAgentGuidance(tenantId, runId, data) {
+    const db = getPrisma();
+    const run = await db.agentRun.findFirst({ where: { id: runId, tenantId }, select: { id: true } });
+    if (!run) throw new TenantMismatchError("AgentRun", runId);
+    return toAgentGuidance(await db.agentGuidance.create({ data: { tenantId, runId, text: data.text, createdById: data.createdById } }));
   },
 
   async listAgentToolCalls(tenantId, runId) {
@@ -1124,6 +1141,7 @@ export const prismaRepository: Repository = {
     const db = getPrisma();
     const data = {
       ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.editedInput !== undefined ? { editedInput: patch.editedInput === null ? Prisma.JsonNull : json(patch.editedInput) } : {}),
       ...(patch.result !== undefined ? { result: patch.result === null ? Prisma.JsonNull : json(patch.result) } : {}),
       ...(patch.isError !== undefined ? { isError: patch.isError } : {}),
       ...(patch.decidedById !== undefined ? { decidedById: patch.decidedById } : {}),
@@ -1184,8 +1202,13 @@ export const prismaRepository: Repository = {
     return rows.map(toException);
   },
 
+  async findException(tenantId, exId) {
+    const row = await getPrisma().exceptionItem.findFirst({ where: { id: exId, tenantId } });
+    return row ? toException(row) : null;
+  },
+
   async resolveException(tenantId, exId, resolution) {
-    const { count } = await getPrisma().exceptionItem.updateMany({ where: { id: exId, tenantId, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { status: "RESOLVED", resolution, resolvedAt: new Date() } });
+    const { count } = await getPrisma().exceptionItem.updateMany({ where: { id: exId, tenantId, agentToolCallId: null, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { status: "RESOLVED", resolution, resolvedAt: new Date() } });
     if (count === 0) return null;
     const row = await getPrisma().exceptionItem.findUnique({ where: { id: exId } });
     return row ? toException(row) : null;

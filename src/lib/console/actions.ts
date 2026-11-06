@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getConsoleContext } from "@/lib/auth/access";
 import { repository } from "@/lib/data";
 import { emit } from "@/lib/events";
-import { closeExceptionsInBulk, settleException } from "@/lib/console/resolve";
+import { closeExceptionsInBulk, isOpenAgentApproval, settleException } from "@/lib/console/resolve";
 
 export interface ActionResult {
   ok: boolean;
@@ -21,7 +21,7 @@ export async function resolveException(tenantId: string, exceptionId: string, re
   const { tenants, user } = await getConsoleContext();
   if (!tenants.some((t) => t.tenant.id === tenantId)) return { ok: false, message: "That workspace isn’t in your portfolio." };
   const ex = await settleException(tenantId, exceptionId, resolution, recovered, user.id);
-  if (!ex) return { ok: false, message: "That item was already resolved." };
+  if (!ex) return { ok: false, message: (await isOpenAgentApproval(tenantId, exceptionId)) ? "An agent is waiting on this one: approve or decline it instead." : "That item was already resolved." };
   revalidatePath("/console");
   return { ok: true, message: recovered ? "Marked recovered." : "Closed." };
 }
@@ -43,6 +43,7 @@ export async function closeExceptions(items: { tenantId: string; exceptionId: st
   const closed = result.closedIds.length;
   const parts = [`Closed ${closed} item${closed === 1 ? "" : "s"}.`];
   if (result.alreadyResolved) parts.push(`${result.alreadyResolved} ${result.alreadyResolved === 1 ? "was" : "were"} already resolved.`);
+  if (result.agentApprovals) parts.push(`${result.agentApprovals} ${result.agentApprovals === 1 ? "is an agent" : "are agents"} waiting for a decision, so ${result.agentApprovals === 1 ? "it was" : "they were"} left for you to approve or decline.`);
   if (result.outsidePortfolio) parts.push(`${result.outsidePortfolio} ${result.outsidePortfolio === 1 ? "isn’t" : "aren’t"} in your portfolio and ${result.outsidePortfolio === 1 ? "was" : "were"} left alone.`);
   return { ok: closed > 0, message: parts.join(" "), closedIds: result.closedIds };
 }
