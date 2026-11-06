@@ -7,8 +7,14 @@
  */
 import assert from "node:assert/strict";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
+import { z } from "zod";
+import { _setClaudeClientForTests } from "@/lib/ai/claude";
+import { AGENT_LEASE_MS, decideAgentAction, driveAgentRun, startAgentRun } from "@/lib/agents/runtime";
+import { ROLE_BY_KEY } from "@/lib/agents/roles";
+import { defineTool, type AgentTool } from "@/lib/agents/tool";
+import { TOOL_BY_NAME } from "@/lib/agents/tools";
 import { dataMode, repository } from "@/lib/data";
-import { TenantMismatchError } from "@/lib/data/repository";
+import { AgentTurnConflict, TenantMismatchError } from "@/lib/data/repository";
 import { emit } from "@/lib/events";
 import { sendMessage } from "@/lib/messaging";
 import { processIntake } from "@/lib/intake/process";
@@ -241,6 +247,81 @@ await step("agents: a tenant's agent settings, and a send that goes out once per
   assert.equal(second.messageId, first.messageId);
   assert.equal((await repository.findMessageByIdempotencyKey(harbor!.id, key))?.id, first.messageId);
   assert.equal(await repository.findMessageByIdempotencyKey(summit!.id, key), null);
+});
+
+await step("agent runs: a supervised run on a scripted Claude, parked for approval, resumed, transcript kept byte for byte", async () => {
+  const role = `parity_run_${stamp}`;
+  const sends: string[] = [];
+  const send = defineTool({ name: `parity_send_${stamp}`, description: "Sends.", input: z.object({ body: z.string() }), risk: "external", module: null, preview: (i) => ({ title: "send a note", body: i.body }), run: async (ctx) => (sends.push(ctx.callKey), { sent: true }) }) as AgentTool;
+  TOOL_BY_NAME[send.name] = send;
+  ROLE_BY_KEY[role] = { key: role, name: "Parity Agent", responsibilities: "Checks the runtime on Postgres.", tools: ["get_lead", send.name], maxAutonomy: "SUPERVISED", canDelegateTo: [] };
+  const mode = process.env.AGENTS_MODE;
+  process.env.AGENTS_MODE = "live";
+  const usage = { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: null };
+  const turn1 = [
+    { type: "thinking", thinking: "Check the lead, then send a note.", signature: "c2lnbmF0dXJl/+==" },
+    { type: "tool_use", id: "toolu_p1", name: "get_lead", input: { leadId: greenLeadId } },
+    { type: "tool_use", id: "toolu_p2", name: send.name, input: { body: "Parity — ünïcode and \"quotes\"" } },
+  ];
+  const answers = [
+    { id: "msg_p1", type: "message", role: "assistant", model: "claude-opus-5-5", content: turn1, stop_reason: "tool_use", stop_sequence: null, stop_details: null, usage, _request_id: "req_p1" },
+    { id: "msg_p2", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "Sent.", citations: null }], stop_reason: "end_turn", stop_sequence: null, stop_details: null, usage, _request_id: "req_p2" },
+  ];
+  const requests: { messages: { role: string; content: unknown[] }[] }[] = [];
+  _setClaudeClientForTests({ messages: { create: async (params: { messages: { role: string; content: unknown[] }[] }) => (requests.push(structuredClone(params)), answers.shift()) } });
+  try {
+    await repository.upsertTenantAgent(harbor!.id, role, { enabled: true, autonomy: "SUPERVISED" }, null);
+    const started = await startAgentRun({ tenant: harbor!, roleKey: role, trigger: "parity", dedupeKey: `parity:${stamp}`, task: "Follow up.", leadId: greenLeadId });
+    assert.ok(started.ok && started.created);
+    const again = await startAgentRun({ tenant: harbor!, roleKey: role, trigger: "parity", dedupeKey: `parity:${stamp}`, task: "Follow up." });
+    assert.ok(again.ok && !again.created && again.run.id === started.run.id, "one run per dedupe key");
+    const run = started.run;
+
+    assert.equal(await repository.claimAgentRun(run.id, new Date(), AGENT_LEASE_MS), true);
+    assert.equal(await repository.claimAgentRun(run.id, new Date(), AGENT_LEASE_MS), false, "one worker at a time");
+    assert.equal(await driveAgentRun(run.id, harbor!.id, Date.now() + 30_000), "waiting");
+    const calls = await repository.listAgentToolCalls(harbor!.id, run.id);
+    assert.deepEqual(calls.map((c) => [c.toolUseId, c.status]).sort(), [["toolu_p1", "DONE"], ["toolu_p2", "AWAITING_APPROVAL"]]);
+    const asking = calls.find((c) => c.toolUseId === "toolu_p2")!;
+    const exceptions = await repository.listExceptions([harbor!.id]);
+    const card = exceptions.find((e) => e.agentToolCallId === asking.id);
+    assert.ok(card && card.agentRunId === run.id, "approval in the queue, linked to the run and the call");
+    const sameCard = await repository.createException(harbor!.id, { reason: "again", agentToolCallId: asking.id });
+    assert.equal(sameCard.id, card!.id, "one approval per call");
+    await assert.rejects(repository.createException(summit!.id, { reason: "x", agentToolCallId: asking.id }), TenantMismatchError);
+
+    assert.equal((await decideAgentAction(summit!, asking.id, { approve: true, userId: "x" })).ok, false);
+    assert.equal((await decideAgentAction(harbor!, asking.id, { approve: true, userId: "parity" })).ok, true);
+    assert.equal((await repository.findAgentRun(harbor!.id, run.id))?.status, "QUEUED");
+    assert.equal(await repository.claimAgentRun(run.id, new Date(), AGENT_LEASE_MS), true);
+    assert.equal(await driveAgentRun(run.id, harbor!.id, Date.now() + 30_000), "done");
+    assert.deepEqual(sends, [`${run.id}:toolu_p2`]);
+
+    const done = await repository.findAgentRun(harbor!.id, run.id);
+    assert.equal(done?.status, "DONE");
+    assert.equal(done?.summary, "Sent.");
+    assert.equal(done?.steps, 2);
+    assert.equal(done?.costMicros, 16_000, "cost survives the bigint column");
+    const transcript = await repository.listAgentMessages(harbor!.id, run.id);
+    assert.deepEqual(transcript.map((m) => [m.seq, m.role, m.stopReason]), [[0, "user", null], [1, "assistant", "tool_use"], [2, "user", null], [3, "assistant", "end_turn"]]);
+    assert.deepEqual(transcript[1].content, turn1, "thinking, signature and unicode come back from jsonb unchanged");
+    assert.deepEqual(requests[1].messages[1].content, turn1);
+    await assert.rejects(repository.appendAgentMessage(harbor!.id, run.id, { seq: 3, role: "user", content: [] }), AgentTurnConflict);
+    await assert.rejects(repository.appendAgentMessage(summit!.id, run.id, { seq: 4, role: "user", content: [] }), TenantMismatchError);
+    assert.equal((await repository.listExceptions([harbor!.id], { status: ["RESOLVED"], limit: 500 })).find((e) => e.id === card!.id)?.status, "RESOLVED");
+    const spent = await repository.sumAiUsage(harbor!.id, new Date(Date.now() - 3_600_000), { featurePrefix: `agent:${role}` });
+    assert.equal(spent.calls, 2);
+    assert.equal(spent.costMicros, 16_000);
+    assert.equal(await repository.findAgentRun(summit!.id, run.id), null);
+    assert.deepEqual(await repository.listAgentToolCalls(summit!.id, run.id), []);
+  } finally {
+    await repository.upsertTenantAgent(harbor!.id, role, { enabled: false }, null).catch(() => {});
+    _setClaudeClientForTests(null);
+    delete ROLE_BY_KEY[role];
+    delete TOOL_BY_NAME[send.name];
+    if (mode === undefined) delete process.env.AGENTS_MODE;
+    else process.env.AGENTS_MODE = mode;
+  }
 });
 
 await step("content: create assets and decide", async () => {

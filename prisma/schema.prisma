@@ -161,6 +161,7 @@ model Tenant {
   automationRuns      AutomationRun[]
   aiUsage             AiUsage[]
   agents              TenantAgent[]
+  agentRuns           AgentRun[]
   exceptions          ExceptionItem[]
   events              DomainEvent[]
   channels            Channel[]
@@ -320,6 +321,7 @@ model Contact {
   missedOpportunities MissedOpportunity[]
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
+  agentRuns           AgentRun[]
   transactions        Transaction[]
   invoices     Invoice[]
   informationRequests InformationRequest[]
@@ -467,6 +469,7 @@ model Lead {
   missedOpportunities MissedOpportunity[]
   automationRuns      AutomationRun[]
   exceptions          ExceptionItem[]
+  agentRuns           AgentRun[]
   transactions        Transaction[]
   informationRequests InformationRequest[]
 
@@ -811,6 +814,7 @@ model MissedOpportunity {
   lead      Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   exception ExceptionItem?
   runs      AutomationRun[]
+  agentRuns AgentRun[]
 
   @@unique([tenantId, dedupeKey])
   @@index([tenantId, status, detectedAt])
@@ -872,6 +876,113 @@ model TenantAgent {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, roleKey])
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  WAITING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum AgentToolCallStatus {
+  PENDING
+  AWAITING_APPROVAL
+  APPROVED
+  DONE
+  ERROR
+  PROPOSED
+  REFUSED
+  REJECTED
+  EXPIRED
+}
+
+/// One piece of work an agent does (src/lib/agents/runtime.ts). QUEUED and stale RUNNING runs are picked up by
+/// /api/jobs/agents; WAITING runs are parked on a person. Tokens and cost are the run's own totals; the ledger
+/// (AiUsage) has a row per call as well.
+model AgentRun {
+  id                  String         @id @default(cuid())
+  tenantId            String
+  roleKey             String
+  status              AgentRunStatus @default(QUEUED)
+  /// What started it, e.g. "missed_opportunity"; one trigger starts one run through dedupeKey.
+  trigger             String
+  dedupeKey           String?
+  /// The autonomy the run worked under at its latest step.
+  autonomy            AgentAutonomy
+  model               String
+  steps               Int            @default(0)
+  tokens              Int            @default(0)
+  costMicros          BigInt         @default(0)
+  /// Failures of the current step in a row; reset when a step succeeds.
+  attempts            Int            @default(0)
+  nextStepAt          DateTime       @default(now())
+  lockedAt            DateTime?
+  summary             String?
+  error               String?
+  leadId              String?
+  contactId           String?
+  missedOpportunityId String?
+  finishedAt          DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  missedOpportunity MissedOpportunity? @relation(fields: [missedOpportunityId], references: [id], onDelete: SetNull)
+  messages          AgentMessage[]
+  toolCalls         AgentToolCall[]
+  exceptions        ExceptionItem[]
+
+  @@unique([tenantId, dedupeKey])
+  @@index([status, nextStepAt])
+  @@index([tenantId, createdAt])
+}
+
+/// The run's conversation with Claude, append-only: content is the Messages API blocks exactly as sent or received,
+/// thinking blocks and their signatures included, because they must go back unchanged.
+model AgentMessage {
+  id         String   @id @default(cuid())
+  tenantId   String
+  runId      String
+  seq        Int
+  role       String
+  content    Json
+  stopReason String?
+  createdAt  DateTime @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, seq])
+}
+
+/// One tool call the model asked for, with the policy's decision and, once there is one, the result it was given.
+model AgentToolCall {
+  id          String              @id @default(cuid())
+  tenantId    String
+  runId       String
+  toolUseId   String
+  name        String
+  input       Json
+  risk        String
+  decision    String
+  reason      String
+  status      AgentToolCallStatus
+  result      Json?
+  isError     Boolean             @default(false)
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  run       AgentRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  exception ExceptionItem?
+
+  @@unique([runId, toolUseId])
+  @@index([tenantId, status])
 }
 
 /// One row per Claude call: what it was for and what it cost (src/lib/ai/claude.ts).
@@ -939,6 +1050,9 @@ model ExceptionItem {
   contactId           String?
   leadId              String?
   missedOpportunityId String?         @unique
+  /// Raised by an agent run (a failure, a budget stop); and, for an approval, the one tool call it asks about.
+  agentRunId          String?
+  agentToolCallId     String?         @unique
   resolution          String?
   resolvedAt          DateTime?
   createdAt           DateTime        @default(now())
@@ -950,6 +1064,8 @@ model ExceptionItem {
   contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
   lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
   missedOpportunity MissedOpportunity? @relation(fields: [missedOpportunityId], references: [id], onDelete: SetNull)
+  agentRun          AgentRun?          @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  agentToolCall     AgentToolCall?     @relation(fields: [agentToolCallId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, createdAt])
   @@index([assignedOperatorId, status])

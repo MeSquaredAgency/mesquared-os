@@ -1,5 +1,8 @@
 import {
   Prisma,
+  type AgentMessage,
+  type AgentRun,
+  type AgentToolCall,
   type AutomationRun,
   type TenantAgent,
   type Booking,
@@ -41,6 +44,10 @@ import { getPrisma } from "@/lib/prisma";
 import type {
   AdAccountRecord,
   AdSpendSnapshotRecord,
+  AgentMessageRecord,
+  AgentRunRecord,
+  AgentRunStatus,
+  AgentToolCallRecord,
   OnboardingRecord,
   OnboardingStatus,
   ApiKeyRecord,
@@ -84,7 +91,7 @@ import type {
   WebEventRecord,
 } from "@/lib/types";
 import { monthBucketInZone, monthProgressInZone, startOfDayInZone, startOfMonthInZone } from "@/lib/utils";
-import { isApiKeyScope, TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
+import { AgentTurnConflict, isApiKeyScope, TenantMismatchError, type NewContentAsset, type NewMessage, type Repository } from "./repository";
 
 /** How many tenants the portfolio query works on at once. */
 const PORTFOLIO_CONCURRENCY = 5;
@@ -197,7 +204,54 @@ const toTenantAgent = (a: TenantAgent): TenantAgentRecord => ({
   updatedAt: a.updatedAt,
 });
 const toRun = (r: AutomationRun): AutomationRunRecord => ({ id: r.id, tenantId: r.tenantId, typeKey: r.typeKey, outcome: r.outcome, summary: r.summary, leadId: r.leadId, contactId: r.contactId, missedOpportunityId: r.missedOpportunityId, createdAt: r.createdAt });
-const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, createdAt: e.createdAt });
+const toException = (e: ExceptionItem): ExceptionRecord => ({ id: e.id, tenantId: e.tenantId, reason: e.reason, suggestedAction: e.suggestedAction, confidence: e.confidence, status: e.status, assignedOperatorId: e.assignedOperatorId, escalatedToUserId: e.escalatedToUserId, contactId: e.contactId, leadId: e.leadId, missedOpportunityId: e.missedOpportunityId, agentRunId: e.agentRunId, agentToolCallId: e.agentToolCallId, createdAt: e.createdAt });
+const toAgentRun = (r: AgentRun): AgentRunRecord => ({
+  id: r.id,
+  tenantId: r.tenantId,
+  roleKey: r.roleKey,
+  status: r.status,
+  trigger: r.trigger,
+  dedupeKey: r.dedupeKey,
+  autonomy: r.autonomy,
+  model: r.model,
+  steps: r.steps,
+  tokens: r.tokens,
+  costMicros: Number(r.costMicros),
+  attempts: r.attempts,
+  nextStepAt: r.nextStepAt,
+  lockedAt: r.lockedAt,
+  summary: r.summary,
+  error: r.error,
+  leadId: r.leadId,
+  contactId: r.contactId,
+  missedOpportunityId: r.missedOpportunityId,
+  finishedAt: r.finishedAt,
+  createdAt: r.createdAt,
+});
+const toAgentMessage = (m: AgentMessage): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role === "assistant" ? "assistant" : "user", content: (m.content ?? []) as Record<string, unknown>[], stopReason: m.stopReason, createdAt: m.createdAt });
+const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
+  id: c.id,
+  tenantId: c.tenantId,
+  runId: c.runId,
+  toolUseId: c.toolUseId,
+  name: c.name,
+  input: (c.input ?? {}) as Record<string, unknown>,
+  risk: c.risk,
+  decision: c.decision,
+  reason: c.reason,
+  status: c.status,
+  result: c.result,
+  isError: c.isError,
+  decidedById: c.decidedById,
+  decidedAt: c.decidedAt,
+  createdAt: c.createdAt,
+});
+
+/** A run with a step due: queued or parked and its time has come, or running on a lease that has run out. */
+const dueAgentRuns = (now: Date, leaseMs: number): Prisma.AgentRunWhereInput => ({
+  OR: [{ status: { in: ["QUEUED", "WAITING"] }, nextStepAt: { lte: now } }, { status: "RUNNING", OR: [{ lockedAt: null }, { lockedAt: { lt: new Date(now.getTime() - leaseMs) } }] }],
+});
+const isUniqueViolation = (error: unknown) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 const toEvent = (e: DomainEvent): DomainEventRecord => ({ id: e.id, tenantId: e.tenantId, type: e.type, payload: obj(e.payload), causationId: e.causationId, occurredAt: e.occurredAt });
 const toAdAccount = (a: AdAccount): AdAccountRecord => ({ id: a.id, tenantId: a.tenantId, platform: a.platform, externalAccountId: a.externalAccountId, name: a.name, currency: a.currency, monthlyBudgetCents: a.monthlyBudgetCents, isActive: a.isActive, lastSyncAt: a.lastSyncAt, lastError: a.lastError, settings: obj(a.settings) });
 const toAdSpend = (x: AdSpendSnapshot): AdSpendSnapshotRecord => ({ id: x.id, tenantId: x.tenantId, adAccountId: x.adAccountId, platform: x.platform, date: x.date, campaignId: x.campaignId, campaignName: x.campaignName, spendCents: x.spendCents, impressions: x.impressions, clicks: x.clicks, platformLeads: x.platformLeads });
@@ -227,6 +281,12 @@ async function assertContactInTenant(tenantId: string, contactId: string | null 
   if (!contactId) return;
   const found = await getPrisma().contact.findFirst({ where: { id: contactId, tenantId }, select: { id: true } });
   if (!found) throw new TenantMismatchError("Contact", contactId);
+}
+
+async function assertMissedInTenant(tenantId: string, missedOpportunityId: string | null | undefined) {
+  if (!missedOpportunityId) return;
+  const found = await getPrisma().missedOpportunity.findFirst({ where: { id: missedOpportunityId, tenantId }, select: { id: true } });
+  if (!found) throw new TenantMismatchError("MissedOpportunity", missedOpportunityId);
 }
 
 /** PostgreSQL-backed repository. Every query is filtered by tenantId. */
@@ -944,9 +1004,9 @@ export const prismaRepository: Repository = {
     await getPrisma().aiUsage.create({ data: { tenantId, ...data, costMicros: BigInt(data.costMicros) } });
   },
 
-  async sumAiUsage(tenantId, since) {
+  async sumAiUsage(tenantId, since, opts = {}) {
     const r = await getPrisma().aiUsage.aggregate({
-      where: { tenantId, createdAt: { gte: since } },
+      where: { tenantId, createdAt: { gte: since }, ...(opts.featurePrefix ? { feature: { startsWith: opts.featurePrefix } } : {}) },
       _count: { _all: true },
       _sum: { inputTokens: true, outputTokens: true, cacheWriteTokens: true, cacheReadTokens: true, costMicros: true },
     });
@@ -958,6 +1018,121 @@ export const prismaRepository: Repository = {
       cacheReadTokens: r._sum.cacheReadTokens ?? 0,
       costMicros: Number(r._sum.costMicros ?? 0),
     };
+  },
+
+  async createAgentRun(tenantId, data) {
+    await assertLeadInTenant(tenantId, data.leadId);
+    await assertContactInTenant(tenantId, data.contactId);
+    await assertMissedInTenant(tenantId, data.missedOpportunityId);
+    const db = getPrisma();
+    if (data.dedupeKey) {
+      const prior = await db.agentRun.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+      if (prior) return { run: toAgentRun(prior), created: false };
+    }
+    // The run and its opening turn go in together: a run is never left without the message it starts from.
+    try {
+      const row = await db.agentRun.create({
+        data: {
+          tenantId,
+          roleKey: data.roleKey,
+          trigger: data.trigger,
+          dedupeKey: data.dedupeKey ?? null,
+          autonomy: data.autonomy,
+          model: data.model,
+          leadId: data.leadId ?? null,
+          contactId: data.contactId ?? null,
+          missedOpportunityId: data.missedOpportunityId ?? null,
+          messages: { create: { tenantId, seq: 0, role: "user", content: json(data.opening) } },
+        },
+      });
+      return { run: toAgentRun(row), created: true };
+    } catch (error) {
+      if (!data.dedupeKey || !isUniqueViolation(error)) throw error;
+      const row = await db.agentRun.findUnique({ where: { tenantId_dedupeKey: { tenantId, dedupeKey: data.dedupeKey } } });
+      if (!row) throw error;
+      return { run: toAgentRun(row), created: false };
+    }
+  },
+
+  async findAgentRun(tenantId, runId) {
+    const row = await getPrisma().agentRun.findFirst({ where: { id: runId, tenantId } });
+    return row ? toAgentRun(row) : null;
+  },
+
+  async listAgentRuns(tenantId, opts = {}) {
+    const rows = await getPrisma().agentRun.findMany({ where: { tenantId, ...(opts.roleKey ? { roleKey: opts.roleKey } : {}), ...(opts.status ? { status: { in: opts.status } } : {}) }, orderBy: { createdAt: "desc" }, take: opts.limit ?? 50 });
+    return rows.map(toAgentRun);
+  },
+
+  async listDueAgentRuns(now, leaseMs, limit = 20) {
+    const rows = await getPrisma().agentRun.findMany({ where: dueAgentRuns(now, leaseMs), orderBy: { nextStepAt: "asc" }, take: limit });
+    return rows.map(toAgentRun);
+  },
+
+  async claimAgentRun(runId, now, leaseMs) {
+    const { count } = await getPrisma().agentRun.updateMany({ where: { id: runId, ...dueAgentRuns(now, leaseMs) }, data: { status: "RUNNING", lockedAt: now } });
+    return count === 1;
+  },
+
+  async updateAgentRun(tenantId, runId, patch, onlyIf) {
+    const { count } = await getPrisma().agentRun.updateMany({ where: { id: runId, tenantId, ...(onlyIf ? { status: { in: onlyIf as AgentRunStatus[] } } : {}) }, data: patch });
+    return count === 1;
+  },
+
+  async addAgentRunUsage(tenantId, runId, usage) {
+    await getPrisma().agentRun.updateMany({ where: { id: runId, tenantId }, data: { steps: { increment: 1 }, tokens: { increment: usage.tokens }, costMicros: { increment: BigInt(usage.costMicros) } } });
+  },
+
+  async listAgentMessages(tenantId, runId) {
+    const rows = await getPrisma().agentMessage.findMany({ where: { runId, tenantId }, orderBy: { seq: "asc" } });
+    return rows.map(toAgentMessage);
+  },
+
+  async appendAgentMessage(tenantId, runId, message, toolCalls = []) {
+    const db = getPrisma();
+    const run = await db.agentRun.findFirst({ where: { id: runId, tenantId }, select: { id: true } });
+    if (!run) throw new TenantMismatchError("AgentRun", runId);
+    try {
+      const [row] = await db.$transaction([
+        db.agentMessage.create({ data: { tenantId, runId, seq: message.seq, role: message.role, content: json(message.content), stopReason: message.stopReason ?? null } }),
+        ...(toolCalls.length > 0
+          ? [
+              db.agentToolCall.createMany({
+                data: toolCalls.map((c) => ({ tenantId, runId, toolUseId: c.toolUseId, name: c.name, input: json(c.input), risk: c.risk, decision: c.decision, reason: c.reason, status: c.status, result: c.result === undefined || c.result === null ? Prisma.JsonNull : json(c.result), isError: c.isError ?? false })),
+              }),
+            ]
+          : []),
+      ]);
+      return toAgentMessage(row as AgentMessage);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new AgentTurnConflict(runId, message.seq);
+      throw error;
+    }
+  },
+
+  async listAgentToolCalls(tenantId, runId) {
+    const rows = await getPrisma().agentToolCall.findMany({ where: { runId, tenantId }, orderBy: { createdAt: "asc" } });
+    return rows.map(toAgentToolCall);
+  },
+
+  async findAgentToolCall(tenantId, callId) {
+    const row = await getPrisma().agentToolCall.findFirst({ where: { id: callId, tenantId } });
+    return row ? toAgentToolCall(row) : null;
+  },
+
+  async updateAgentToolCall(tenantId, callId, patch, onlyIf) {
+    const db = getPrisma();
+    const data = {
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.result !== undefined ? { result: patch.result === null ? Prisma.JsonNull : json(patch.result) } : {}),
+      ...(patch.isError !== undefined ? { isError: patch.isError } : {}),
+      ...(patch.decidedById !== undefined ? { decidedById: patch.decidedById } : {}),
+      ...(patch.decidedAt !== undefined ? { decidedAt: patch.decidedAt } : {}),
+    };
+    const { count } = await db.agentToolCall.updateMany({ where: { id: callId, tenantId, ...(onlyIf ? { status: { in: onlyIf } } : {}) }, data });
+    if (count === 0) return null;
+    const row = await db.agentToolCall.findUnique({ where: { id: callId } });
+    return row ? toAgentToolCall(row) : null;
   },
 
   async updateAutomationRun(tenantId, runId, patch) {
@@ -981,6 +1156,16 @@ export const prismaRepository: Repository = {
   async createException(tenantId, data) {
     await assertLeadInTenant(tenantId, data.leadId);
     await assertContactInTenant(tenantId, data.contactId);
+    if (data.agentToolCallId) {
+      const prior = await getPrisma().exceptionItem.findUnique({ where: { agentToolCallId: data.agentToolCallId } });
+      if (prior && prior.tenantId === tenantId) return toException(prior);
+      const call = await getPrisma().agentToolCall.findFirst({ where: { id: data.agentToolCallId, tenantId }, select: { id: true } });
+      if (!call) throw new TenantMismatchError("AgentToolCall", data.agentToolCallId);
+    }
+    if (data.agentRunId) {
+      const run = await getPrisma().agentRun.findFirst({ where: { id: data.agentRunId, tenantId }, select: { id: true } });
+      if (!run) throw new TenantMismatchError("AgentRun", data.agentRunId);
+    }
     if (data.missedOpportunityId) {
       const prior = await getPrisma().exceptionItem.findUnique({ where: { missedOpportunityId: data.missedOpportunityId } });
       if (prior && prior.tenantId === tenantId) {
@@ -989,7 +1174,7 @@ export const prismaRepository: Repository = {
       }
     }
     const row = await getPrisma().exceptionItem.create({
-      data: { tenantId, reason: data.reason, suggestedAction: data.suggestedAction ?? null, confidence: data.confidence ?? null, contactId: data.contactId ?? null, leadId: data.leadId ?? null, missedOpportunityId: data.missedOpportunityId ?? null, escalatedToUserId: data.escalatedToUserId ?? null },
+      data: { tenantId, reason: data.reason, suggestedAction: data.suggestedAction ?? null, confidence: data.confidence ?? null, contactId: data.contactId ?? null, leadId: data.leadId ?? null, missedOpportunityId: data.missedOpportunityId ?? null, escalatedToUserId: data.escalatedToUserId ?? null, agentRunId: data.agentRunId ?? null, agentToolCallId: data.agentToolCallId ?? null },
     });
     return toException(row);
   },
@@ -1004,6 +1189,10 @@ export const prismaRepository: Repository = {
     if (count === 0) return null;
     const row = await getPrisma().exceptionItem.findUnique({ where: { id: exId } });
     return row ? toException(row) : null;
+  },
+
+  async resolveAgentToolCallException(tenantId, toolCallId, resolution) {
+    await getPrisma().exceptionItem.updateMany({ where: { tenantId, agentToolCallId: toolCallId, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { status: "RESOLVED", resolution, resolvedAt: new Date() } });
   },
 
   async appendEvent(tenantId, type, payload = {}, causationId = null) {

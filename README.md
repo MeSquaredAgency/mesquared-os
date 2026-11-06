@@ -83,6 +83,7 @@ src/app/console                  Operator Console: portfolio, queue, workspace d
 src/app/app/[tenant]             Client Portal: home, leads, missed opportunities, content, activity
 src/app/api/v1/intake            Lead intake: API key → zod → dedupe → qualify → contact → lead → playbook
 src/app/api/jobs/tick            Scheduler tick: missed-opportunity detectors + due scheduled actions (JOB_SECRET)
+src/app/api/jobs/agents          Steps due agent runs; the cron calls it beside the tick (JOB_SECRET, AGENTS_MODE)
 src/app/book/[tenant]            Platform booking fallback page (Cal.com when connected, otherwise a callback request)
 src/lib/templates                Industry templates (real estate, health & fitness, generic)
 src/lib/modules, src/lib/automations   Module and automation registries

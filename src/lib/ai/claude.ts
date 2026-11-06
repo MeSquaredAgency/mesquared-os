@@ -7,8 +7,9 @@ import { costMicros } from "./prices";
 /**
  * The one way the app talks to Claude. `claudeClient` builds (and reuses) the
  * SDK client; `recordClaudeUsage` writes the ledger row every call owes, with
- * its cost, so spend can be read per tenant and per feature. Recording never
- * throws: a ledger failure is logged and the caller carries on.
+ * its cost, so spend can be read per tenant and per feature, and returns that
+ * cost. Recording never throws: a ledger failure is logged and the caller
+ * carries on.
  */
 
 export interface ClaudeClientOptions {
@@ -49,17 +50,19 @@ export interface ClaudeResponseLike {
 
 export interface ClaudeCall {
   tenantId: string | null | undefined;
-  feature: AiFeature;
+  /** An agent's calls are recorded per role, e.g. "agent:customer_relations". */
+  feature: Exclude<AiFeature, "agent"> | `agent:${string}`;
   /** The model requested; the response's own model wins when it names one. */
   model: string;
   /** Date.now() when the request was sent. */
   startedAt: number;
 }
 
-export async function recordClaudeUsage(call: ClaudeCall, response: ClaudeResponseLike): Promise<void> {
+/** Returns the call's cost in millionths of a US dollar; 0 when the model has no price. */
+export async function recordClaudeUsage(call: ClaudeCall, response: ClaudeResponseLike): Promise<number> {
   if (!call.tenantId) {
     log("warn", "ai.usage_untenanted", { feature: call.feature });
-    return;
+    return 0;
   }
   const usage = response.usage ?? {};
   const cacheWriteTokens = usage.cache_creation_input_tokens ?? 0;
@@ -90,6 +93,7 @@ export async function recordClaudeUsage(call: ClaudeCall, response: ClaudeRespon
   } catch (error) {
     log("error", "ai.usage_record_failed", { tenantId: call.tenantId, feature: call.feature, message: errorText(error) });
   }
+  return cost ?? 0;
 }
 
 /** Tests swap in a scripted client; pass null to restore the real one. */

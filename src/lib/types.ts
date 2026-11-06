@@ -535,6 +535,68 @@ export interface TenantAgentRecord {
   updatedAt: Date;
 }
 
+export type AgentRunStatus = "QUEUED" | "RUNNING" | "WAITING" | "DONE" | "FAILED" | "CANCELLED";
+
+/** One piece of work an agent does; see src/lib/agents/runtime.ts. */
+export interface AgentRunRecord {
+  id: string;
+  tenantId: string;
+  roleKey: string;
+  status: AgentRunStatus;
+  trigger: string;
+  dedupeKey: string | null;
+  autonomy: AgentAutonomy;
+  model: string;
+  /** Claude calls made so far. */
+  steps: number;
+  /** Every token the run's calls read or wrote, cached or not; what the per-run cap counts. */
+  tokens: number;
+  costMicros: number;
+  attempts: number;
+  nextStepAt: Date;
+  lockedAt: Date | null;
+  summary: string | null;
+  error: string | null;
+  leadId: string | null;
+  contactId: string | null;
+  missedOpportunityId: string | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
+/** One Messages API turn of a run. `content` is the API's content blocks, kept byte for byte. */
+export interface AgentMessageRecord {
+  id: string;
+  runId: string;
+  seq: number;
+  role: "user" | "assistant";
+  content: Record<string, unknown>[];
+  stopReason: string | null;
+  createdAt: Date;
+}
+
+export type AgentToolCallStatus = "PENDING" | "AWAITING_APPROVAL" | "APPROVED" | "DONE" | "ERROR" | "PROPOSED" | "REFUSED" | "REJECTED" | "EXPIRED";
+
+/** A tool call the model asked for, what the policy decided, and the result it was given. */
+export interface AgentToolCallRecord {
+  id: string;
+  tenantId: string;
+  runId: string;
+  toolUseId: string;
+  name: string;
+  input: Record<string, unknown>;
+  risk: string;
+  decision: string;
+  reason: string;
+  status: AgentToolCallStatus;
+  /** What goes back to the model as the tool_result content. */
+  result: unknown;
+  isError: boolean;
+  decidedById: string | null;
+  decidedAt: Date | null;
+  createdAt: Date;
+}
+
 /** Claude usage summed over a period. Cost is in millionths of a US dollar. */
 export interface AiUsageTotals {
   calls: number;
@@ -559,6 +621,10 @@ export interface ExceptionRecord {
   contactId: string | null;
   leadId: string | null;
   missedOpportunityId: string | null;
+  /** Set when an agent run raised it. */
+  agentRunId: string | null;
+  /** Set when it asks a person to approve one agent action. */
+  agentToolCallId: string | null;
   createdAt: Date;
 }
 
