@@ -296,13 +296,119 @@ describe("what a customer reads", () => {
     await repository.upsertTenantAgent(harbor.id, ROLE, { autonomy: "DELEGATED", toolPolicy: { send_message: "auto" } }, null);
     const lead = await newLead();
     const plain = await startFor(lead);
-    script(reply([toolUse("s4", "send_message", message(lead.id, "Hi Robin, someone will call you this afternoon."))], "tool_use"), reply([text("Sent.")]));
+    script(reply([toolUse("s4", "send_message", message(lead.id, "Thanks Robin, we have your message."))], "tool_use"), reply([text("Sent.")]));
     assert.equal(await drive(plain), "done");
-    assert.equal((await callsOf(plain))[0].status, "DONE", "a plain message goes on the workspace's say-so");
+    assert.equal((await callsOf(plain))[0].status, "DONE", "a plain acknowledgement goes on the workspace's say-so");
     const priced = await startFor(await newLead());
     script(reply([toolUse("s5", "send_message", message(priced.leadId!, "Our fee is $550 per week."))], "tool_use"));
     assert.equal(await drive(priced), "waiting");
     assert.equal((await callsOf(priced))[0].status, "AWAITING_APPROVAL");
+  });
+});
+
+describe("the server's own reading of a message", () => {
+  const delegated = () => repository.upsertTenantAgent(harbor.id, ROLE, { autonomy: "DELEGATED", toolPolicy: { send_message: "auto" } }, null);
+
+  it("finds a promise the agent didn't flag, and keeps it for the client even where messages may go alone", async () => {
+    await delegated();
+    const lead = await newLead();
+    const run = await startFor(lead);
+    script(reply([toolUse("p1", "send_message", message(lead.id, "Hi Robin, I'll call you tomorrow."))], "tool_use"));
+    assert.equal(await drive(run), "waiting");
+    const [call] = await callsOf(run);
+    assert.equal(call.status, "AWAITING_APPROVAL");
+    assert.match(call.signoff ?? "", /makes a promise \(“I'll”\)/);
+    assert.equal((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok, false, "an operator can't approve it");
+  });
+
+  it("treats a reply to someone who complained or raised something legal as the client's, flag or not", async () => {
+    const lead = await newLead({ message: "Your agent never called back and the hot water's been broken a week. Unacceptable. I'm taking this to the tribunal." });
+    const run = await startFor(lead);
+    script(reply([toolUse("c1", "send_message", message(lead.id, "Thanks for letting us know, Robin."))], "tool_use"));
+    assert.equal(await drive(run), "waiting");
+    const [call] = await callsOf(run);
+    assert.match(call.signoff ?? "", /answers a complaint/);
+    assert.match(call.signoff ?? "", /something legal \(“tribunal”\)/);
+  });
+
+  it("sends nothing it can't rule out as a commitment without a person, even where messages may go alone", async () => {
+    await delegated();
+    const lead = await newLead();
+    const run = await startFor(lead);
+    script(reply([toolUse("m1", "send_message", message(lead.id, "Thanks Robin, is Thursday good for a chat?"))], "tool_use"));
+    assert.equal(await drive(run), "waiting");
+    const [call] = await callsOf(run);
+    assert.equal(call.status, "AWAITING_APPROVAL");
+    assert.equal(call.signoff, null, "not the client's: an operator may approve it");
+    assert.ok((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok);
+  });
+});
+
+describe("an approver's edit", () => {
+  /** A run parked on a plain message an operator may approve. */
+  async function parkedPlain(id: string) {
+    const lead = await newLead();
+    const run = await startFor(lead);
+    script(reply([toolUse(id, "send_message", message(lead.id, "Thanks Robin, we have your message."))], "tool_use"));
+    assert.equal(await drive(run), "waiting");
+    const [call] = await callsOf(run);
+    assert.equal(call.signoff, null);
+    return { lead, run, call };
+  }
+  const sentTo = async (lead: LeadRecord) => (await repository.listContactMessages(harbor.id, lead.contactId!, 50)).filter((m) => m.sender === "AGENT").map((m) => m.body);
+
+  it("that adds a price is saved, not sent, and handed to the client, who sends it as edited", async () => {
+    await setRules([{ when: AGENT_SIGNOFF_RULE, notifyUserId: "user_director" }]);
+    const { lead, run, call } = await parkedPlain("e1");
+    const edit = "Thanks Robin. Our management fee would be 7% plus GST; someone will call you this afternoon.";
+    const out = await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops", edit });
+    assert.ok(out.ok && out.waitingForClient);
+    assert.match(out.waitingForClient, /percentage/);
+    const routed = (await callsOf(run))[0];
+    assert.equal(routed.status, "AWAITING_APPROVAL", "not approved, and not sent");
+    assert.equal(routed.editedInput?.body, edit);
+    assert.match(routed.signoff ?? "", /percentage/);
+    assert.deepEqual(await sentTo(lead), []);
+    const item = (await repository.listExceptions([harbor.id], { limit: 500 })).find((e) => e.agentToolCallId === call.id)!;
+    assert.equal(item.escalatedToUserId, "user_director");
+    assert.match(item.reason, /Needs the client's sign-off/);
+    assert.equal(item.suggestedAction, edit, "the queue shows the edited message");
+    assert.ok(await repository.findMessageByIdempotencyKey(harbor.id, `signoff:${call.id}`), "the client is emailed");
+
+    assert.equal((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok, false, "the operator can no longer approve it");
+    const view = (await loadClientSignoffs(harbor, { userId: "user_director", canApprove: true })).find((v) => v.toolCallId === call.id)!;
+    assert.equal(view.body, edit);
+    assert.equal(view.edit?.value, edit, "the client starts from the edit, not the agent's draft");
+
+    assert.ok((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_director", asClient: true })).ok);
+    script(reply([text("Sent the edited message.")]));
+    assert.equal(await drive(run), "done");
+    assert.deepEqual(await sentTo(lead), [edit], "what went is the operator's edit, with the client's OK");
+  });
+
+  it("that adds hype is refused, from an operator or the client", async () => {
+    const { run, call } = await parkedPlain("e2");
+    const hype = "Act now! We guarantee the best price in Glenelg.";
+    const out = await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops", edit: hype });
+    assert.equal(out.ok, false);
+    assert.match(out.ok ? "" : out.reason, /That edit can't go/);
+    const unchanged = (await callsOf(run))[0];
+    assert.equal(unchanged.status, "AWAITING_APPROVAL");
+    assert.equal(unchanged.editedInput, null);
+    assert.equal((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_director", asClient: true, edit: hype })).ok, false);
+  });
+
+  it("is checked again right before it runs: what needs the client never goes on an operator's approval", async () => {
+    const { lead, run, call } = await parkedPlain("e3");
+    assert.ok((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok);
+    // Whatever path led here, the text that would run now quotes a price and nobody at the client approved it.
+    await repository.updateAgentToolCall(harbor.id, call.id, { editedInput: { ...call.input, body: "Our fee is $550 per week." } }, ["APPROVED"]);
+    const requests = script(reply([text("It wasn't sent.")]));
+    assert.equal(await drive(run), "done");
+    const stopped = (await callsOf(run))[0];
+    assert.equal(stopped.status, "REFUSED");
+    assert.match(String(requests[0].messages.at(-1)!.content[0].content), /needs the client's own sign-off/);
+    assert.deepEqual(await sentTo(lead), []);
   });
 });
 

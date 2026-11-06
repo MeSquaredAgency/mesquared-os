@@ -215,7 +215,7 @@ export interface NewLeadNote {
 /** A message with the channel of the conversation it is in. */
 export type ContactMessage = MessageRecord & { channel: ConversationRecord["channel"] };
 
-export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "editedInput" | "result" | "isError" | "decidedById" | "decidedAt">>;
+export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "editedInput" | "signoff" | "result" | "isError" | "decidedById" | "decidedAt">>;
 
 /** Another worker appended this turn first: the caller has lost the run and should stop. */
 export class AgentTurnConflict extends Error {
@@ -838,6 +838,8 @@ export interface Repository {
   resolveException(tenantId: string, id: string, resolution: string): Promise<ExceptionRecord | null>;
   /** Resolves the approval exception for an agent tool call, if it is still open. */
   resolveAgentToolCallException(tenantId: string, toolCallId: string, resolution: string): Promise<void>;
+  /** Rewrites the open approval for an agent tool call, as when an edit means it now needs the client's sign-off. */
+  updateAgentToolCallException(tenantId: string, toolCallId: string, patch: { reason: string; suggestedAction: string | null; escalatedToUserId: string | null }): Promise<void>;
   appendEvent(tenantId: string, type: string, payload?: Record<string, unknown>, causationId?: string | null): Promise<DomainEventRecord>;
   listEvents(tenantId: string, limit?: number): Promise<DomainEventRecord[]>;
 

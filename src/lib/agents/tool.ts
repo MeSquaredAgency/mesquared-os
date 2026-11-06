@@ -44,6 +44,8 @@ export interface AgentTool<I extends z.ZodType = z.ZodType> {
   customerText?: (input: z.infer<I>) => string;
   /** Reasons the call itself gives for the client's own sign-off, such as answering a complaint. */
   signoffReasons?: (input: z.infer<I>) => string[];
+  /** What the customer wrote, so the server can tell for itself when a reply answers a complaint or a legal point. */
+  customerContext?: (input: z.infer<I>, ctx: Pick<ToolContext, "tenant">) => Promise<string[]>;
   /**
    * The one text field a person approving the call may change before it runs, such as a message's wording. The
    * edited input is checked against `input` again, and the agent is told what changed.

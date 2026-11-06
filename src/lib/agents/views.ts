@@ -64,7 +64,8 @@ export async function approvalView(call: AgentToolCallRecord, roleKey: string, t
     body,
     why: typeof why === "string" && why.trim() ? why.trim() : null,
     policy: call.reason,
-    edit: editable ? { label: editable.label, value: String(call.input[editable.field] ?? "") } : null,
+    // What would run now, so a person's earlier edit is what the next person sees and starts from.
+    edit: editable ? { label: editable.label, value: String((call.editedInput ?? call.input)[editable.field] ?? "") } : null,
     signoff: call.signoff,
     signoffBy: approver ? (approver.name ?? approver.email) : null,
     expiresAt: new Date(call.createdAt.getTime() + APPROVAL_TTL_MS),
