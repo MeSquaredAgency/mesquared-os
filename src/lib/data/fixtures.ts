@@ -427,8 +427,8 @@ export const demoRuns: AutomationRunRecord[] = [
 ];
 
 export const demoExceptions: ExceptionRecord[] = [
-  { id: "ex_1", tenantId: "tenant_harbor", reason: "Ana Petrova (Mount Gambier) acknowledged 9 hours ago; no booking. Two reminders sent.", suggestedAction: "Call her directly and offer an appraisal slot this week.", confidence: 0.4, status: "OPEN", assignedOperatorId: "user_ops", escalatedToUserId: null, contactId: "ct_5", leadId: "lead_4", missedOpportunityId: "mo_1", createdAt: ago(60 * 3) },
-  { id: "ex_2", tenantId: "tenant_summit", reason: "Cal.com disconnected: trial bookings cannot be created.", suggestedAction: "Reconnect the Google calendar in integrations.", confidence: null, status: "OPEN", assignedOperatorId: null, escalatedToUserId: null, contactId: null, leadId: null, missedOpportunityId: null, createdAt: ago(60 * 24 * 3) },
+  { id: "ex_1", tenantId: "tenant_harbor", reason: "Ana Petrova (Mount Gambier) acknowledged 9 hours ago; no booking. Two reminders sent.", suggestedAction: "Call her directly and offer an appraisal slot this week.", confidence: 0.4, status: "OPEN", assignedOperatorId: "user_ops", escalatedToUserId: null, contactId: "ct_5", leadId: "lead_4", missedOpportunityId: "mo_1", agentRunId: null, agentToolCallId: null, createdAt: ago(60 * 3) },
+  { id: "ex_2", tenantId: "tenant_summit", reason: "Cal.com disconnected: trial bookings cannot be created.", suggestedAction: "Reconnect the Google calendar in integrations.", confidence: null, status: "OPEN", assignedOperatorId: null, escalatedToUserId: null, contactId: null, leadId: null, missedOpportunityId: null, agentRunId: null, agentToolCallId: null, createdAt: ago(60 * 24 * 3) },
 ];
 
 // ---------------------------------------------------------------------------

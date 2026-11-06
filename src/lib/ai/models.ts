@@ -5,7 +5,7 @@
  * variable that overrides the model for a deployment.
  */
 
-export type AiFeature = "qualify" | "content" | "triage";
+export type AiFeature = "qualify" | "content" | "triage" | "agent";
 
 export type AiEffort = "low" | "medium" | "high";
 
@@ -30,6 +30,9 @@ const ROUTES: Record<AiFeature, RouteDefinition> = {
   content: { model: "claude-opus-5-5", effort: "medium", maxTokens: 4096, modelEnv: "CONTENT_MODEL" },
   // Classifying a comment and drafting two sentences is Haiku's work. Thinking counts toward max_tokens, so leave room.
   triage: { model: "claude-haiku-5-5", effort: "low", maxTokens: 1024, modelEnv: "TRIAGE_MODEL" },
+  // One step of an agent run: read what the tools returned, decide, call the next tool or finish. A tenant's agent
+  // row can name another model. Non-streaming, so max_tokens stays where an HTTP request will not time out.
+  agent: { model: "claude-opus-5-5", effort: "medium", maxTokens: 8192, timeoutMs: 120_000, maxRetries: 2, modelEnv: "AGENT_MODEL" },
 };
 
 export function routeFor(feature: AiFeature, env: Record<string, string | undefined> = process.env): AiRoute {

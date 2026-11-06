@@ -16,6 +16,22 @@ The caller is the Cloudflare worker's own cron (`* * * * *` in
 same as a fallback. Anything that can POST with that header once a minute works
 as a replacement.
 
+## Agent runs
+
+The same cron also calls `POST /api/jobs/agents` (`src/lib/agents/runtime.ts`),
+in parallel with the tick, so a slow Claude call never holds up detectors or
+reminders. It claims due agent runs on a five-minute lease and steps each one
+until it finishes, waits for a person, or the call's 50-second budget is spent.
+With `AGENTS_MODE` off (the default) it returns `{"mode":"off"}` and touches
+nothing; queued runs wait until agents are switched back on. A run whose worker
+died is picked up again once its lease runs out, and a failed step is retried
+after one minute, then five, before the run fails with an exception in the
+operator queue.
+
+```bash
+curl -s -X POST "$NEXT_PUBLIC_APP_URL/api/jobs/agents" -H "Authorization: Bearer $JOB_SECRET"
+```
+
 ## Is it healthy?
 
 - Console → a workspace → **Settings → Launch readiness**: "The scheduler

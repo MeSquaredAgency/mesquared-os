@@ -1,5 +1,11 @@
 import type {
   AdAccountRecord,
+  AgentAutonomy,
+  AgentMessageRecord,
+  AgentRunRecord,
+  AgentRunStatus,
+  AgentToolCallRecord,
+  AgentToolCallStatus,
   AdPlatform,
   AdSpendSnapshotRecord,
   AiUsageTotals,
@@ -159,6 +165,51 @@ export interface NewAiUsage {
   requestId: string | null;
 }
 
+export interface NewAgentRun {
+  roleKey: string;
+  trigger: string;
+  /** One run per key per tenant: a second request with the same key gets the first run back. */
+  dedupeKey?: string | null;
+  autonomy: AgentAutonomy;
+  model: string;
+  leadId?: string | null;
+  contactId?: string | null;
+  missedOpportunityId?: string | null;
+  /** The opening user turn, as Messages API content blocks. */
+  opening: Record<string, unknown>[];
+}
+
+export type AgentRunPatch = Partial<Pick<AgentRunRecord, "status" | "autonomy" | "attempts" | "nextStepAt" | "lockedAt" | "summary" | "error" | "finishedAt">>;
+
+export interface NewAgentMessage {
+  seq: number;
+  role: "user" | "assistant";
+  content: Record<string, unknown>[];
+  stopReason?: string | null;
+}
+
+export interface NewAgentToolCall {
+  toolUseId: string;
+  name: string;
+  input: Record<string, unknown>;
+  risk: string;
+  decision: string;
+  reason: string;
+  status: AgentToolCallStatus;
+  result?: unknown;
+  isError?: boolean;
+}
+
+export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "result" | "isError" | "decidedById" | "decidedAt">>;
+
+/** Another worker appended this turn first: the caller has lost the run and should stop. */
+export class AgentTurnConflict extends Error {
+  constructor(runId: string, seq: number) {
+    super(`Turn ${seq} of agent run ${runId} was already written.`);
+    this.name = "AgentTurnConflict";
+  }
+}
+
 export interface NewException {
   reason: string;
   suggestedAction?: string | null;
@@ -167,6 +218,9 @@ export interface NewException {
   leadId?: string | null;
   missedOpportunityId?: string | null;
   escalatedToUserId?: string | null;
+  agentRunId?: string | null;
+  /** One approval per tool call: asking again returns the existing exception, as it is. */
+  agentToolCallId?: string | null;
 }
 
 export interface NewContentAsset {
@@ -714,8 +768,30 @@ export interface Repository {
   upsertTenantAgent(tenantId: string, roleKey: string, patch: TenantAgentPatch, updatedById: string | null): Promise<TenantAgentRecord>;
   /** One row per Claude call; see src/lib/ai/claude.ts. */
   recordAiUsage(tenantId: string, data: NewAiUsage): Promise<void>;
-  /** Calls, tokens and cost since `since`; the console shows the month to date. */
-  sumAiUsage(tenantId: string, since: Date): Promise<AiUsageTotals>;
+  /** Calls, tokens and cost since `since`; the console shows the month to date. `featurePrefix` narrows it, e.g. "agent:". */
+  sumAiUsage(tenantId: string, since: Date, opts?: { featurePrefix?: string }): Promise<AiUsageTotals>;
+
+  // --- agent runs (src/lib/agents/runtime.ts) --------------------------------------
+  /** Creates the run with its opening turn, unless the tenant already has a run with the same dedupeKey. */
+  createAgentRun(tenantId: string, data: NewAgentRun): Promise<{ run: AgentRunRecord; created: boolean }>;
+  findAgentRun(tenantId: string, runId: string): Promise<AgentRunRecord | null>;
+  listAgentRuns(tenantId: string, opts?: { roleKey?: string; status?: AgentRunStatus[]; limit?: number }): Promise<AgentRunRecord[]>;
+  /** Runs across all tenants with a step due: QUEUED or WAITING ones whose time has come, and RUNNING ones whose lease ran out. Read-only. */
+  listDueAgentRuns(now: Date, leaseMs: number, limit?: number): Promise<AgentRunRecord[]>;
+  /** Atomically moves a due run (as listDueAgentRuns defines it) to RUNNING. False when another worker got it first. */
+  claimAgentRun(runId: string, now: Date, leaseMs: number): Promise<boolean>;
+  /** With `onlyIf`, changes the run only while its status is one of those. False when nothing changed. */
+  updateAgentRun(tenantId: string, runId: string, patch: AgentRunPatch, onlyIf?: AgentRunStatus[]): Promise<boolean>;
+  /** Adds one Claude call to the run's totals. */
+  addAgentRunUsage(tenantId: string, runId: string, usage: { tokens: number; costMicros: number }): Promise<void>;
+  /** The run's turns in order. */
+  listAgentMessages(tenantId: string, runId: string): Promise<AgentMessageRecord[]>;
+  /** Appends one turn and, for an assistant turn, its tool calls, all or nothing. Throws AgentTurnConflict when that seq is taken. */
+  appendAgentMessage(tenantId: string, runId: string, message: NewAgentMessage, toolCalls?: NewAgentToolCall[]): Promise<AgentMessageRecord>;
+  listAgentToolCalls(tenantId: string, runId: string): Promise<AgentToolCallRecord[]>;
+  findAgentToolCall(tenantId: string, id: string): Promise<AgentToolCallRecord | null>;
+  /** With `onlyIf`, changes the call only while its status is one of those. Null when missing or nothing changed. */
+  updateAgentToolCall(tenantId: string, id: string, patch: AgentToolCallPatch, onlyIf?: AgentToolCallStatus[]): Promise<AgentToolCallRecord | null>;
   /** Corrects a run after the fact (a send that failed after the run was logged). */
   updateAutomationRun(tenantId: string, runId: string, patch: { outcome: AutomationOutcome; summary: string; details?: Record<string, unknown> }): Promise<void>;
   listAutomationRuns(tenantId: string, limit?: number, opts?: { onlyAssigneeId?: string | null }): Promise<AutomationRunRecord[]>;
@@ -729,6 +805,8 @@ export interface Repository {
   listExceptions(tenantIds: string[], opts?: { status?: ExceptionStatus[]; limit?: number }): Promise<ExceptionRecord[]>;
   /** Resolves an open or in-progress exception; null when it is missing or already resolved. */
   resolveException(tenantId: string, id: string, resolution: string): Promise<ExceptionRecord | null>;
+  /** Resolves the approval exception for an agent tool call, if it is still open. */
+  resolveAgentToolCallException(tenantId: string, toolCallId: string, resolution: string): Promise<void>;
   appendEvent(tenantId: string, type: string, payload?: Record<string, unknown>, causationId?: string | null): Promise<DomainEventRecord>;
   listEvents(tenantId: string, limit?: number): Promise<DomainEventRecord[]>;
 
