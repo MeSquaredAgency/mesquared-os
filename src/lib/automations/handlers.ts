@@ -426,7 +426,7 @@ export async function runScheduledAction(action: ScheduledActionRecord): Promise
       const contactId = typeof p.contactId === "string" ? p.contactId : null;
       const cta = p.cta && typeof p.cta === "object" && typeof (p.cta as { url?: unknown }).url === "string" ? (p.cta as MessageCta) : null;
       const signature = p.signature && typeof p.signature === "object" && typeof (p.signature as { name?: unknown }).name === "string" ? (p.signature as MessageSignature) : null;
-      const result = await sendMessage({ tenant, contactId, channel, to: String(p.to), body: String(p.body), subject: typeof p.subject === "string" ? p.subject : undefined, automationRunId: typeof p.automationRunId === "string" ? p.automationRunId : null, transactional: false, replyTo: typeof p.replyTo === "string" ? p.replyTo : null, cta, signature });
+      const result = await sendMessage({ tenant, contactId, channel, to: String(p.to), body: String(p.body), subject: typeof p.subject === "string" ? p.subject : undefined, automationRunId: typeof p.automationRunId === "string" ? p.automationRunId : null, transactional: false, replyTo: typeof p.replyTo === "string" ? p.replyTo : null, cta, signature, sender: p.sender === "AGENT" ? "AGENT" : "AUTOMATION", idempotencyKey: typeof p.idempotencyKey === "string" ? p.idempotencyKey : null });
       const contact = contactId ? await repository.findContactById(tenant.id, contactId) : null;
       const who = contact ? leadDisplayName(contact) : "a contact";
       if (result.ok) await repository.recordAutomationRun(tenant.id, { typeKey: "messaging", outcome: "SENT", summary: `Sent ${who} the message held overnight.`, contactId });

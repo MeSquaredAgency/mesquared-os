@@ -30,6 +30,13 @@ export interface SendOptions {
   cta?: MessageCta | null;
   /** The person the email signature block shows; the business when null. */
   signature?: MessageSignature | null;
+  /** Who is sending. Both send as the business; the record says which. */
+  sender?: "AUTOMATION" | "AGENT";
+  /**
+   * For a caller that may run the same send twice (an agent step retried after its send went out): a key seen before
+   * returns that first attempt instead of sending again. A key is used once, whatever the outcome.
+   */
+  idempotencyKey?: string | null;
 }
 
 export interface SenderIdentity {
@@ -97,17 +104,26 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
       to: opts.to,
       channel: opts.channel,
       direction: "OUTBOUND",
-      sender: "AUTOMATION",
+      sender: opts.sender ?? "AUTOMATION",
       body: opts.body,
       subject: opts.subject ?? null,
       status,
       providerMessageId,
       automationRunId: opts.automationRunId ?? null,
+      idempotencyKey: opts.idempotencyKey ?? null,
     });
   const refuse = async (error: string, simulated = false) => {
     const { messageId } = await record("FAILED", null);
     return { ok: false, providerMessageId: null, error, simulated, messageId };
   };
+
+  if (opts.idempotencyKey) {
+    const prior = await repository.findMessageByIdempotencyKey(tenant.id, opts.idempotencyKey);
+    if (prior) {
+      const failed = prior.status === "FAILED";
+      return { ok: !failed, providerMessageId: prior.providerMessageId, error: failed ? "This send was already tried and did not go out; it is not tried again under the same key." : null, simulated: false, duplicate: true, messageId: prior.id };
+    }
+  }
 
   if (opts.channel !== "EMAIL" && !destinationAllowed(tenant, opts.to)) {
     return refuse(`Destination ${opts.to.slice(0, 4)}… is outside the countries this workspace may message.`);
@@ -128,7 +144,7 @@ export async function sendMessage(opts: SendOptions): Promise<SendResult & { mes
         typeKey: "messaging",
         action: "release",
         runAt: releaseAt,
-        payload: { contactId: opts.contactId, channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject ?? null, automationRunId: opts.automationRunId ?? null, replyTo: opts.replyTo ?? null, cta: opts.cta ?? null, signature: opts.signature ?? null },
+        payload: { contactId: opts.contactId, channel: opts.channel, to: opts.to, body: opts.body, subject: opts.subject ?? null, automationRunId: opts.automationRunId ?? null, replyTo: opts.replyTo ?? null, cta: opts.cta ?? null, signature: opts.signature ?? null, sender: opts.sender ?? "AUTOMATION", idempotencyKey: opts.idempotencyKey ?? null },
         // Keyed by release time too, so a message held again at release (quiet hours moved) queues afresh instead of colliding with the row that is running.
         dedupeKey: `release:${opts.to}:${createHash("sha1").update(opts.body).digest("hex").slice(0, 12)}:${releaseAt.getTime()}`,
       });

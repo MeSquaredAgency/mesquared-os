@@ -39,6 +39,8 @@ export interface SendResult {
   simulated: boolean;
   /** True when the message was not sent now but is queued for the end of quiet hours. */
   held?: boolean;
+  /** True when an earlier send with the same idempotency key answered instead; nothing new went out. */
+  duplicate?: boolean;
 }
 
 export interface MessageProvider {
