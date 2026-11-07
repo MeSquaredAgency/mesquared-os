@@ -10,9 +10,12 @@ import type { AgentTool } from "./tool";
  * goes. Banned phrases and hype go back to the agent. A price or a claim (the
  * content checks), a promise in the text, a legal point in the text or in
  * what they wrote, or a reply to someone who complained means only the
- * client may approve it, whether or not the agent flagged it. Anything that
- * might commit the business to something the patterns can't rule out (a
- * time, a number, "we will") is never sent without a person, even where a
+ * client may approve it, whether or not the agent flagged it. Saying when
+ * someone will get in touch ("someone will call you this afternoon") is the
+ * one promise an operator may approve: the business's own automatic reply
+ * already makes it, and the call-first chase follows it up. It still always
+ * needs a person, as does anything else that might commit the business that
+ * the patterns can't rule out (a time, a number, "we will"), even where a
  * workspace lets messages go alone. Naming a person is normal in a one-to-one
  * message, so it is not a reason here.
  */
@@ -27,6 +30,14 @@ const WILL = String.raw`(?:'ll|’ll|\s+will|\s+shall|\s+(?:am|are|is)\s+going\s
 const PROMISE = new RegExp(
   String.raw`\b(?:i|we|someone|somebody|one of (?:us|the team|our team)|the team|our team|[a-z]+ from (?:the|our) team)${WILL}\b|\bwill\s+(?:call|ring|phone|text|email|be\s+in\s+touch|get\s+back|send|arrange|book|sort|fix|repair|have|come|meet|confirm|follow\s+up|look\s+into|make)\b|\b(?:guarantee[sd]?|promise[sd]?|make\s+sure|ensure|without\s+fail|definitely)\b`,
   "i",
+);
+/**
+ * Saying the business will get in touch, and perhaps when: "someone will call you this afternoon", "we'll ring you
+ * tomorrow", "Sam will give you a call at 4". Taken out of the text before PROMISE looks for anything else promised.
+ */
+const CALLBACK = new RegExp(
+  String.raw`(?:\b(?:i|we|someone|somebody|one of (?:us|the team|our team)|the team|our team|[a-z]+(?: from (?:the|our) team)?))?${WILL}\s+(?:give\s+you\s+a\s+(?:call|ring)|(?:call|ring|phone|text|email|message|contact)(?:\s+you)?(?:\s+back)?|be\s+in\s+touch|get\s+(?:back|in\s+touch)(?:\s+(?:to|with))?(?:\s+you)?|follow\s+up)\b`,
+  "gi",
 );
 /** What the patterns above might miss: future tense, a day or time, a deadline, a number. */
 const MAYBE_COMMITMENT = /\b(?:will|shall|going to|gonna|can|could|would|today|tonight|tomorrow|tmrw|morning|afternoon|evening|weekend|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday|asap|soon|shortly|straight away|right away|by|before|within|until|next|later|available|availability|free)\b|'ll|’ll|\d/i;
@@ -55,7 +66,10 @@ export async function screenCustomerText(tool: AgentTool, input: unknown, ctx: {
   const issues = checkCompliance({ text, platform: null, brand: ctx.brand, tenant: ctx.tenant }).issues;
   const blocks = issues.filter((i) => BLOCKS.has(i.code)).map((i) => i.message);
   const reasons = [...(tool.signoffReasons?.(input) ?? []), ...issues.filter((i) => SIGNOFF.has(i.code)).map((i) => i.message)];
-  const promise = PROMISE.exec(text);
+  // A call-back time is the operator's to approve; whatever else is promised, around it or instead of it, is the client's.
+  const callback = CALLBACK.test(text);
+  CALLBACK.lastIndex = 0;
+  const promise = PROMISE.exec(text.replace(CALLBACK, " "));
   if (promise) reasons.push(`It makes a promise${quoted(promise)}.`);
   const legal = LEGAL.exec(text) ?? LEGAL.exec(theirs);
   if (legal) reasons.push(`It touches on something legal${quoted(legal)}.`);
@@ -65,7 +79,7 @@ export async function screenCustomerText(tool: AgentTool, input: unknown, ctx: {
   return {
     blocked: blocks.length ? blocks.join(" ") : null,
     signoff: signoff.length ? signoff.join(" ") : null,
-    needsPerson: signoff.length > 0 || MAYBE_COMMITMENT.test(text),
+    needsPerson: signoff.length > 0 || callback || MAYBE_COMMITMENT.test(text),
   };
 }
 

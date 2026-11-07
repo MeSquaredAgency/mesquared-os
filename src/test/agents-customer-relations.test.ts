@@ -5,6 +5,7 @@ import { latestCallBriefs } from "@/lib/agents/briefs";
 import { AGENT_LEASE_MS, decideAgentAction, driveAgentRun, startAgentRun } from "@/lib/agents/runtime";
 import { ROLE_BY_KEY } from "@/lib/agents/roles";
 import { AGENT_SIGNOFF_RULE } from "@/lib/agents/rules";
+import { screenCustomerText } from "@/lib/agents/signoff";
 import { runTool, type ToolContext } from "@/lib/agents/tool";
 import { TOOL_BY_NAME } from "@/lib/agents/tools";
 import { formatCallBrief } from "@/lib/agents/tools/customer";
@@ -309,15 +310,41 @@ describe("what a customer reads", () => {
 describe("the server's own reading of a message", () => {
   const delegated = () => repository.upsertTenantAgent(harbor.id, ROLE, { autonomy: "DELEGATED", toolPolicy: { send_message: "auto" } }, null);
 
-  it("finds a promise the agent didn't flag, and keeps it for the client even where messages may go alone", async () => {
+  it("tells a call-back time, which an operator may approve, from any other promise, which is the client's", async () => {
+    const lead = await newLead({ message: "Looking for a rental appraisal." });
+    const screen = (body: string) => screenCustomerText(TOOL_BY_NAME.send_message, message(lead.id, body), { tenant: harbor, brand: null });
+    const operators = ["Hi Robin, someone will call you this afternoon.", "We'll ring you tomorrow morning.", "Sam will give you a call at 4pm today.", "One of the team will be in touch shortly.", "Thanks Robin, I'll call you tomorrow to arrange the appraisal.", "We'll get back to you by Friday."];
+    for (const body of operators) {
+      const check = (await screen(body))!;
+      assert.equal(check.signoff, null, body);
+      assert.equal(check.needsPerson, true, `${body}: still a person's call`);
+    }
+    const clients = ["We'll have your place leased within two weeks.", "I'll call you tomorrow and make sure the hot water is fixed this week.", "Someone will call you today, and we will waive the letting fee.", "The unit will definitely be free from the 1st."];
+    for (const body of clients) assert.match((await screen(body))!.signoff ?? "", /makes a promise/, body);
+    assert.deepEqual(await screen("Thanks Robin, we have your message."), { blocked: null, signoff: null, needsPerson: false });
+  });
+
+  it("keeps a call-back time for a person even where messages may go alone, and lets an operator approve it", async () => {
     await delegated();
     const lead = await newLead();
     const run = await startFor(lead);
     script(reply([toolUse("p1", "send_message", message(lead.id, "Hi Robin, I'll call you tomorrow."))], "tool_use"));
     assert.equal(await drive(run), "waiting");
     const [call] = await callsOf(run);
+    assert.equal(call.status, "AWAITING_APPROVAL", "not sent on the workspace's say-so");
+    assert.equal(call.signoff, null);
+    assert.ok((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok);
+  });
+
+  it("finds any other promise the agent didn't flag, and keeps it for the client even where messages may go alone", async () => {
+    await delegated();
+    const lead = await newLead();
+    const run = await startFor(lead);
+    script(reply([toolUse("p2", "send_message", message(lead.id, "Hi Robin, I'll call you tomorrow and we'll have it leased within two weeks."))], "tool_use"));
+    assert.equal(await drive(run), "waiting");
+    const [call] = await callsOf(run);
     assert.equal(call.status, "AWAITING_APPROVAL");
-    assert.match(call.signoff ?? "", /makes a promise \(“I'll”\)/);
+    assert.match(call.signoff ?? "", /makes a promise \(“we'll”\)/);
     assert.equal((await decideAgentAction(harbor, call.id, { approve: true, userId: "user_ops" })).ok, false, "an operator can't approve it");
   });
 

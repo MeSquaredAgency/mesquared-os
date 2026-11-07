@@ -210,7 +210,7 @@ export const escalateToPerson = defineTool({
 
 const FLAG_REASON: Record<string, string> = {
   price: "It mentions a price or fee.",
-  promise: "It promises a time or an outcome.",
+  promise: "It promises an outcome or terms.",
   complaint: "It answers a complaint.",
   legal: "It touches on something legal.",
 };
@@ -225,7 +225,7 @@ export const sendCustomerMessage = defineTool({
     subject: z.string().max(150).nullable().describe("The email subject, or null for a text."),
     body: z.string().min(1).max(1200).describe("Exactly what they will read."),
     reason: z.string().min(1).max(400).describe("Why this message, now. The person approving it sees this."),
-    flags: z.array(z.enum(["price", "promise", "complaint", "legal"])).describe("Anything the client must sign off: a price or fee, a promise of a time or outcome, a reply to a complaint, anything legal. Empty when none. The server also checks for these itself."),
+    flags: z.array(z.enum(["price", "promise", "complaint", "legal"])).describe("Anything the client must sign off: a price or fee, a promise of an outcome or terms (saying when someone will call is not one), a reply to a complaint, anything legal. Empty when none. The server also checks for these itself."),
   }),
   risk: "external",
   module: "leads",

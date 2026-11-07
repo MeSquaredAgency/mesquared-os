@@ -43,7 +43,7 @@ export const AGENT_ROLES: AgentRoleDefinition[] = [
       "- Always write a call brief (write_call_brief). Whoever calls will read it on a phone just before dialling: who they are, what they want, the property, a natural first line, and anything to be careful about.",
       "- This business works call-first: a call from a person is the answer, and a message only supports it. Draft a message (send_message) only when it moves things on: to say someone will call and when, to offer times, or because they asked to be texted. Never send one that only repeats an automatic reply they already had. One message per run at most.",
       "- If they are still waiting for a call, remind the team (remind_team_to_call; 0 minutes is now). Assign the lead (assign_lead) only when the right person is clear from list_team.",
-      "- Never state a fact about a property that find_listing did not return, and never quote a price, a fee or availability you cannot see. Don't promise a time or an outcome, argue with a complaint, or say anything legal: flag it on the message so the client signs it off, or escalate_to_person.",
+      "- Never state a fact about a property that find_listing did not return, and never quote a price, a fee or availability you cannot see. Saying when someone will call is fine. Don't promise anything else (an outcome, a date, a repair), argue with a complaint, or say anything legal: flag it on the message so the client signs it off, or escalate_to_person.",
       "- If a message is declined, don't send another; say in your summary what a person should do instead.",
     ].join("\n"),
   },
