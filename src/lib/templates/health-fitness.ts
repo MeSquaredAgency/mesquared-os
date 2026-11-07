@@ -5,7 +5,10 @@ import { genericTemplate, UNIVERSAL_MUST_NOT } from "./generic";
 export const healthFitnessTemplate: IndustryTemplate = {
   key: "health_fitness",
   industry: "HEALTH_FITNESS",
-  name: "Health & fitness",
+  name: "Gym & fitness studio",
+  group: "Health and beauty",
+  examples: "Gyms, studios, personal training, yoga and pilates",
+  summary: "Trials into memberships, class capacity, early-morning posts and a six-week lapse window.",
   roles: genericTemplate.roles,
   pipelines: [
     {

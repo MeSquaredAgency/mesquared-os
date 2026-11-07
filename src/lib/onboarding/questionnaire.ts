@@ -498,7 +498,7 @@ export function draftTenantDefinition(input: QuestionnaireData | ParsedQuestionn
   if (sender && (!replyTo || !fromName)) review.push(`Sender answer "${sender}" did not give both a name and an email: check fromName and replyTo.`);
   if (data.sender && data.sender.email && !replyTo) review.push(`Reply-to "${data.sender.email}" is not an email address: check replyTo.`);
   if (a("footer")) definition.requiredFooter = a("footer");
-  else if (templateKey === "real_estate") review.push("No compliance line given. Real estate needs the licence line on every asset (launch readiness requires it).");
+  else if (templateKey && TEMPLATE_BY_KEY[templateKey]?.licence?.required) review.push(`No compliance line given. ${TEMPLATE_BY_KEY[templateKey].name} needs the licence line on every asset (launch readiness requires it).`);
   const signedBy = normaliseText(a("signedBy") ?? "");
   if (signedBy.startsWith("the team member")) definition.signAsAssignee = true;
   else if (signedBy.startsWith("the business")) definition.signAsAssignee = false;

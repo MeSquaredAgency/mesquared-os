@@ -8,6 +8,10 @@ export const genericTemplate: IndustryTemplate = {
   key: "generic",
   industry: "GENERIC",
   name: "General business",
+  group: "Anything else",
+  examples: "Creative, tech, manufacturing, logistics, agriculture, not-for-profit",
+  summary: "A sales pipeline from enquiry to paid, with booking, reviews and reactivation. A sound start for any business.",
+  licence: { required: false, label: "Registration line", placeholder: "e.g. Business Name | ABN 00 000 000 000" },
   roles: ROLE_TEMPLATES,
   pipelines: [
     {

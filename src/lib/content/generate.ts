@@ -5,6 +5,7 @@ import { claudeClient, recordClaudeUsage } from "@/lib/ai/claude";
 import { routeFor } from "@/lib/ai/models";
 import type { BrandProfileRecord, SocialPlatform, TenantSummary } from "@/lib/types";
 import { PLATFORM_SPECS, specFor } from "./platforms";
+import { templateName } from "@/lib/templates";
 
 /**
  * Turns one piece of source material into one draft per channel. Two engines
@@ -163,7 +164,7 @@ export function createAnthropicGenerator(opts: AnthropicGeneratorOptions = {}): 
             {
               role: "user",
               content: [
-                `Business (trusted): ${req.tenant.name}, industry ${req.tenant.industry}, region ${req.tenant.region}, services: ${(req.services ?? []).join(", ") || "not listed"}.`,
+                `Business (trusted): ${req.tenant.name}, industry ${templateName(req.tenant.templateKey)}, region ${req.tenant.region}, services: ${(req.services ?? []).join(", ") || "not listed"}.`,
                 `Brand voice (trusted): ${brand?.voice ?? "Warm, plain and confident."}`,
                 `Banned phrases (trusted): ${(brand?.bannedPhrases ?? []).join("; ") || "none listed"}`,
                 `Compliance rules (trusted): must not ${(brand?.complianceBlock.mustNot ?? []).join("; must not ") || "invent facts"}. ${brand?.complianceBlock.claimsPolicy ?? ""} ${brand?.complianceBlock.prohibitedCombinations?.length ? `Never combine ${brand.complianceBlock.prohibitedCombinations.join(" or ")} in one asset.` : ""}`,

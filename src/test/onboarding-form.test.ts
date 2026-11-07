@@ -156,11 +156,14 @@ describe("drafting a workspace from the form and the call sheet", () => {
 
   it("sets each business type up on its closest template and says so", () => {
     const draft = (businessType: string, extra: OnboardingAnswers = {}) => draftTenantDefinition(fromFormAnswers(sanitizeAnswers({ businessName: "Example Co", businessType, timezone: "Australia/Sydney", ...extra })));
-    assert.equal(draft("Allied health and wellness").definition.templateKey, "health_fitness");
+    assert.equal(draft("Allied health and wellness").definition.templateKey, "clinic");
     assert.equal(draft("Real estate and property").definition.templateKey, "real_estate");
-    const cafe = draft("Hospitality");
-    assert.equal(cafe.definition.templateKey, "generic");
-    assert.ok(cafe.review.some((r) => r.includes("Hospitality") && r.includes("general template")));
+    assert.equal(draft("Hospitality").definition.templateKey, "hospitality");
+    assert.equal(draft("Trades and home services").definition.templateKey, "trades");
+    assert.ok(draft("Trades and home services").review.some((r) => r.includes("Trades & home services needs the licence line")));
+    const farm = draft("Agriculture");
+    assert.equal(farm.definition.templateKey, "generic");
+    assert.ok(farm.review.some((r) => r.includes("Agriculture") && r.includes("general template")));
     assert.ok(draft("Other", { businessTypeOther: "Dog grooming" }).review.some((r) => r.includes('"Dog grooming"')));
   });
 });
