@@ -411,6 +411,17 @@ await step("customer relations: call briefs, a contact's messages across convers
   await repository.appendAgentMessage(harbor!.id, run.id, { seq: 1, role: "assistant", content: [{ type: "tool_use", id: "toolu_s", name: "send_message", input: {} }], stopReason: "tool_use" }, [{ toolUseId: "toolu_s", name: "send_message", input: {}, risk: "external", decision: "ask", reason: "x", status: "AWAITING_APPROVAL", signoff: "Mentions a price ($550 per week): the client signs this off." }]);
   const [call] = await repository.listAgentToolCalls(harbor!.id, run.id);
   assert.equal(call.signoff, "Mentions a price ($550 per week): the client signs this off.");
+  // An approver's edit that newly needs the client: the call and its open approval are rewritten together.
+  await repository.createException(harbor!.id, { reason: "x", agentRunId: run.id, agentToolCallId: call.id });
+  const edited = await repository.updateAgentToolCall(harbor!.id, call.id, { editedInput: { body: "It’s 7% — ünïcode" }, signoff: "It makes a promise." }, ["AWAITING_APPROVAL"]);
+  assert.equal(edited?.signoff, "It makes a promise.");
+  assert.deepEqual(edited?.editedInput, { body: "It’s 7% — ünïcode" });
+  await repository.updateAgentToolCallException(harbor!.id, call.id, { reason: "Needs the client's sign-off", suggestedAction: "It’s 7%", escalatedToUserId: null });
+  await repository.updateAgentToolCallException(summit!.id, call.id, { reason: "not theirs", suggestedAction: null, escalatedToUserId: null });
+  const item = (await repository.listExceptions([harbor!.id], { limit: 500 })).find((e) => e.agentToolCallId === call.id);
+  assert.equal(item?.reason, "Needs the client's sign-off", "another workspace can't rewrite it");
+  assert.equal(item?.suggestedAction, "It’s 7%");
+  await repository.resolveAgentToolCallException(harbor!.id, call.id, "parity");
   await repository.updateAgentRun(harbor!.id, run.id, { status: "CANCELLED", finishedAt: new Date() });
 });
 

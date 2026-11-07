@@ -24,9 +24,19 @@ export default async function NewWorkspacePage() {
           </>
         }
         title="Set up a client"
-        lede="A client is set up by applying a template. Real estate carries the licence line and the listing flows; health and fitness carries memberships and classes; generic covers the rest."
+        lede="Each template seeds the pipeline, response times, posting rhythm, automations and compliance rules for that kind of business. Everything can be changed afterwards in Settings."
       />
-      <NewWorkspaceForm templates={TEMPLATES.map((t) => ({ key: t.key, name: t.name, industry: t.industry }))} regions={REGION_PRESETS} />
+      <NewWorkspaceForm templates={TEMPLATES.map((t) => ({
+          key: t.key,
+          name: t.name,
+          group: t.group,
+          examples: t.examples,
+          summary: t.summary,
+          stages: (t.pipelines.find((p) => p.isDefault) ?? t.pipelines[0]).stages.map((s) => s.name),
+          postsPerWeek: Number(t.modules.find((m) => m.key === "content")?.settings?.postsPerWeek ?? 0),
+          firstResponseMinutes: t.sla.firstResponseMinutes,
+          licence: t.licence,
+        }))} regions={REGION_PRESETS} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Mark } from "@/components/shell/workspace-switcher";
 import { HEALTH_TONE_LABEL as TONE_LABEL, healthBreakdown, healthTitle, healthTone, pacingDrift, type HealthDeduction } from "@/lib/health";
 import { toTenantOption, type PortfolioRow } from "@/lib/types";
 import { cn, formatMoney, humanize } from "@/lib/utils";
+import { templateName } from "@/lib/templates";
 
 /** The score as a labelled bar, so 68 means something at a glance; hover for where the points went. */
 export function HealthBar({ score, deductions, compact = false }: { score: number; deductions?: HealthDeduction[]; compact?: boolean }) {
@@ -39,7 +40,7 @@ function RowNote({ row, deductions }: { row: PortfolioRow; deductions: HealthDed
   if (deductions.length === 0) {
     return (
       <p className="text-xs whitespace-nowrap text-muted-foreground">
-        {humanize(row.tenant.industry)} · {row.tenant.timezone.split("/").pop()?.replace(/_/g, " ")}
+        {templateName(row.tenant.templateKey)} · {row.tenant.timezone.split("/").pop()?.replace(/_/g, " ")}
       </p>
     );
   }

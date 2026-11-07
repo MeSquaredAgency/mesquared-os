@@ -18,7 +18,8 @@ interface Props {
   view: AgentApprovalView;
   tenant: TenantOption | undefined;
   disabled: boolean;
-  onDone: (result: { ok: boolean; message: string }) => void;
+  /** `stillOpen` when the item stays in the queue: an edit that now waits for the client's sign-off. */
+  onDone: (result: { ok: boolean; message: string; stillOpen?: boolean }) => void;
 }
 
 function expiresIn(at: Date, now = new Date()): string {
@@ -43,7 +44,10 @@ export function AgentApprovalCard({ item, view, tenant, disabled, onDone }: Prop
 
   const decide = (action: "approve" | "decline" | "take_over") =>
     startTransition(async () => {
-      onDone(await decideAgentApproval(item.tenantId, view.toolCallId, { action, ...(action === "decline" ? { note } : {}), ...(action === "approve" && editing ? { edit: draft } : {}) }));
+      const result = await decideAgentApproval(item.tenantId, view.toolCallId, { action, ...(action === "decline" ? { note } : {}), ...(action === "approve" && editing ? { edit: draft } : {}) });
+      // An edit handed to the client is saved: show it as the message now waiting.
+      if (result.stillOpen) setEditing(false);
+      onDone(result);
     });
 
   const takeOver = () => {

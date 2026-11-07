@@ -28,6 +28,7 @@ import { MODULE_BY_KEY } from "@/lib/modules/registry";
 import { summarizeChannels } from "@/lib/social/metrics";
 import type { IntegrationRecord, TenantSummary } from "@/lib/types";
 import { humanize } from "@/lib/utils";
+import { templateName } from "@/lib/templates";
 
 export const metadata = { title: "Workspace" };
 
@@ -72,7 +73,7 @@ export default async function ConsoleTenantPage({ params, searchParams }: { para
               Portfolio
             </Link>
             <span aria-hidden="true">/</span>
-            {humanize(tenant.industry)}
+            {templateName(tenant.templateKey)}
           </>
         }
         title={tenant.name}

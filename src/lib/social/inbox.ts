@@ -10,6 +10,7 @@ import { flagIntegration, loadChannelCredentials } from "./credentials";
 import { socialProviderFor } from "./providers";
 import { registerBuiltInProviders } from "./providers/builtin";
 import type { InboxItem } from "./providers/types";
+import { templateName } from "@/lib/templates";
 
 registerBuiltInProviders();
 
@@ -63,7 +64,7 @@ export async function triageMessage(tenant: TenantSummary, text: string): Promis
       max_tokens: route.maxTokens,
       output_config: { effort: route.effort, format: zodOutputFormat(TriageSchema) },
       system: TRIAGE_PROMPT,
-      messages: [{ role: "user", content: `Business (trusted): ${tenant.name}, ${tenant.industry}.\n\n<message>\n${text.slice(0, 2000)}\n</message>` }],
+      messages: [{ role: "user", content: `Business (trusted): ${tenant.name}, ${templateName(tenant.templateKey)}.\n\n<message>\n${text.slice(0, 2000)}\n</message>` }],
     });
     await recordClaudeUsage({ tenantId: tenant.id, feature: "triage", model: route.model, startedAt }, response);
     if (response.stop_reason === "refusal" || !response.parsed_output) return stubTriage(text);

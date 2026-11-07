@@ -134,7 +134,7 @@ export function ExceptionQueue({ items, tenants, stakes = {}, approvals = {} }: 
                     disabled={pending}
                     onDone={(result) => {
                       setNotice({ tone: result.ok ? "ok" : "error", text: result.message });
-                      if (result.ok) hide([item.id]);
+                      if (result.ok && !result.stillOpen) hide([item.id]);
                     }}
                   />
                 ) : (

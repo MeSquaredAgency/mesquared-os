@@ -1288,6 +1288,7 @@ export const prismaRepository: Repository = {
     const data = {
       ...(patch.status !== undefined ? { status: patch.status } : {}),
       ...(patch.editedInput !== undefined ? { editedInput: patch.editedInput === null ? Prisma.JsonNull : json(patch.editedInput) } : {}),
+      ...(patch.signoff !== undefined ? { signoff: patch.signoff } : {}),
       ...(patch.result !== undefined ? { result: patch.result === null ? Prisma.JsonNull : json(patch.result) } : {}),
       ...(patch.isError !== undefined ? { isError: patch.isError } : {}),
       ...(patch.decidedById !== undefined ? { decidedById: patch.decidedById } : {}),
@@ -1358,6 +1359,10 @@ export const prismaRepository: Repository = {
     if (count === 0) return null;
     const row = await getPrisma().exceptionItem.findUnique({ where: { id: exId } });
     return row ? toException(row) : null;
+  },
+
+  async updateAgentToolCallException(tenantId, toolCallId, patch) {
+    await getPrisma().exceptionItem.updateMany({ where: { tenantId, agentToolCallId: toolCallId, status: { in: ["OPEN", "IN_PROGRESS"] } }, data: { reason: patch.reason, suggestedAction: patch.suggestedAction, escalatedToUserId: patch.escalatedToUserId } });
   },
 
   async resolveAgentToolCallException(tenantId, toolCallId, resolution) {

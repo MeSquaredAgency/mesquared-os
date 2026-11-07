@@ -1362,6 +1362,11 @@ export const memoryRepository: Repository = {
     return ex;
   },
 
+  async updateAgentToolCallException(tenantId, toolCallId, patch) {
+    const ex = store().exceptions.find((e) => e.tenantId === tenantId && e.agentToolCallId === toolCallId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
+    if (ex) Object.assign(ex, patch);
+  },
+
   async resolveAgentToolCallException(tenantId, toolCallId, resolution) {
     const ex = store().exceptions.find((e) => e.tenantId === tenantId && e.agentToolCallId === toolCallId && (e.status === "OPEN" || e.status === "IN_PROGRESS"));
     if (!ex) return;

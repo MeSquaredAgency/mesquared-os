@@ -210,7 +210,7 @@ export const escalateToPerson = defineTool({
 
 const FLAG_REASON: Record<string, string> = {
   price: "It mentions a price or fee.",
-  promise: "It promises a time or an outcome.",
+  promise: "It promises an outcome or terms.",
   complaint: "It answers a complaint.",
   legal: "It touches on something legal.",
 };
@@ -225,7 +225,7 @@ export const sendCustomerMessage = defineTool({
     subject: z.string().max(150).nullable().describe("The email subject, or null for a text."),
     body: z.string().min(1).max(1200).describe("Exactly what they will read."),
     reason: z.string().min(1).max(400).describe("Why this message, now. The person approving it sees this."),
-    flags: z.array(z.enum(["price", "promise", "complaint", "legal"])).describe("Anything the client must sign off: a price or fee, a promise of a time or outcome, a reply to a complaint, anything legal. Empty when none."),
+    flags: z.array(z.enum(["price", "promise", "complaint", "legal"])).describe("Anything the client must sign off: a price or fee, a promise of an outcome or terms (saying when someone will call is not one), a reply to a complaint, anything legal. Empty when none. The server also checks for these itself."),
   }),
   risk: "external",
   module: "leads",
@@ -237,6 +237,12 @@ export const sendCustomerMessage = defineTool({
   },
   customerText: (input) => [input.subject, input.body].filter(Boolean).join("\n"),
   signoffReasons: (input) => [...new Set(input.flags)].map((f) => FLAG_REASON[f]),
+  async customerContext(input, ctx) {
+    const lead = await repository.findLeadById(ctx.tenant.id, input.leadId);
+    if (!lead) return [];
+    const said = lead.contactId ? (await repository.listContactMessages(ctx.tenant.id, lead.contactId, 30)).filter((m) => m.direction === "INBOUND").map((m) => m.body) : [];
+    return [lead.message ?? "", ...said].filter(Boolean);
+  },
   async run(ctx, input) {
     const lead = await leadFor(ctx, input.leadId);
     if (ctx.subjectLeadId && lead.id !== ctx.subjectLeadId) throw new ToolError("This run is about a different lead. You can only message the person it is about.");

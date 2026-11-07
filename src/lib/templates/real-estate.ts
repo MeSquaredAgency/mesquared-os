@@ -10,6 +10,10 @@ export const realEstateTemplate: IndustryTemplate = {
   key: "real_estate",
   industry: "REAL_ESTATE",
   name: "Real estate agency",
+  group: "Property",
+  examples: "Sales, property management, strata, buyers agents",
+  summary: "Appraisals into signed management and sales, listings and rent roll, and the licence line on every asset.",
+  licence: { required: true, label: "Licence line", placeholder: "Business Name | RLA 000000" },
   roles: [
     { key: "owner", name: "Director", permissions: ["VIEW_FINANCES", "APPROVE_CONTENT", "RECEIVE_LEAD_ALERTS", "MANAGE_USERS", "VIEW_ALL_RECORDS"] },
     { key: "manager", name: "Region Manager", permissions: ["APPROVE_CONTENT", "RECEIVE_LEAD_ALERTS", "MANAGE_USERS", "VIEW_ALL_RECORDS"] },
