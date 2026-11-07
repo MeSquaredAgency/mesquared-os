@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useTransition } from "react";
-import { ArrowLeftRight, ChevronsUpDown, LogOut } from "lucide-react";
+import { ArrowLeftRight, Bell, BellOff, BellRing, ChevronsUpDown, Download, LogOut } from "lucide-react";
 import { Avatar } from "@/components/shell/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/lib/auth/actions";
 import { cn } from "@/lib/utils";
+import { promptInstall, useInstall } from "./install";
+import { disablePush, enablePush, testPush, usePush } from "./push";
 
 /** What the menu shows about the signed-in person; never the whole user record. */
 export interface MenuUser {
@@ -21,6 +23,8 @@ export interface MenuUser {
  */
 export function UserMenu({ user, links = [], compact = false }: { user: MenuUser; links?: { href: string; label: string }[]; compact?: boolean }) {
   const [pending, start] = useTransition();
+  const push = usePush();
+  const install = useInstall();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -54,6 +58,35 @@ export function UserMenu({ user, links = [], compact = false }: { user: MenuUser
           </DropdownMenuItem>
         ))}
         {links.length > 0 && <DropdownMenuSeparator />}
+        {install.canPrompt && !install.installed && (
+          <DropdownMenuItem onSelect={() => void promptInstall()}>
+            <Download aria-hidden="true" />
+            Install the app
+          </DropdownMenuItem>
+        )}
+        {push.state === "on" ? (
+          <>
+            <DropdownMenuItem disabled={push.busy} onSelect={(e) => (e.preventDefault(), void testPush())}>
+              <BellRing aria-hidden="true" />
+              Send a test notification
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={push.busy} onSelect={(e) => (e.preventDefault(), void disablePush())}>
+              <BellOff aria-hidden="true" />
+              Turn off notifications here
+            </DropdownMenuItem>
+          </>
+        ) : push.state === "off" ? (
+          <DropdownMenuItem disabled={push.busy} onSelect={(e) => (e.preventDefault(), void enablePush())}>
+            <Bell aria-hidden="true" />
+            Turn on notifications
+          </DropdownMenuItem>
+        ) : push.state === "denied" ? (
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Notifications are blocked for this site in your browser settings.</DropdownMenuLabel>
+        ) : push.state === "install" ? (
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">For notifications, add the OS to your Home Screen and open it from there.</DropdownMenuLabel>
+        ) : null}
+        {push.note && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{push.note}</DropdownMenuLabel>}
+        <DropdownMenuSeparator />
         <DropdownMenuItem disabled={pending} onSelect={() => start(() => signOut())} className={cn(pending && "opacity-60")}>
           <LogOut aria-hidden="true" />
           {pending ? "Signing out…" : "Sign out"}

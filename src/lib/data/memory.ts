@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import { countsAsHandled } from "@/lib/portal/handled";
 import type {
+  PushSubscriptionRecord,
+  ChatMessageRecord,
+  TaskEventRecord,
+  TaskRecord,
   AgentGuidanceRecord,
   AgentMessageRecord,
   LeadNoteRecord,
@@ -108,6 +112,11 @@ interface MemoryStore {
   agentToolCalls: AgentToolCallRecord[];
   agentGuidance: (AgentGuidanceRecord & { tenantId: string })[];
   leadNotes: (LeadNoteRecord & { tenantId: string })[];
+  tasks: TaskRecord[];
+  taskEvents: (TaskEventRecord & { tenantId: string })[];
+  chatMessages: ChatMessageRecord[];
+  chatReads: { tenantId: string; userId: string; lastReadAt: Date | null; lastEmailedAt: Date | null }[];
+  pushSubscriptions: PushSubscriptionRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -168,6 +177,11 @@ function store(): MemoryStore {
       agentToolCalls: [],
       agentGuidance: [],
       leadNotes: [],
+      tasks: [],
+      taskEvents: [],
+      chatMessages: [],
+      chatReads: [],
+      pushSubscriptions: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -199,6 +213,11 @@ function store(): MemoryStore {
   g.__msqMemoryStore.agentToolCalls ??= [];
   g.__msqMemoryStore.agentGuidance ??= [];
   g.__msqMemoryStore.leadNotes ??= [];
+  g.__msqMemoryStore.tasks ??= [];
+  g.__msqMemoryStore.taskEvents ??= [];
+  g.__msqMemoryStore.chatMessages ??= [];
+  g.__msqMemoryStore.chatReads ??= [];
+  g.__msqMemoryStore.pushSubscriptions ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -254,6 +273,11 @@ function assertMissedInTenant(tenantId: string, missedOpportunityId: string | nu
 }
 
 const toAgentMessage = (m: AgentMessageRecord): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role, content: structuredClone(m.content), stopReason: m.stopReason, createdAt: m.createdAt });
+const copyTask = (t: TaskRecord): TaskRecord => ({ ...t });
+const copyTaskEvent = (e: TaskEventRecord & { tenantId: string }): TaskEventRecord => ({ id: e.id, taskId: e.taskId, kind: e.kind, actorId: e.actorId, actorName: e.actorName, actorSide: e.actorSide, body: e.body, data: structuredClone(e.data), createdAt: e.createdAt });
+/** Soonest deadline first, undated last, then newest. */
+export const taskOrder = (a: TaskRecord, b: TaskRecord) => (a.dueAt?.getTime() ?? Infinity) - (b.dueAt?.getTime() ?? Infinity) || b.createdAt.getTime() - a.createdAt.getTime();
+const OPEN_TASK = new Set(["OPEN", "IN_PROGRESS", "WAITING"]);
 const toLeadNote = (n: LeadNoteRecord): LeadNoteRecord => ({ id: n.id, leadId: n.leadId, kind: n.kind, body: n.body, authorType: n.authorType, agentRunId: n.agentRunId, createdById: n.createdById, createdAt: n.createdAt });
 const toAgentGuidance = (g: AgentGuidanceRecord): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 
@@ -1088,6 +1112,131 @@ export const memoryRepository: Repository = {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, opts.limit ?? 100)
       .map(toLeadNote);
+  },
+
+  async createTask(tenantId, data, event) {
+    const s = store();
+    const now = new Date();
+    const task: TaskRecord = { id: id("task"), tenantId, title: data.title, details: data.details ?? null, status: "OPEN", owner: data.owner, assigneeId: data.assigneeId ?? null, dueAt: data.dueAt ?? null, reminded: null, createdById: data.createdById ?? null, completedAt: null, createdAt: now, updatedAt: now };
+    pushBounded(s.tasks, task);
+    pushBounded(s.taskEvents, { id: id("tev"), tenantId, taskId: task.id, kind: "CREATED", actorId: event.actorId ?? null, actorName: event.actorName, actorSide: event.actorSide, body: event.body ?? null, data: structuredClone(event.data ?? {}), createdAt: now });
+    return copyTask(task);
+  },
+
+  async getTask(tenantId, taskId) {
+    const t = store().tasks.find((x) => x.id === taskId && x.tenantId === tenantId);
+    return t ? copyTask(t) : null;
+  },
+
+  async listTasks(tenantId, opts = {}) {
+    const wanted = opts.status ? new Set(opts.status) : null;
+    return store()
+      .tasks.filter((t) => t.tenantId === tenantId && (!wanted || wanted.has(t.status)))
+      .sort(taskOrder)
+      .slice(0, opts.limit ?? 500)
+      .map(copyTask);
+  },
+
+  async updateTask(tenantId, taskId, patch, events) {
+    const s = store();
+    const t = s.tasks.find((x) => x.id === taskId && x.tenantId === tenantId);
+    if (!t) throw new TenantMismatchError("Task", taskId);
+    const now = new Date();
+    Object.assign(t, patch, { updatedAt: now });
+    for (const e of events) pushBounded(s.taskEvents, { id: id("tev"), tenantId, taskId, kind: e.kind, actorId: e.actorId ?? null, actorName: e.actorName, actorSide: e.actorSide, body: e.body ?? null, data: structuredClone(e.data ?? {}), createdAt: now });
+    return copyTask(t);
+  },
+
+  async addTaskEvent(tenantId, taskId, e) {
+    const s = store();
+    if (!s.tasks.some((x) => x.id === taskId && x.tenantId === tenantId)) throw new TenantMismatchError("Task", taskId);
+    const row = { id: id("tev"), tenantId, taskId, kind: e.kind, actorId: e.actorId ?? null, actorName: e.actorName, actorSide: e.actorSide, body: e.body ?? null, data: structuredClone(e.data ?? {}), createdAt: new Date() };
+    pushBounded(s.taskEvents, row);
+    return copyTaskEvent(row);
+  },
+
+  async listTaskEvents(tenantId, taskId) {
+    return store()
+      .taskEvents.filter((e) => e.tenantId === tenantId && e.taskId === taskId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map(copyTaskEvent);
+  },
+
+  async listTasksForReminder(before, stage, limit = 200) {
+    return store()
+      .tasks.filter((t) => OPEN_TASK.has(t.status) && t.dueAt && t.dueAt <= before && t.reminded !== stage && !(stage === "DUE_SOON" && t.reminded === "OVERDUE"))
+      .sort(taskOrder)
+      .slice(0, limit)
+      .map(copyTask);
+  },
+
+  async claimTaskReminder(tenantId, taskId, from, to) {
+    const t = store().tasks.find((x) => x.id === taskId && x.tenantId === tenantId);
+    if (!t || t.reminded !== from) return false;
+    t.reminded = to;
+    return true;
+  },
+
+  async savePushSubscription(userId, data) {
+    const s = store();
+    const existing = s.pushSubscriptions.find((p) => p.endpoint === data.endpoint);
+    if (existing) {
+      Object.assign(existing, { userId, p256dh: data.p256dh, auth: data.auth, device: data.device ?? existing.device });
+      return { ...existing };
+    }
+    const row: PushSubscriptionRecord = { id: id("push"), userId, endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth, device: data.device ?? null, createdAt: new Date(), lastUsedAt: null };
+    s.pushSubscriptions.push(row);
+    return { ...row };
+  },
+
+  async listPushSubscriptions(userIds) {
+    const wanted = new Set(userIds);
+    return store().pushSubscriptions.filter((p) => wanted.has(p.userId)).map((p) => ({ ...p }));
+  },
+
+  async deletePushSubscription(endpoint, userId) {
+    const s = store();
+    s.pushSubscriptions = s.pushSubscriptions.filter((p) => !(p.endpoint === endpoint && (!userId || p.userId === userId)));
+  },
+
+  async touchPushSubscription(endpoint, at) {
+    const p = store().pushSubscriptions.find((x) => x.endpoint === endpoint);
+    if (p) p.lastUsedAt = at;
+  },
+
+  async addChatMessage(tenantId, data) {
+    const s = store();
+    if (!s.tenants.some((t) => t.id === tenantId)) throw new TenantMismatchError("Tenant", tenantId);
+    const row: ChatMessageRecord = { ...data, tenantId, createdAt: new Date() };
+    s.chatMessages.push(row);
+    return { ...row };
+  },
+
+  async listChatMessages(tenantId, opts = {}) {
+    const rows = store().chatMessages.filter((m) => m.tenantId === tenantId && (!opts.before || m.createdAt < opts.before));
+    return rows.slice(-(opts.limit ?? 100)).map((m) => ({ ...m }));
+  },
+
+  async markChatRead(tenantId, userId, at) {
+    const s = store();
+    const row = s.chatReads.find((r) => r.tenantId === tenantId && r.userId === userId);
+    if (row) row.lastReadAt = row.lastReadAt && row.lastReadAt > at ? row.lastReadAt : at;
+    else s.chatReads.push({ tenantId, userId, lastReadAt: at, lastEmailedAt: null });
+  },
+
+  async claimChatEmail(tenantId, userId, at, quietMs) {
+    const s = store();
+    const row = s.chatReads.find((r) => r.tenantId === tenantId && r.userId === userId);
+    if (row?.lastEmailedAt && at.getTime() - row.lastEmailedAt.getTime() < quietMs) return false;
+    if (row) row.lastEmailedAt = at;
+    else s.chatReads.push({ tenantId, userId, lastReadAt: null, lastEmailedAt: at });
+    return true;
+  },
+
+  async countUnreadChat(tenantId, userId, side) {
+    const s = store();
+    const since = s.chatReads.find((r) => r.tenantId === tenantId && r.userId === userId)?.lastReadAt ?? new Date(0);
+    return s.chatMessages.filter((m) => m.tenantId === tenantId && m.side !== side && m.createdAt > since).length;
   },
 
   async listContactMessages(tenantId, contactId, limit = 20) {

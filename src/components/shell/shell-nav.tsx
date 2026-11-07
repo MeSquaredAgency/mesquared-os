@@ -2,13 +2,13 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Boxes, FileCheck, Home, Inbox, LayoutGrid, MoreHorizontal, Plus, Settings, TrendingDown, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Activity, Boxes, FileCheck, Home, Inbox, LayoutGrid, ListChecks, MessageSquare, MoreHorizontal, Plus, Settings, TrendingDown, Users, Wallet, type LucideIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { isNavActive, type NavMatch } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 /** Icons are referenced by key so server layouts can describe the nav without passing functions to the client. */
-const ICONS = { home: Home, users: Users, trendingDown: TrendingDown, fileCheck: FileCheck, activity: Activity, layoutGrid: LayoutGrid, inbox: Inbox, wallet: Wallet, plus: Plus, settings: Settings, boxes: Boxes } satisfies Record<string, LucideIcon>;
+const ICONS = { home: Home, users: Users, trendingDown: TrendingDown, fileCheck: FileCheck, activity: Activity, layoutGrid: LayoutGrid, inbox: Inbox, wallet: Wallet, plus: Plus, settings: Settings, boxes: Boxes, listChecks: ListChecks, messageSquare: MessageSquare } satisfies Record<string, LucideIcon>;
 export type NavIcon = keyof typeof ICONS;
 
 export interface NavItem extends NavMatch {
@@ -71,7 +71,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
   const more = items.length > 5 ? items.slice(4) : [];
   const moreActive = more.some(isActive);
   return (
-    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/90 shadow-[0_-8px_24px_-16px_#1b232c33] backdrop-blur-md md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/90 shadow-[0_-8px_24px_-16px_#1b232c33] backdrop-blur-md md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
       <ul className="flex h-16 items-stretch">
         {shown.map((item) => {
           const Icon = ICONS[item.icon];

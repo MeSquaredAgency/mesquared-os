@@ -57,6 +57,7 @@ export function platformReadiness(env: Record<string, string | undefined> = proc
   add("database", "Database connected", "required", dataMode === "postgres", dataMode === "postgres" ? "Postgres" : "Demo mode: nothing persists");
   add("auth-secret", "AUTH_SECRET set", "required", Boolean(env.AUTH_SECRET && env.AUTH_SECRET.length >= 32), env.AUTH_SECRET ? "set" : "Sessions are signed with the development fallback");
   add("encryption-key", "INTEGRATION_ENCRYPTION_KEY set", "required", Boolean(env.INTEGRATION_ENCRYPTION_KEY && env.INTEGRATION_ENCRYPTION_KEY.length >= 24), env.INTEGRATION_ENCRYPTION_KEY ? "set" : "Credentials would be encrypted with the development key");
+  add("push-keys", "Browser and phone notifications set up (VAPID keys)", "recommended", Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY), env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY ? "set" : "Run npm run push:keys and set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY; until then chat and task alerts go by email only");
   add("job-secret", "JOB_SECRET set", "required", Boolean(env.JOB_SECRET), env.JOB_SECRET ? "set" : "The scheduler cannot authenticate");
   if (live.lastTickAt !== undefined) {
     const ageMs = live.lastTickAt ? (live.now ?? new Date()).getTime() - live.lastTickAt.getTime() : null;

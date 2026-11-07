@@ -40,10 +40,10 @@ model User {
 
   memberships         Membership[]
   operatorAssignments OperatorAssignment[]
-  assignedLeads       Lead[]          @relation("LeadAssignee")
-  assignedExceptions  ExceptionItem[] @relation("ExceptionOperator")
-  escalatedExceptions ExceptionItem[] @relation("ExceptionEscalatedTo")
-  approvedAssets      ContentAsset[]  @relation("AssetApprover")
+  assignedLeads       Lead[]               @relation("LeadAssignee")
+  assignedExceptions  ExceptionItem[]      @relation("ExceptionOperator")
+  escalatedExceptions ExceptionItem[]      @relation("ExceptionEscalatedTo")
+  approvedAssets      ContentAsset[]       @relation("AssetApprover")
 }
 
 /// Fixed capabilities. Tenants name their own roles; the permissions underneath never change.
@@ -113,33 +113,33 @@ enum Industry {
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  industry  Industry @default(GENERIC)
+  id                 String   @id @default(cuid())
+  slug               String   @unique
+  name               String
+  industry           Industry @default(GENERIC)
   /// Which industry template was applied; configuration can diverge afterwards.
-  templateKey String?
+  templateKey        String?
   /// ISO 3166-1 alpha-2 of the business's home region; drives messaging consent rules and defaults.
-  region    String   @default("AU")
-  timezone  String   @default("UTC")
+  region             String   @default("AU")
+  timezone           String   @default("UTC")
   /// BCP 47 tag used for date and number formatting in the dashboard.
-  locale    String   @default("en-AU")
-  currency  String   @default("USD")
+  locale             String   @default("en-AU")
+  currency           String   @default("USD")
   /// Dynamic branding: { logoUrl, primaryColor, accentColor, fromName, replyTo }
-  branding  Json     @default("{}")
+  branding           Json     @default("{}")
   /// Tenant-configured qualification rules consumed by the classifier (see QualificationRules in src/lib/types.ts).
-  qualificationRules Json @default("{}")
+  qualificationRules Json     @default("{}")
   /// Service levels: { firstResponseMinutes, bookingWindowHours, quietHours: {start,end} }
-  sla       Json     @default("{}")
+  sla                Json     @default("{}")
   /// What escalates to a named client person instead of an operator: { rules: [{ when, notifyUserId }] }
-  escalationRules Json @default("{}")
+  escalationRules    Json     @default("{}")
   /// Estimated values per missed-opportunity type, in minor units: { NOT_BOOKED: 150000, ... }
-  opportunityValues Json @default("{}")
+  opportunityValues  Json     @default("{}")
   /// Free-form operational settings.
-  settings  Json     @default("{}")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  settings           Json     @default("{}")
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   roles               TenantRole[]
   memberships         Membership[]
@@ -165,13 +165,13 @@ model Tenant {
   exceptions          ExceptionItem[]
   events              DomainEvent[]
   channels            Channel[]
-  channelMetrics ChannelMetricSnapshot[]
-  adAccounts     AdAccount[]
-  adSpend        AdSpendSnapshot[]
-  invoices       Invoice[]
-  trackedLinks   TrackedLink[]
-  webEvents      WebEvent[]
-  siteMetrics    SiteMetricSnapshot[]
+  channelMetrics      ChannelMetricSnapshot[]
+  adAccounts          AdAccount[]
+  adSpend             AdSpendSnapshot[]
+  invoices            Invoice[]
+  trackedLinks        TrackedLink[]
+  webEvents           WebEvent[]
+  siteMetrics         SiteMetricSnapshot[]
   contentAssets       ContentAsset[]
   socialPosts         SocialPost[]
   socialProofAssets   SocialProofAsset[]
@@ -181,6 +181,8 @@ model Tenant {
   informationRequests InformationRequest[]
   reviews             Review[]
   formSessions        FormSession[]
+  tasks               Task[]
+  chatMessages        ChatMessage[]
 }
 
 /// Inbound API keys used by web forms / landing pages / relays to post into /api/v1/intake. Only a hash is stored.
@@ -280,14 +282,14 @@ model Integration {
 
 /// Voice, examples, banned phrases and the compliance block the content engine enforces on every asset.
 model BrandProfile {
-  id             String   @id @default(cuid())
-  tenantId       String   @unique
-  voice          String?
-  examples       String[] @default([])
-  bannedPhrases  String[] @default([])
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  voice           String?
+  examples        String[] @default([])
+  bannedPhrases   String[] @default([])
   /// { requiredFooter, prohibitedCombinations[], claimsPolicy, mustNot[] }
-  complianceBlock Json    @default("{}")
-  updatedAt      DateTime @updatedAt
+  complianceBlock Json     @default("{}")
+  updatedAt       DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
@@ -314,7 +316,7 @@ model Contact {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads               Lead[]
   conversations       Conversation[]
   intakeEvents        IntakeEvent[]
@@ -323,7 +325,7 @@ model Contact {
   exceptions          ExceptionItem[]
   agentRuns           AgentRun[]
   transactions        Transaction[]
-  invoices     Invoice[]
+  invoices            Invoice[]
   informationRequests InformationRequest[]
 
   @@index([tenantId, email])
@@ -356,16 +358,16 @@ enum StageAdvanceTrigger {
 }
 
 model PipelineStage {
-  id         String              @id @default(cuid())
-  tenantId   String
-  pipelineId String
-  key        String
-  name       String
-  order      Int
+  id             String              @id @default(cuid())
+  tenantId       String
+  pipelineId     String
+  key            String
+  name           String
+  order          Int
   /// Event that advances a lead *into* this stage.
-  advanceOn  StageAdvanceTrigger @default(MANUAL)
-  isWon      Boolean             @default(false)
-  isLost     Boolean             @default(false)
+  advanceOn      StageAdvanceTrigger @default(MANUAL)
+  isWon          Boolean             @default(false)
+  isLost         Boolean             @default(false)
   /// Days of silence in this stage before a lead counts as a quote/proposal gone quiet. Null = not watched.
   quietAfterDays Int?
 
@@ -434,36 +436,36 @@ model Lead {
   /// Campaign attribution stamped at intake: { source, medium, campaign, content, term, clickId }
   attribution Json       @default("{}")
 
-  status      LeadStatus @default(NEW)
-  ticketType  TicketType?
-  intentScore Int?
+  status              LeadStatus  @default(NEW)
+  ticketType          TicketType?
+  intentScore         Int?
   qualificationReason String?
-  qualifiedAt DateTime?
-  qualifiedBy String?
+  qualifiedAt         DateTime?
+  qualifiedBy         String?
 
   /// Estimated value of the opportunity, in minor units.
-  valueCents      Int       @default(0)
+  valueCents         Int       @default(0)
   /// SLA deadlines computed at intake from tenant config.
-  respondBy       DateTime?
-  bookBy          DateTime?
-  firstResponseAt DateTime?
-  bookedAt        DateTime?
-  wonAt           DateTime?
-  lostAt          DateTime?
-  lifetimeValueCents Int    @default(0)
+  respondBy          DateTime?
+  bookBy             DateTime?
+  firstResponseAt    DateTime?
+  bookedAt           DateTime?
+  wonAt              DateTime?
+  lostAt             DateTime?
+  lifetimeValueCents Int       @default(0)
   /// When the lead entered its current stage; drives "quote gone quiet".
-  stageEnteredAt  DateTime?
+  stageEnteredAt     DateTime?
   /// Last inbound or outbound activity on this lead.
-  lastActivityAt  DateTime?
+  lastActivityAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact             Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  pipeline            Pipeline?           @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
-  stage               PipelineStage?      @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  assignee            User?               @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact             Contact?             @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  pipeline            Pipeline?            @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  stage               PipelineStage?       @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  assignee            User?                @relation("LeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   bookings            Booking[]
   intakeEvents        IntakeEvent[]
   missedOpportunities MissedOpportunity[]
@@ -541,28 +543,28 @@ enum MessageChannel {
 
 /// One thread per contact per channel. The unified inbox and the forwarding inbox both read from here.
 model Conversation {
-  id            String         @id @default(cuid())
-  tenantId      String
-  contactId     String?
-  channel       MessageChannel
-  subject       String?
-  externalId    String?
-  lastMessageAt DateTime?
+  id             String          @id @default(cuid())
+  tenantId       String
+  contactId      String?
+  channel        MessageChannel
+  subject        String?
+  externalId     String?
+  lastMessageAt  DateTime?
   /// True while the last message is inbound and nobody has replied.
-  awaitingReply Boolean        @default(false)
+  awaitingReply  Boolean         @default(false)
   /// Social inbox threads: the platform and channel they arrived on, provider ids needed to reply, the other party's display name.
   platform       SocialPlatform?
   channelId      String?
-  meta           Json           @default("{}")
+  meta           Json            @default("{}")
   displayName    String?
   /// Drafted by the triage automation for a person to send with one click.
   suggestedReply String?
-  createdAt     DateTime       @default(now())
+  createdAt      DateTime        @default(now())
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  socialChannel Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  messages Message[]
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  socialChannel Channel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  messages      Message[]
 
   /// One thread per provider thread id per channel (DM conversation, commented post).
   @@unique([tenantId, channel, externalId])
@@ -640,21 +642,21 @@ enum BookingStatus {
 }
 
 model Booking {
-  id         String          @id @default(cuid())
-  tenantId   String
-  leadId     String
-  provider   BookingProvider @default(CALCOM)
-  externalId String?
-  bookingUrl String?
-  startsAt   DateTime?
-  endsAt     DateTime?
-  status     BookingStatus   @default(LINK_PENDING)
+  id           String          @id @default(cuid())
+  tenantId     String
+  leadId       String
+  provider     BookingProvider @default(CALCOM)
+  externalId   String?
+  bookingUrl   String?
+  startsAt     DateTime?
+  endsAt       DateTime?
+  status       BookingStatus   @default(LINK_PENDING)
   /// Lifecycle stamps set by the booking_lifecycle automation.
   confirmedAt  DateTime?
   remindedAt   DateTime?
   followedUpAt DateTime?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -666,21 +668,21 @@ model Booking {
 
 /// Work an automation decided to do later: a reminder, a follow-up, a review request, a chase. Processed by the jobs tick.
 model ScheduledAction {
-  id        String   @id @default(cuid())
+  id        String                @id @default(cuid())
   tenantId  String
   typeKey   String
   /// Discriminator inside the type, e.g. "reminder" | "follow_up" | "auto_complete".
   action    String
   runAt     DateTime
-  payload   Json     @default("{}")
+  payload   Json                  @default("{}")
   /// Idempotency: one pending action per (subject, action).
   dedupeKey String
   status    ScheduledActionStatus @default(PENDING)
-  attempts  Int      @default(0)
+  attempts  Int                   @default(0)
   lastError String?
   /// Set when a tick claims the row; a claim older than the lease is reclaimable.
   lockedAt  DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime              @default(now())
   ranAt     DateTime?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1218,27 +1220,27 @@ enum ContentStatus {
 
 /// Anything the content engine ingests or generates. Generated assets point back to their source via `parentId`.
 model ContentAsset {
-  id             String           @id @default(cuid())
-  tenantId       String
-  parentId       String?
-  kind           ContentAssetKind
-  title          String?
-  body           String?
-  fileUrl        String?
-  targetPlatform SocialPlatform?
-  status         ContentStatus    @default(DRAFT)
+  id                 String           @id @default(cuid())
+  tenantId           String
+  parentId           String?
+  kind               ContentAssetKind
+  title              String?
+  body               String?
+  fileUrl            String?
+  targetPlatform     SocialPlatform?
+  status             ContentStatus    @default(DRAFT)
   /// True when the asset mentions prices, named people or claims and therefore needs client sign-off.
-  needsClientSignoff Boolean      @default(false)
-  tags           String[]         @default([])
+  needsClientSignoff Boolean          @default(false)
+  tags               String[]         @default([])
   /// When the asset should go out; set at approval from the tenant's calendar slots.
-  scheduledFor   DateTime?
+  scheduledFor       DateTime?
   /// How it came to be: engine, model, hashtags, media brief, compliance report, origin of a source.
-  generation     Json             @default("{}")
-  approvedById   String?
-  approvedAt     DateTime?
-  rejectionNote  String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  generation         Json             @default("{}")
+  approvedById       String?
+  approvedAt         DateTime?
+  rejectionNote      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   parent     ContentAsset?  @relation("AssetLineage", fields: [parentId], references: [id], onDelete: SetNull)
@@ -1357,20 +1359,20 @@ enum TransactionStatus {
 
 /// Money in or out, from any connected finance provider, keyed on the provider's id per tenant.
 model Transaction {
-  id         String            @id @default(cuid())
-  tenantId   String
-  contactId  String?
-  leadId     String?
-  provider   FinanceProvider   @default(MANUAL)
-  providerId String
-  kind       TransactionKind   @default(PAYMENT)
-  status     TransactionStatus @default(PENDING)
+  id          String            @id @default(cuid())
+  tenantId    String
+  contactId   String?
+  leadId      String?
+  provider    FinanceProvider   @default(MANUAL)
+  providerId  String
+  kind        TransactionKind   @default(PAYMENT)
+  status      TransactionStatus @default(PENDING)
   amountCents Int
-  currency   String            @default("USD")
-  note       String?
-  occurredAt DateTime
-  rawPayload Json              @default("{}")
-  createdAt  DateTime          @default(now())
+  currency    String            @default("USD")
+  note        String?
+  occurredAt  DateTime
+  rawPayload  Json              @default("{}")
+  createdAt   DateTime          @default(now())
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -1429,20 +1431,20 @@ enum AdPlatform {
 
 /// A connected ad account. Credentials live on the tenant's META / GOOGLE_ADS Integration row.
 model AdAccount {
-  id                String     @id @default(cuid())
-  tenantId          String
-  platform          AdPlatform
-  externalAccountId String
-  name              String?
-  currency          String     @default("AUD")
+  id                 String     @id @default(cuid())
+  tenantId           String
+  platform           AdPlatform
+  externalAccountId  String
+  name               String?
+  currency           String     @default("AUD")
   /// Planned spend per calendar month, for pacing alerts.
   monthlyBudgetCents Int?
-  isActive          Boolean    @default(true)
-  lastSyncAt        DateTime?
-  lastError         String?
-  settings          Json       @default("{}")
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  isActive           Boolean    @default(true)
+  lastSyncAt         DateTime?
+  lastError          String?
+  settings           Json       @default("{}")
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   snapshots AdSpendSnapshot[]
@@ -1623,4 +1625,97 @@ model OnboardingSubmission {
   updatedAt     DateTime         @updatedAt
 
   @@index([status, updatedAt])
+}
+
+/// A piece of work between the client and Me², with an optional deadline the scheduler watches.
+model Task {
+  id          String    @id @default(cuid())
+  tenantId    String
+  title       String
+  details     String?
+  /// "OPEN", "IN_PROGRESS", "WAITING", "DONE" or "CANCELLED".
+  status      String    @default("OPEN")
+  /// Who owes the next move: "ME2" or "CLIENT".
+  owner       String
+  assigneeId  String?
+  dueAt       DateTime?
+  /// The last reminder sent for the current deadline, "DUE_SOON" or "OVERDUE"; cleared when the deadline moves.
+  reminded    String?
+  createdById String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  events TaskEvent[]
+
+  @@index([tenantId, status, dueAt])
+  @@index([status, dueAt])
+}
+
+/// One line of a task's activity log: created, a status or deadline change, a comment, a reminder sent.
+model TaskEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  taskId    String
+  /// "CREATED", "STATUS", "ASSIGNED", "OWNER", "DUE", "EDITED", "COMMENT" or "REMINDER".
+  kind      String
+  actorId   String?
+  /// The person's name when it happened, or "Reminder" for the scheduler.
+  actorName String
+  /// "ME2", "CLIENT" or "SYSTEM".
+  actorSide String
+  body      String?
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, taskId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// A message in a workspace's chat between the client and Me². The text is only ever stored encrypted
+/// (AES-256-GCM, bound to the workspace and message id); the id is chosen before encrypting for that reason.
+model ChatMessage {
+  id         String   @id
+  tenantId   String
+  authorId   String?
+  authorName String
+  /// "ME2" or "CLIENT".
+  side       String
+  ciphertext String
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+/// Each person's place in a workspace's chat: how far they have read, and when they were last emailed about it.
+model ChatRead {
+  tenantId      String
+  userId        String
+  /// Null until they first open the chat.
+  lastReadAt    DateTime?
+  /// The last "new message" email, so nobody gets more than one per half hour however the conversation alternates.
+  lastEmailedAt DateTime?
+
+  @@id([tenantId, userId])
+}
+
+/// A browser or phone that asked for notifications for a person. The endpoint is the push service's
+/// address for that device; p256dh and auth are the device's public key and secret for encrypting to it.
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  /// A short description of the device ("iPhone", "Chrome on Mac") so a person can tell them apart.
+  device     String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
 }

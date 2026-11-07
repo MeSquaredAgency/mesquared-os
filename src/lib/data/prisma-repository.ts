@@ -1,5 +1,8 @@
 import {
   Prisma,
+  type ChatMessage,
+  type Task,
+  type TaskEvent,
   type AgentGuidance,
   type AgentMessage,
   type LeadNote,
@@ -44,6 +47,13 @@ import { healthScore } from "@/lib/health";
 import { HANDLED_OUTCOMES, HOUSEKEEPING_TYPES } from "@/lib/portal/handled";
 import { getPrisma } from "@/lib/prisma";
 import type {
+  PushSubscriptionRecord,
+  ChatMessageRecord,
+  Side,
+  TaskEventKind,
+  TaskEventRecord,
+  TaskRecord,
+  TaskStatus,
   AdAccountRecord,
   AdSpendSnapshotRecord,
   AgentGuidanceRecord,
@@ -233,6 +243,12 @@ const toAgentRun = (r: AgentRun): AgentRunRecord => ({
   createdAt: r.createdAt,
 });
 const toAgentMessage = (m: AgentMessage): AgentMessageRecord => ({ id: m.id, runId: m.runId, seq: m.seq, role: m.role === "assistant" ? "assistant" : "user", content: (m.content ?? []) as Record<string, unknown>[], stopReason: m.stopReason, createdAt: m.createdAt });
+const asSide = (v: string): Side => (v === "ME2" ? "ME2" : "CLIENT");
+const toTask = (t: Task): TaskRecord => ({ id: t.id, tenantId: t.tenantId, title: t.title, details: t.details, status: t.status as TaskStatus, owner: asSide(t.owner), assigneeId: t.assigneeId, dueAt: t.dueAt, reminded: t.reminded === "DUE_SOON" || t.reminded === "OVERDUE" ? t.reminded : null, createdById: t.createdById, completedAt: t.completedAt, createdAt: t.createdAt, updatedAt: t.updatedAt });
+const toTaskEvent = (e: TaskEvent): TaskEventRecord => ({ id: e.id, taskId: e.taskId, kind: e.kind as TaskEventKind, actorId: e.actorId, actorName: e.actorName, actorSide: e.actorSide === "SYSTEM" ? "SYSTEM" : asSide(e.actorSide), body: e.body, data: (e.data ?? {}) as Record<string, unknown>, createdAt: e.createdAt });
+const toChatMessage = (m: ChatMessage): ChatMessageRecord => ({ id: m.id, tenantId: m.tenantId, authorId: m.authorId, authorName: m.authorName, side: asSide(m.side), ciphertext: m.ciphertext, createdAt: m.createdAt });
+const OPEN_TASK_STATUSES = ["OPEN", "IN_PROGRESS", "WAITING"];
+const eventRow = (tenantId: string, taskId: string, e: { kind: string; actorId?: string | null; actorName: string; actorSide: string; body?: string | null; data?: Record<string, unknown> }) => ({ tenantId, taskId, kind: e.kind, actorId: e.actorId ?? null, actorName: e.actorName, actorSide: e.actorSide, body: e.body ?? null, data: json(e.data ?? {}) });
 const toLeadNote = (n: LeadNote): LeadNoteRecord => ({ id: n.id, leadId: n.leadId, kind: n.kind === "CALL_BRIEF" ? "CALL_BRIEF" : "NOTE", body: n.body, authorType: n.authorType === "AGENT" ? "AGENT" : "USER", agentRunId: n.agentRunId, createdById: n.createdById, createdAt: n.createdAt });
 const toAgentGuidance = (g: AgentGuidance): AgentGuidanceRecord => ({ id: g.id, runId: g.runId, text: g.text, createdById: g.createdById, deliveredSeq: g.deliveredSeq, createdAt: g.createdAt });
 const toAgentToolCall = (c: AgentToolCall): AgentToolCallRecord => ({
@@ -1124,6 +1140,114 @@ export const prismaRepository: Repository = {
     const lead = await db.lead.findFirst({ where: { id: leadId, tenantId }, select: { id: true } });
     if (!lead) throw new TenantMismatchError("Lead", leadId);
     return toLeadNote(await db.leadNote.create({ data: { tenantId, leadId, kind: data.kind, body: data.body, authorType: data.authorType, agentRunId: data.agentRunId ?? null, createdById: data.createdById ?? null } }));
+  },
+
+  async createTask(tenantId, data, event) {
+    const db = getPrisma();
+    return db.$transaction(async (tx) => {
+      const task = await tx.task.create({ data: { tenantId, title: data.title, details: data.details ?? null, owner: data.owner, assigneeId: data.assigneeId ?? null, dueAt: data.dueAt ?? null, createdById: data.createdById ?? null } });
+      await tx.taskEvent.create({ data: eventRow(tenantId, task.id, { ...event, kind: "CREATED" }) });
+      return toTask(task);
+    });
+  },
+
+  async getTask(tenantId, taskId) {
+    const t = await getPrisma().task.findFirst({ where: { id: taskId, tenantId } });
+    return t ? toTask(t) : null;
+  },
+
+  async listTasks(tenantId, opts = {}) {
+    const rows = await getPrisma().task.findMany({ where: { tenantId, ...(opts.status ? { status: { in: opts.status } } : {}) }, orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }], take: opts.limit ?? 500 });
+    return rows.map(toTask);
+  },
+
+  async updateTask(tenantId, taskId, patch, events) {
+    const db = getPrisma();
+    return db.$transaction(async (tx) => {
+      const updated = await tx.task.updateMany({ where: { id: taskId, tenantId }, data: patch });
+      if (updated.count === 0) throw new TenantMismatchError("Task", taskId);
+      if (events.length) await tx.taskEvent.createMany({ data: events.map((e) => eventRow(tenantId, taskId, e)) });
+      return toTask(await tx.task.findUniqueOrThrow({ where: { id: taskId } }));
+    });
+  },
+
+  async addTaskEvent(tenantId, taskId, e) {
+    const db = getPrisma();
+    const task = await db.task.findFirst({ where: { id: taskId, tenantId }, select: { id: true } });
+    if (!task) throw new TenantMismatchError("Task", taskId);
+    return toTaskEvent(await db.taskEvent.create({ data: eventRow(tenantId, taskId, e) }));
+  },
+
+  async listTaskEvents(tenantId, taskId) {
+    const rows = await getPrisma().taskEvent.findMany({ where: { tenantId, taskId }, orderBy: { createdAt: "asc" }, take: 500 });
+    return rows.map(toTaskEvent);
+  },
+
+  async listTasksForReminder(before, stage, limit = 200) {
+    const notYet = stage === "DUE_SOON" ? { reminded: null } : { OR: [{ reminded: null }, { reminded: { not: "OVERDUE" } }] };
+    const rows = await getPrisma().task.findMany({ where: { status: { in: OPEN_TASK_STATUSES }, dueAt: { not: null, lte: before }, ...notYet }, orderBy: { dueAt: "asc" }, take: limit });
+    return rows.map(toTask);
+  },
+
+  async claimTaskReminder(tenantId, taskId, from, to) {
+    const won = await getPrisma().task.updateMany({ where: { id: taskId, tenantId, reminded: from }, data: { reminded: to } });
+    return won.count === 1;
+  },
+
+  async savePushSubscription(userId, data) {
+    const row = await getPrisma().pushSubscription.upsert({ where: { endpoint: data.endpoint }, create: { userId, endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth, device: data.device ?? null }, update: { userId, p256dh: data.p256dh, auth: data.auth, ...(data.device ? { device: data.device } : {}) } });
+    return row as PushSubscriptionRecord;
+  },
+
+  async listPushSubscriptions(userIds) {
+    if (userIds.length === 0) return [];
+    return (await getPrisma().pushSubscription.findMany({ where: { userId: { in: userIds } } })) as PushSubscriptionRecord[];
+  },
+
+  async deletePushSubscription(endpoint, userId) {
+    await getPrisma().pushSubscription.deleteMany({ where: { endpoint, ...(userId ? { userId } : {}) } });
+  },
+
+  async touchPushSubscription(endpoint, at) {
+    await getPrisma().pushSubscription.updateMany({ where: { endpoint }, data: { lastUsedAt: at } });
+  },
+
+  async addChatMessage(tenantId, data) {
+    return toChatMessage(await getPrisma().chatMessage.create({ data: { id: data.id, tenantId, authorId: data.authorId, authorName: data.authorName, side: data.side, ciphertext: data.ciphertext } }));
+  },
+
+  async listChatMessages(tenantId, opts = {}) {
+    const rows = await getPrisma().chatMessage.findMany({ where: { tenantId, ...(opts.before ? { createdAt: { lt: opts.before } } : {}) }, orderBy: { createdAt: "desc" }, take: opts.limit ?? 100 });
+    return rows.reverse().map(toChatMessage);
+  },
+
+  async markChatRead(tenantId, userId, at) {
+    const db = getPrisma();
+    const existing = await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+    if (existing?.lastReadAt && existing.lastReadAt >= at) return;
+    await db.chatRead.upsert({ where: { tenantId_userId: { tenantId, userId } }, create: { tenantId, userId, lastReadAt: at }, update: { lastReadAt: at } });
+  },
+
+  async claimChatEmail(tenantId, userId, at, quietMs) {
+    const db = getPrisma();
+    const before = new Date(at.getTime() - quietMs);
+    // Take the slot if the row exists and is free; otherwise create the row, and lose to anyone who created it first.
+    const taken = await db.chatRead.updateMany({ where: { tenantId, userId, OR: [{ lastEmailedAt: null }, { lastEmailedAt: { lte: before } }] }, data: { lastEmailedAt: at } });
+    if (taken.count === 1) return true;
+    if (await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } }, select: { userId: true } })) return false;
+    try {
+      await db.chatRead.create({ data: { tenantId, userId, lastEmailedAt: at } });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+      throw error;
+    }
+  },
+
+  async countUnreadChat(tenantId, userId, side) {
+    const db = getPrisma();
+    const read = await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
+    return db.chatMessage.count({ where: { tenantId, side: { not: side }, ...(read?.lastReadAt ? { createdAt: { gt: read.lastReadAt } } : {}) } });
   },
 
   async listLeadNotes(tenantId, leadIds, opts = {}) {

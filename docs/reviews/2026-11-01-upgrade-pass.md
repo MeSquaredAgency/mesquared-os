@@ -246,7 +246,31 @@ Setting up a client offered three choices, so a plumber, a dentist and a café a
 - The onboarding form maps its business types to the new templates, and the portfolio, console and AI prompts show the template name instead of the coarse industry.
 - No database change: tenants already store the template key.
 
+## Tasks with reminders, and an encrypted client chat (8 Nov)
+
+Work between a client and Me² lived in email and texts, with no shared record of who owed what or when.
+
+- **Tasks.** Every workspace has a task list in the client portal and the console. A task says who it is waiting on (the client or Me²), who has it, and when it is due, shown in the workspace's own timezone. Filters split "waiting on you" from "waiting on the other side".
+- **Activity log.** Each task keeps a log of every change and comment, with who made it and which side they are on.
+- **Reminders.** The scheduler emails a day before a deadline and again when it passes, once each per deadline. Overdue work Me² owes also lands in the operator queue. When the client owes it, Me² hears too, so someone can chase.
+- **Chat.** One thread per workspace between the client's team and Me², with unread badges and live refresh. Each message is encrypted with AES-256-GCM before it is stored, bound to its workspace and message id, under a key derived from the existing integration secret, so it works from the first deploy. This is encryption at rest, not end-to-end: the server decrypts to show messages to the people allowed to read them.
+- **Notifications.** Browser and phone notifications first: a new message, a task assigned to you, a comment or completion on your task, and deadline reminders arrive instantly on every device a person turned them on for. People with no device turned on get an email instead (for chat, at most once per half-hour burst). Neither ever shows the message text, so nothing private appears on a lock screen.
+- **Turning them on.** A one-time prompt at the top of the app, and an on/off switch with a test button in the account menu. On iPhone and iPad, Apple only allows web notifications once the OS is added to the Home Screen, so there the prompt explains how. The OS now has an app manifest and icons for that.
+- **How it is built.** Web Push written on Web Crypto (no Node-only library), checked byte for byte against the worked example in RFC 8291. Push is only ever sent to the browsers' own push services. Dead devices are forgotten automatically.
+- **App mode.** Installed to a Home Screen on Android or iPhone, the OS opens full screen like an app:
+  - The status bar takes the colour of the header beneath it: warm paper in the portal, navy in the console.
+  - The layout runs edge to edge and pads itself clear of the notch, the home indicator and the rounded corners in landscape.
+  - A page opened with no signal shows a branded offline screen that reloads itself when the connection returns, and a banner says when the connection drops mid-session. Nothing from a workspace is stored on the device.
+  - Pulling down from the top refreshes the page, which installed apps otherwise lack. The chat keeps its own scrolling.
+  - Phones get an install banner: one tap on Android, the two Share steps on iPhone and iPad. Computers get "Install the app" in the account menu.
+  - Proper icons for Android, including maskable versions so the launcher can shape them, and a real 180px iPhone icon.
+  - Form fields are 16px on phones, so iOS no longer zooms in when one is tapped.
+- **Nav.** The portal gains Tasks and Messages with badges. The console workspace page gains Tasks and Messages buttons with counts.
+- **Database.** Two migrations add the Task, TaskEvent, ChatMessage, ChatRead and PushSubscription tables. Nothing existing changes.
+
 ## Not done (candidates for a later pass)
+
+- Chat attachments and @-mentions; tasks linked to a lead or a piece of content; a task digest in the Monday email.
 
 - An outbox for event subscribers, so an acknowledgement survives a crash
   between the event and the send. Deliberately left: replaying handlers risks

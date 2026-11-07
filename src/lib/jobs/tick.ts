@@ -8,6 +8,7 @@ import { registerInventory } from "@/lib/inventory";
 import { errorText, log } from "@/lib/log";
 import { quietHoursEnd } from "@/lib/messaging";
 import { publishDuePosts } from "@/lib/social/publish";
+import { remindDueTasks } from "@/lib/tasks";
 import { localKey } from "@/lib/content/calendar";
 import type { TenantSummary } from "@/lib/types";
 import { startOfDayInZone } from "@/lib/utils";
@@ -29,6 +30,8 @@ export interface TickResult {
   actionsRun: number;
   actionsFailed: number;
   published: number;
+  /** Task reminders sent this tick: due soon, and overdue. */
+  taskReminders: number;
 }
 
 /**
@@ -127,6 +130,11 @@ export async function tick(now = new Date()): Promise<TickResult> {
     return { published: 0, failed: 0, simulated: 0 };
   });
 
+  const reminders = await remindDueTasks(tenants, now).catch((error) => {
+    log("error", "tick.task_reminders_failed", { error: errorText(error) });
+    return { dueSoon: 0, overdue: 0 };
+  });
+
   let actionsRun = 0;
   let actionsFailed = 0;
   for (const action of await repository.listDueActions(now)) {
@@ -158,7 +166,7 @@ export async function tick(now = new Date()): Promise<TickResult> {
   }
   // The heartbeat is what the health endpoint and readiness read to know the scheduler is alive.
   await repository.recordHeartbeat("tick", new Date()).catch((error) => log("error", "tick.heartbeat_failed", { error: errorText(error) }));
-  const result = { tenants: tenants.length, tenantsSkipped: skipped + tenantsFailed, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated };
+  const result = { tenants: tenants.length, tenantsSkipped: skipped + tenantsFailed, detected, actionsRun, actionsFailed, published: publishing.published + publishing.simulated, taskReminders: reminders.dueSoon + reminders.overdue };
   log("info", "tick.done", { ...result, ms: Date.now() - started });
   return result;
 }

@@ -6,6 +6,8 @@
  *   DATABASE_URL=... MESSAGING_MODE=log npm run db:parity
  */
 import assert from "node:assert/strict";
+import { postChatMessage, readChat } from "@/lib/chat";
+import { remindDueTasks } from "@/lib/tasks";
 import { registerAutomations, onBookingCreated, runScheduledAction } from "@/lib/automations/handlers";
 import { z } from "zod";
 import { _setClaudeClientForTests } from "@/lib/ai/claude";
@@ -421,6 +423,36 @@ await step("customer relations: call briefs, a contact's messages across convers
   assert.equal(item?.suggestedAction, "It’s 7%");
   await repository.resolveAgentToolCallException(harbor!.id, call.id, "parity");
   await repository.updateAgentRun(harbor!.id, run.id, { status: "CANCELLED", finishedAt: new Date() });
+});
+
+await step("tasks and chat: activity log, one reminder per stage, encrypted messages and unread counts through Postgres", async () => {
+  const actor = { actorId: null, actorName: "Parity", actorSide: "ME2" as const };
+  const far = new Date(Date.now() + 3650 * 86_400_000);
+  const task = await repository.createTask(harbor!.id, { title: `Parity task ${stamp}`, owner: "ME2", dueAt: new Date(far.getTime() + 3_600_000) }, actor);
+  assert.equal(await repository.getTask(summit!.id, task.id), null);
+  await assert.rejects(repository.updateTask(summit!.id, task.id, { status: "DONE" }, []), TenantMismatchError);
+  await repository.updateTask(harbor!.id, task.id, { status: "IN_PROGRESS" }, [{ ...actor, kind: "STATUS", body: "Moved it to In progress" }]);
+  assert.ok((await repository.listTasks(harbor!.id, { status: ["IN_PROGRESS"] })).some((t) => t.id === task.id));
+  assert.equal(await repository.claimTaskReminder(harbor!.id, task.id, null, "DUE_SOON"), true);
+  assert.equal(await repository.claimTaskReminder(harbor!.id, task.id, null, "DUE_SOON"), false, "a second claim loses");
+  const tenants = await repository.listAllTenants();
+  const late = await remindDueTasks(tenants, new Date(far.getTime() + 2 * 3_600_000));
+  assert.ok(late.overdue >= 1);
+  assert.equal((await repository.getTask(harbor!.id, task.id))?.reminded, "OVERDUE");
+  assert.deepEqual((await repository.listTaskEvents(harbor!.id, task.id)).map((e) => e.kind), ["CREATED", "STATUS", "REMINDER"]);
+  await repository.updateTask(harbor!.id, task.id, { status: "CANCELLED", completedAt: new Date() }, []);
+
+  const people = await repository.listTenantPeople(harbor!.id);
+  const member = people.find((p) => p.via === "member");
+  assert.ok(member, "harbor has a member");
+  const before = await repository.countUnreadChat(harbor!.id, member.userId, "CLIENT");
+  const sent = await postChatMessage({ tenant: harbor!, authorId: member.userId, authorName: "Parity — ünïcode", side: "CLIENT", text: `Parity chat ${stamp} — ünïcode` });
+  const [row] = (await repository.listChatMessages(harbor!.id, { limit: 1 })).filter((m) => m.id === sent.id);
+  assert.ok(row && !row.ciphertext.includes("Parity chat"), "only ciphertext is stored");
+  assert.ok((await readChat(harbor!.id, { limit: 5 })).some((m) => m.text === `Parity chat ${stamp} — ünïcode`));
+  assert.equal(await repository.countUnreadChat(harbor!.id, member.userId, "CLIENT"), before, "your own messages are never unread");
+  assert.ok((await repository.countUnreadChat(harbor!.id, "nobody", "ME2")) >= 1, "Me² sees it unread");
+  assert.deepEqual((await readChat(summit!.id, { limit: 50 })).filter((m) => m.id === sent.id), []);
 });
 
 await step("content: create assets and decide", async () => {

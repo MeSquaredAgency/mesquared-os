@@ -381,3 +381,28 @@ export function escalationEmail({ tenant, summary, suggestedAction, portalUrl }:
     body: [`Something at ${tenant.name} needs a person:`, "", summary, "", `What we suggest: ${suggestedAction}`, "", `See it here: ${portalUrl}`, "", staffSignoff(tenant)].join("\n"),
   };
 }
+
+/** A task deadline coming up or passed: who it is waiting on, when it was due, and the link. */
+export function taskReminderEmail({ tenant, firstName, title, stage, dueText, waitingOn, taskUrl }: { tenant: TenantSummary; firstName: string | null; title: string; stage: "DUE_SOON" | "OVERDUE"; dueText: string; waitingOn: string; taskUrl: string }): { subject: string; body: string } {
+  const name = quoteUntrusted(title, 120);
+  return {
+    subject: stage === "OVERDUE" ? `Overdue for ${tenant.name}: ${quoteUntrusted(title, 60)}` : `Due soon for ${tenant.name}: ${quoteUntrusted(title, 60)}`,
+    body: [
+      hi(firstName),
+      "",
+      stage === "OVERDUE" ? `"${name}" was due ${dueText} and is still open. It is waiting on ${waitingOn}.` : `"${name}" is due ${dueText}. It is waiting on ${waitingOn}.`,
+      "",
+      stage === "OVERDUE" ? `Mark it done, move the deadline or say what is holding it up: ${taskUrl}` : `See the task: ${taskUrl}`,
+      "",
+      staffSignoff(tenant),
+    ].join("\n"),
+  };
+}
+
+/** A new chat message. The text never goes in the email: it stays encrypted in the OS. */
+export function chatNotificationEmail({ tenant, firstName, from, chatUrl }: { tenant: TenantSummary; firstName: string | null; from: string; chatUrl: string }): { subject: string; body: string } {
+  return {
+    subject: `New message from ${quoteUntrusted(from, 60)} (${tenant.name})`,
+    body: [hi(firstName), "", `${quoteUntrusted(from, 60)} sent you a message in the ${tenant.name} chat.`, "", `Read and reply in the OS (messages stay there, encrypted, and are never sent by email): ${chatUrl}`, "", staffSignoff(tenant)].join("\n"),
+  };
+}

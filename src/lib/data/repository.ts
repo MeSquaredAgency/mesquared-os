@@ -1,4 +1,11 @@
 import type {
+  PushSubscriptionRecord,
+  ChatMessageRecord,
+  TaskEventKind,
+  TaskEventRecord,
+  TaskRecord,
+  TaskStatus,
+  Side,
   AdAccountRecord,
   AgentAutonomy,
   AgentGuidanceRecord,
@@ -214,6 +221,35 @@ export interface NewLeadNote {
 
 /** A message with the channel of the conversation it is in. */
 export type ContactMessage = MessageRecord & { channel: ConversationRecord["channel"] };
+
+export interface NewTask {
+  title: string;
+  details?: string | null;
+  owner: Side;
+  assigneeId?: string | null;
+  dueAt?: Date | null;
+  createdById?: string | null;
+}
+
+export type TaskPatch = Partial<Pick<TaskRecord, "title" | "details" | "status" | "owner" | "assigneeId" | "dueAt" | "reminded" | "completedAt">>;
+
+export interface NewTaskEvent {
+  kind: TaskEventKind;
+  actorId?: string | null;
+  actorName: string;
+  actorSide: Side | "SYSTEM";
+  body?: string | null;
+  data?: Record<string, unknown>;
+}
+
+export interface NewChatMessage {
+  /** Chosen by the caller: the ciphertext is bound to it. */
+  id: string;
+  authorId: string | null;
+  authorName: string;
+  side: Side;
+  ciphertext: string;
+}
 
 export type AgentToolCallPatch = Partial<Pick<AgentToolCallRecord, "status" | "editedInput" | "signoff" | "result" | "isError" | "decidedById" | "decidedAt">>;
 
@@ -812,6 +848,38 @@ export interface Repository {
   listLeadNotes(tenantId: string, leadIds: string[], opts?: { kind?: LeadNoteKind; limit?: number }): Promise<LeadNoteRecord[]>;
   /** The latest messages with a contact across all their conversations, oldest first. */
   listContactMessages(tenantId: string, contactId: string, limit?: number): Promise<ContactMessage[]>;
+  /** Creates a task and its CREATED activity line. */
+  createTask(tenantId: string, data: NewTask, event: Omit<NewTaskEvent, "kind">): Promise<TaskRecord>;
+  getTask(tenantId: string, taskId: string): Promise<TaskRecord | null>;
+  /** Tasks in a workspace, soonest deadline first, undated last. */
+  listTasks(tenantId: string, opts?: { status?: TaskStatus[]; limit?: number }): Promise<TaskRecord[]>;
+  /** Applies the patch and records each event; throws TenantMismatchError for a task elsewhere. */
+  updateTask(tenantId: string, taskId: string, patch: TaskPatch, events: NewTaskEvent[]): Promise<TaskRecord>;
+  addTaskEvent(tenantId: string, taskId: string, event: NewTaskEvent): Promise<TaskEventRecord>;
+  /** A task's activity log, oldest first. */
+  listTaskEvents(tenantId: string, taskId: string): Promise<TaskEventRecord[]>;
+  /** Open tasks in every workspace whose deadline is at or before `before` and whose reminder stage is not `stage` yet. */
+  listTasksForReminder(before: Date, stage: "DUE_SOON" | "OVERDUE", limit?: number): Promise<TaskRecord[]>;
+  /** Moves a task's reminder stage from `from` to `to` only if it is still `from`: true when this caller won it. */
+  claimTaskReminder(tenantId: string, taskId: string, from: TaskRecord["reminded"], to: "DUE_SOON" | "OVERDUE"): Promise<boolean>;
+  /** Saves a device for a person; the same endpoint saved again moves to this person with the new keys. */
+  savePushSubscription(userId: string, data: { endpoint: string; p256dh: string; auth: string; device?: string | null }): Promise<PushSubscriptionRecord>;
+  listPushSubscriptions(userIds: string[]): Promise<PushSubscriptionRecord[]>;
+  /** Forgets a device: for its owner when userId is given, or outright when the push service says it is gone. */
+  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  touchPushSubscription(endpoint: string, at: Date): Promise<void>;
+  addChatMessage(tenantId: string, data: NewChatMessage): Promise<ChatMessageRecord>;
+  /** The latest messages, oldest first; `before` pages back. */
+  listChatMessages(tenantId: string, opts?: { before?: Date; limit?: number }): Promise<ChatMessageRecord[]>;
+  markChatRead(tenantId: string, userId: string, at: Date): Promise<void>;
+  /**
+   * Takes this person's chat-email slot: true, and stamped `at`, only when they
+   * have not been emailed about this chat within `quietMs`. Atomic, so two
+   * messages at once never both email the same person.
+   */
+  claimChatEmail(tenantId: string, userId: string, at: Date, quietMs: number): Promise<boolean>;
+  /** Messages from the other side since this person last read the chat. */
+  countUnreadChat(tenantId: string, userId: string, side: Side): Promise<number>;
   /** Guidance for a run, oldest first, delivered or not. */
   listAgentGuidance(tenantId: string, runId: string): Promise<AgentGuidanceRecord[]>;
   addAgentGuidance(tenantId: string, runId: string, data: { text: string; createdById: string }): Promise<AgentGuidanceRecord>;
