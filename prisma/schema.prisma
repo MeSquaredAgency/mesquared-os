@@ -1692,11 +1692,14 @@ model ChatMessage {
   @@index([tenantId, createdAt])
 }
 
-/// How far each person has read a workspace's chat.
+/// Each person's place in a workspace's chat: how far they have read, and when they were last emailed about it.
 model ChatRead {
-  tenantId   String
-  userId     String
-  lastReadAt DateTime
+  tenantId      String
+  userId        String
+  /// Null until they first open the chat.
+  lastReadAt    DateTime?
+  /// The last "new message" email, so nobody gets more than one per half hour however the conversation alternates.
+  lastEmailedAt DateTime?
 
   @@id([tenantId, userId])
 }

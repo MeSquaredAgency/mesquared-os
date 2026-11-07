@@ -1,4 +1,5 @@
-import { Lock } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, History, Lock } from "lucide-react";
 import { Avatar } from "@/components/shell/avatar";
 import type { ChatView } from "@/lib/chat";
 import type { Side, TenantSummary } from "@/lib/types";
@@ -20,7 +21,7 @@ function dayLabel(d: Date, tenant: TenantSummary, now: Date) {
  * right; consecutive messages from one person within five minutes share a
  * header. The scroll box is reversed so it opens at the latest message.
  */
-export function ChatThread({ messages, viewer, viewerId, tenant, now }: { messages: ChatView[]; viewer: Side; viewerId: string; tenant: TenantSummary; now: Date }) {
+export function ChatThread({ messages, viewer, viewerId, tenant, now, earlierHref = null, latestHref = null }: { messages: ChatView[]; viewer: Side; viewerId: string; tenant: TenantSummary; now: Date; earlierHref?: string | null; latestHref?: string | null }) {
   if (messages.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
@@ -35,7 +36,21 @@ export function ChatThread({ messages, viewer, viewerId, tenant, now }: { messag
   let lastDay = "";
   return (
     <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-4 py-4 sm:px-6" tabIndex={0} aria-label="Messages" data-no-pull>
+      {latestHref && (
+        <div className="sticky bottom-0 z-10 flex justify-center pt-2">
+          <Link href={latestHref} scroll={false} replace className="inline-flex items-center gap-1.5 rounded-full bg-navy px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_4px_14px_#1b232c40]">
+            <ArrowDown className="size-3.5" aria-hidden="true" /> Back to the latest
+          </Link>
+        </div>
+      )}
       <ol className="flex flex-col gap-1">
+        {earlierHref && (
+          <li className="flex justify-center pb-2">
+            <Link href={earlierHref} scroll={false} replace className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-[0_1px_2px_#1b232c0f] transition-colors hover:text-foreground">
+              <History className="size-3.5" aria-hidden="true" /> Show earlier messages
+            </Link>
+          </li>
+        )}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const day = dayKey(m.createdAt, tenant.timezone);

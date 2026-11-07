@@ -4,7 +4,7 @@ import { ArrowLeft, ListChecks, Lock } from "lucide-react";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { Empty, PageHeader, Section } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
-import { CHAT_MAX_LENGTH, readChat } from "@/lib/chat";
+import { CHAT_MAX_LENGTH, CHAT_MAX_WINDOW, CHAT_PAGE, readChatPage } from "@/lib/chat";
 import { sideOf } from "@/lib/collab/people";
 import { repository } from "@/lib/data";
 import { dueState, isOpen, STATUS_LABEL, toLocalInput } from "@/lib/tasks";
@@ -146,11 +146,20 @@ export async function TaskScreen({ access, base, eyebrow, taskId }: ScreenProps 
   );
 }
 
-export async function MessagesScreen({ access, user, eyebrow }: ScreenProps) {
+/**
+ * The chat. `show` grows the window a page at a time ("Show earlier
+ * messages"); past the largest window, `before` moves it back in time, with
+ * a way back to the latest. Live refresh keeps whatever window is open.
+ */
+export async function MessagesScreen({ access, user, base, eyebrow, show, before }: ScreenProps & { show?: string; before?: string }) {
   const tenant = access.tenant;
   const viewer = sideOf(access);
   const now = new Date();
-  const messages = await readChat(tenant.id);
+  const limit = Math.min(CHAT_MAX_WINDOW, Math.max(CHAT_PAGE, Math.ceil((Number(show) || CHAT_PAGE) / CHAT_PAGE) * CHAT_PAGE));
+  const beforeAt = before && !Number.isNaN(Date.parse(before)) ? new Date(before) : undefined;
+  const { messages, earlier } = await readChatPage(tenant.id, { limit, before: beforeAt });
+  const path = `${base}/messages`;
+  const earlierHref = !earlier ? null : limit < CHAT_MAX_WINDOW && !beforeAt ? `${path}?show=${limit + CHAT_PAGE}` : `${path}?show=${CHAT_MAX_WINDOW}&before=${encodeURIComponent(messages[0].createdAt.toISOString())}`;
   // Opening the chat is reading it.
   await repository.markChatRead(tenant.id, user.id, now);
   return (
@@ -165,7 +174,7 @@ export async function MessagesScreen({ access, user, eyebrow }: ScreenProps) {
           <Lock className="size-3.5 shrink-0" aria-hidden="true" />
           <span>Encrypted before it is stored. Only {viewer === "CLIENT" ? "your team and Me²" : `the ${tenant.name} team and Me²`} can read these, and emails only say a message arrived, never what it says.</span>
         </div>
-        <ChatThread messages={messages} viewer={viewer} viewerId={user.id} tenant={tenant} now={now} />
+        <ChatThread messages={messages} viewer={viewer} viewerId={user.id} tenant={tenant} now={now} earlierHref={earlierHref} latestHref={beforeAt ? path : null} />
         <ChatComposer slug={tenant.slug} placeholder={viewer === "CLIENT" ? "Message Me²" : `Message ${tenant.name}`} maxLength={CHAT_MAX_LENGTH} />
       </section>
     </div>

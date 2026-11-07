@@ -50,7 +50,8 @@ CREATE TABLE "ChatMessage" (
 CREATE TABLE "ChatRead" (
     "tenantId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "lastReadAt" TIMESTAMP(3) NOT NULL,
+    "lastReadAt" TIMESTAMP(3),
+    "lastEmailedAt" TIMESTAMP(3),
 
     CONSTRAINT "ChatRead_pkey" PRIMARY KEY ("tenantId","userId")
 );

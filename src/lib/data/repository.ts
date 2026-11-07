@@ -872,6 +872,12 @@ export interface Repository {
   /** The latest messages, oldest first; `before` pages back. */
   listChatMessages(tenantId: string, opts?: { before?: Date; limit?: number }): Promise<ChatMessageRecord[]>;
   markChatRead(tenantId: string, userId: string, at: Date): Promise<void>;
+  /**
+   * Takes this person's chat-email slot: true, and stamped `at`, only when they
+   * have not been emailed about this chat within `quietMs`. Atomic, so two
+   * messages at once never both email the same person.
+   */
+  claimChatEmail(tenantId: string, userId: string, at: Date, quietMs: number): Promise<boolean>;
   /** Messages from the other side since this person last read the chat. */
   countUnreadChat(tenantId: string, userId: string, side: Side): Promise<number>;
   /** Guidance for a run, oldest first, delivered or not. */

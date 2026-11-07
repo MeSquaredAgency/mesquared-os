@@ -1224,14 +1224,30 @@ export const prismaRepository: Repository = {
   async markChatRead(tenantId, userId, at) {
     const db = getPrisma();
     const existing = await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
-    if (existing && existing.lastReadAt >= at) return;
+    if (existing?.lastReadAt && existing.lastReadAt >= at) return;
     await db.chatRead.upsert({ where: { tenantId_userId: { tenantId, userId } }, create: { tenantId, userId, lastReadAt: at }, update: { lastReadAt: at } });
+  },
+
+  async claimChatEmail(tenantId, userId, at, quietMs) {
+    const db = getPrisma();
+    const before = new Date(at.getTime() - quietMs);
+    // Take the slot if the row exists and is free; otherwise create the row, and lose to anyone who created it first.
+    const taken = await db.chatRead.updateMany({ where: { tenantId, userId, OR: [{ lastEmailedAt: null }, { lastEmailedAt: { lte: before } }] }, data: { lastEmailedAt: at } });
+    if (taken.count === 1) return true;
+    if (await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } }, select: { userId: true } })) return false;
+    try {
+      await db.chatRead.create({ data: { tenantId, userId, lastEmailedAt: at } });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+      throw error;
+    }
   },
 
   async countUnreadChat(tenantId, userId, side) {
     const db = getPrisma();
     const read = await db.chatRead.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
-    return db.chatMessage.count({ where: { tenantId, side: { not: side }, ...(read ? { createdAt: { gt: read.lastReadAt } } : {}) } });
+    return db.chatMessage.count({ where: { tenantId, side: { not: side }, ...(read?.lastReadAt ? { createdAt: { gt: read.lastReadAt } } : {}) } });
   },
 
   async listLeadNotes(tenantId, leadIds, opts = {}) {

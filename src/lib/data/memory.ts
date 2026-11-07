@@ -115,7 +115,7 @@ interface MemoryStore {
   tasks: TaskRecord[];
   taskEvents: (TaskEventRecord & { tenantId: string })[];
   chatMessages: ChatMessageRecord[];
-  chatReads: { tenantId: string; userId: string; lastReadAt: Date }[];
+  chatReads: { tenantId: string; userId: string; lastReadAt: Date | null; lastEmailedAt: Date | null }[];
   pushSubscriptions: PushSubscriptionRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
@@ -1220,8 +1220,17 @@ export const memoryRepository: Repository = {
   async markChatRead(tenantId, userId, at) {
     const s = store();
     const row = s.chatReads.find((r) => r.tenantId === tenantId && r.userId === userId);
-    if (row) row.lastReadAt = at > row.lastReadAt ? at : row.lastReadAt;
-    else s.chatReads.push({ tenantId, userId, lastReadAt: at });
+    if (row) row.lastReadAt = row.lastReadAt && row.lastReadAt > at ? row.lastReadAt : at;
+    else s.chatReads.push({ tenantId, userId, lastReadAt: at, lastEmailedAt: null });
+  },
+
+  async claimChatEmail(tenantId, userId, at, quietMs) {
+    const s = store();
+    const row = s.chatReads.find((r) => r.tenantId === tenantId && r.userId === userId);
+    if (row?.lastEmailedAt && at.getTime() - row.lastEmailedAt.getTime() < quietMs) return false;
+    if (row) row.lastEmailedAt = at;
+    else s.chatReads.push({ tenantId, userId, lastReadAt: null, lastEmailedAt: at });
+    return true;
   },
 
   async countUnreadChat(tenantId, userId, side) {

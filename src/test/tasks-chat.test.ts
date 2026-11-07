@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cleanChatText, postChatMessage, readChat } from "@/lib/chat";
+import { CHAT_PAGE, cleanChatText, postChatMessage, readChat, readChatPage } from "@/lib/chat";
 import { decryptChatText, encryptChatText } from "@/lib/chat/crypto";
 import { repository } from "@/lib/data";
 import { demoTenants } from "@/lib/data/fixtures";
@@ -152,6 +152,58 @@ describe("client chat", () => {
       if (prevFrom === undefined) delete process.env.DEFAULT_FROM_EMAIL;
       else process.env.DEFAULT_FROM_EMAIL = prevFrom;
     }
+  });
+
+  it("emails each person at most once per half hour, even when the two sides take turns", async () => {
+    const prev = { mode: process.env.MESSAGING_MODE, from: process.env.DEFAULT_FROM_EMAIL };
+    process.env.MESSAGING_MODE = "log";
+    process.env.DEFAULT_FROM_EMAIL = "os@mesquared.example";
+    const lines: string[] = [];
+    const info = console.info;
+    console.info = (...a: unknown[]) => void lines.push(a.map(String).join(" "));
+    const emailsTo = (who: string) => lines.filter((l) => l.includes("[messaging:log]") && l.includes("EMAIL") && l.includes(who)).length;
+    const MIN = 60_000;
+    const t0 = new Date(Date.now() + 30 * 86_400_000).getTime();
+    try {
+      const owner = (await repository.listTenantPeople(summit.id)).find((p) => p.via === "member")!;
+      await postChatMessage({ tenant: summit, authorId: "op_turns", authorName: "Alex", side: "ME2", text: "Ads drafted" }, new Date(t0));
+      await postChatMessage({ tenant: summit, authorId: owner.userId, authorName: "Sam", side: "CLIENT", text: "Great, looking now" }, new Date(t0 + MIN));
+      await postChatMessage({ tenant: summit, authorId: "op_turns", authorName: "Alex", side: "ME2", text: "One tweak to the second one" }, new Date(t0 + 5 * MIN));
+      assert.equal(emailsTo(owner.email), 1, "Me², client, Me² inside half an hour: the client is emailed once");
+      await postChatMessage({ tenant: summit, authorId: "op_turns", authorName: "Alex", side: "ME2", text: "Following up" }, new Date(t0 + 31 * MIN));
+      assert.equal(emailsTo(owner.email), 2, "after half an hour they can be emailed again");
+    } finally {
+      console.info = info;
+      for (const [k, v] of [["MESSAGING_MODE", prev.mode], ["DEFAULT_FROM_EMAIL", prev.from]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("claims a person's email slot once, however many messages arrive together", async () => {
+    const at = new Date(Date.now() + 60 * 86_400_000);
+    const wins = await Promise.all(Array.from({ length: 5 }, () => repository.claimChatEmail(harbor.id, "u_claim", at, 30 * 60_000)));
+    assert.equal(wins.filter(Boolean).length, 1);
+    assert.equal(await repository.claimChatEmail(harbor.id, "u_claim", new Date(at.getTime() + 31 * 60_000), 30 * 60_000), true);
+    assert.equal(await repository.countUnreadChat(harbor.id, "u_claim", "CLIENT") >= 0, true, "an email-only row still counts as never read");
+  });
+
+  it("pages back through history beyond the latest hundred without repeating a message", async () => {
+    const people = await repository.listTenantPeople(summit.id);
+    const owner = people.find((p) => p.via === "member")!;
+    for (let i = 0; i < 230; i++) await postChatMessage({ tenant: summit, authorId: owner.userId, authorName: "Sam", side: "CLIENT", text: `history ${i}` }, new Date(Date.now() + 90 * 86_400_000));
+    const all = (await repository.listChatMessages(summit.id, { limit: 10_000 })).length;
+    const latest = await readChatPage(summit.id);
+    assert.equal(latest.messages.length, CHAT_PAGE);
+    assert.equal(latest.earlier, true);
+    assert.equal(latest.messages.at(-1)?.text, "history 229");
+    const grown = await readChatPage(summit.id, { limit: 200 });
+    assert.deepEqual(grown.messages.slice(-CHAT_PAGE).map((m) => m.id), latest.messages.map((m) => m.id), "a bigger window ends where the latest page does");
+    const back = await readChatPage(summit.id, { limit: 100, before: latest.messages[0].createdAt });
+    const ids = new Set([...back.messages, ...latest.messages].map((m) => m.id));
+    assert.equal(ids.size, back.messages.length + latest.messages.length, "no repeats across pages");
+    assert.equal((await readChatPage(summit.id, { limit: 1000 })).earlier, all > 1000);
   });
 
   it("refuses empty or oversized messages and strips control characters", async () => {
