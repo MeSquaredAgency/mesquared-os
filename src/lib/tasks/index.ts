@@ -3,6 +3,7 @@ import { repository } from "@/lib/data";
 import type { NewTaskEvent, TaskPatch } from "@/lib/data/repository";
 import { errorText, log } from "@/lib/log";
 import { sendMessage, templates } from "@/lib/messaging";
+import { pushToPeople } from "@/lib/push";
 import { OPEN_TASK_STATUSES, type Side, type TaskRecord, type TaskStatus, type TenantSummary } from "@/lib/types";
 
 export const STATUS_LABEL: Record<TaskStatus, string> = { OPEN: "To do", IN_PROGRESS: "In progress", WAITING: "Blocked", DONE: "Done", CANCELLED: "Cancelled" };
@@ -145,7 +146,16 @@ export async function remindDueTasks(tenants: TenantSummary[], now = new Date())
         const waitingOn = task.owner === "ME2" ? "Me²" : `the ${tenant.name} team`;
         const reached: string[] = [];
         let notConnected = false;
+        const pushed = await pushToPeople(
+          recipients.map((r) => r.userId),
+          { title: `${stage === "OVERDUE" ? "Overdue" : "Due soon"}: ${task.title}`, body: `${tenant.name} · ${stage === "OVERDUE" ? "was due" : "due"} ${dueText}`, url: `/app/${tenant.slug}/tasks/${task.id}`, tag: `task-${task.id}` },
+          { urgency: stage === "OVERDUE" ? "high" : "normal" },
+        );
         for (const r of recipients) {
+          if (pushed.has(r.userId)) {
+            reached.push(r.name?.trim() || r.email);
+            continue;
+          }
           const mail = templates.taskReminderEmail({ tenant, firstName: firstName(r.name), title: task.title, stage, dueText, waitingOn, taskUrl });
           const sent = await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: r.email, subject: mail.subject, body: mail.body, transactional: true });
           if (sent.ok) reached.push(r.name?.trim() || r.email);
@@ -160,7 +170,7 @@ export async function remindDueTasks(tenants: TenantSummary[], now = new Date())
           actorId: null,
           actorName: "Reminder",
           actorSide: "SYSTEM",
-          body: `${stage === "OVERDUE" ? "went out because it is overdue" : "went out because it is due within a day"}: ${reached.length ? `emailed ${namesList(reached)}` : notConnected ? "email isn't connected yet, so nobody was emailed" : "nobody could be emailed"}${stage === "OVERDUE" && task.owner === "ME2" ? ", and raised it in the Me² queue" : ""}`,
+          body: `${stage === "OVERDUE" ? "went out because it is overdue" : "went out because it is due within a day"}: ${reached.length ? `reached ${namesList(reached)}` : notConnected ? "nobody has notifications on and email isn't connected yet" : "nobody could be emailed"}${stage === "OVERDUE" && task.owner === "ME2" ? ", and raised it in the Me² queue" : ""}`,
           data: { stage, recipients: reached.length },
         });
         result[stage === "OVERDUE" ? "overdue" : "dueSoon"]++;

@@ -1,4 +1,5 @@
 import type {
+  PushSubscriptionRecord,
   ChatMessageRecord,
   TaskEventKind,
   TaskEventRecord,
@@ -861,6 +862,12 @@ export interface Repository {
   listTasksForReminder(before: Date, stage: "DUE_SOON" | "OVERDUE", limit?: number): Promise<TaskRecord[]>;
   /** Moves a task's reminder stage from `from` to `to` only if it is still `from`: true when this caller won it. */
   claimTaskReminder(tenantId: string, taskId: string, from: TaskRecord["reminded"], to: "DUE_SOON" | "OVERDUE"): Promise<boolean>;
+  /** Saves a device for a person; the same endpoint saved again moves to this person with the new keys. */
+  savePushSubscription(userId: string, data: { endpoint: string; p256dh: string; auth: string; device?: string | null }): Promise<PushSubscriptionRecord>;
+  listPushSubscriptions(userIds: string[]): Promise<PushSubscriptionRecord[]>;
+  /** Forgets a device: for its owner when userId is given, or outright when the push service says it is gone. */
+  deletePushSubscription(endpoint: string, userId?: string): Promise<void>;
+  touchPushSubscription(endpoint: string, at: Date): Promise<void>;
   addChatMessage(tenantId: string, data: NewChatMessage): Promise<ChatMessageRecord>;
   /** The latest messages, oldest first; `before` pages back. */
   listChatMessages(tenantId: string, opts?: { before?: Date; limit?: number }): Promise<ChatMessageRecord[]>;

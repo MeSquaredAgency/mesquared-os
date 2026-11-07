@@ -4,6 +4,7 @@ import type { UserRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CommandMenu, CommandTrigger, type CommandGroup } from "./command-menu";
 import { MobileNav, ShellNav, type NavItem } from "./shell-nav";
+import { PushPrompt } from "./push";
 import { UserMenu } from "./user-menu";
 
 export type Tone = "paper" | "abyss";
@@ -82,7 +83,10 @@ export function AppShell({ user, nav, tone = "paper", context, footer, homeHref 
           </div>
         </header>
         <main id="main" tabIndex={-1} className="page-wash flex-1 outline-none">
-          <div className="mx-auto w-full max-w-[1280px] px-4 pt-7 pb-24 md:px-8 md:pt-10 md:pb-16 lg:px-12">{children}</div>
+          <div className="mx-auto w-full max-w-[1280px] px-4 pt-7 pb-24 md:px-8 md:pt-10 md:pb-16 lg:px-12">
+            <PushPrompt audience={user.isOperator || user.isPlatformAdmin ? "operator" : "client"} />
+            {children}
+          </div>
         </main>
         <MobileNav items={nav} />
       </div>

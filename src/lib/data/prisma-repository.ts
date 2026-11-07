@@ -47,6 +47,7 @@ import { healthScore } from "@/lib/health";
 import { HANDLED_OUTCOMES, HOUSEKEEPING_TYPES } from "@/lib/portal/handled";
 import { getPrisma } from "@/lib/prisma";
 import type {
+  PushSubscriptionRecord,
   ChatMessageRecord,
   Side,
   TaskEventKind,
@@ -1191,6 +1192,24 @@ export const prismaRepository: Repository = {
   async claimTaskReminder(tenantId, taskId, from, to) {
     const won = await getPrisma().task.updateMany({ where: { id: taskId, tenantId, reminded: from }, data: { reminded: to } });
     return won.count === 1;
+  },
+
+  async savePushSubscription(userId, data) {
+    const row = await getPrisma().pushSubscription.upsert({ where: { endpoint: data.endpoint }, create: { userId, endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth, device: data.device ?? null }, update: { userId, p256dh: data.p256dh, auth: data.auth, ...(data.device ? { device: data.device } : {}) } });
+    return row as PushSubscriptionRecord;
+  },
+
+  async listPushSubscriptions(userIds) {
+    if (userIds.length === 0) return [];
+    return (await getPrisma().pushSubscription.findMany({ where: { userId: { in: userIds } } })) as PushSubscriptionRecord[];
+  },
+
+  async deletePushSubscription(endpoint, userId) {
+    await getPrisma().pushSubscription.deleteMany({ where: { endpoint, ...(userId ? { userId } : {}) } });
+  },
+
+  async touchPushSubscription(endpoint, at) {
+    await getPrisma().pushSubscription.updateMany({ where: { endpoint }, data: { lastUsedAt: at } });
   },
 
   async addChatMessage(tenantId, data) {

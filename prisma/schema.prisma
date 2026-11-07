@@ -1700,3 +1700,19 @@ model ChatRead {
 
   @@id([tenantId, userId])
 }
+
+/// A browser or phone that asked for notifications for a person. The endpoint is the push service's
+/// address for that device; p256dh and auth are the device's public key and secret for encrypting to it.
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  /// A short description of the device ("iPhone", "Chrome on Mac") so a person can tell them apart.
+  device     String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+}

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { healthScore } from "@/lib/health";
 import { countsAsHandled } from "@/lib/portal/handled";
 import type {
+  PushSubscriptionRecord,
   ChatMessageRecord,
   TaskEventRecord,
   TaskRecord,
@@ -115,6 +116,7 @@ interface MemoryStore {
   taskEvents: (TaskEventRecord & { tenantId: string })[];
   chatMessages: ChatMessageRecord[];
   chatReads: { tenantId: string; userId: string; lastReadAt: Date }[];
+  pushSubscriptions: PushSubscriptionRecord[];
   exceptions: ExceptionRecord[];
   events: DomainEventRecord[];
   integrations: IntegrationRecord[];
@@ -179,6 +181,7 @@ function store(): MemoryStore {
       taskEvents: [],
       chatMessages: [],
       chatReads: [],
+      pushSubscriptions: [],
       exceptions: [...demoExceptions],
       events: [],
       integrations: [...demoIntegrations],
@@ -214,6 +217,7 @@ function store(): MemoryStore {
   g.__msqMemoryStore.taskEvents ??= [];
   g.__msqMemoryStore.chatMessages ??= [];
   g.__msqMemoryStore.chatReads ??= [];
+  g.__msqMemoryStore.pushSubscriptions ??= [];
   g.__msqMemoryStore.operatorAssignments ??= [...demoOperatorAssignments];
   return g.__msqMemoryStore;
 }
@@ -1171,6 +1175,33 @@ export const memoryRepository: Repository = {
     if (!t || t.reminded !== from) return false;
     t.reminded = to;
     return true;
+  },
+
+  async savePushSubscription(userId, data) {
+    const s = store();
+    const existing = s.pushSubscriptions.find((p) => p.endpoint === data.endpoint);
+    if (existing) {
+      Object.assign(existing, { userId, p256dh: data.p256dh, auth: data.auth, device: data.device ?? existing.device });
+      return { ...existing };
+    }
+    const row: PushSubscriptionRecord = { id: id("push"), userId, endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth, device: data.device ?? null, createdAt: new Date(), lastUsedAt: null };
+    s.pushSubscriptions.push(row);
+    return { ...row };
+  },
+
+  async listPushSubscriptions(userIds) {
+    const wanted = new Set(userIds);
+    return store().pushSubscriptions.filter((p) => wanted.has(p.userId)).map((p) => ({ ...p }));
+  },
+
+  async deletePushSubscription(endpoint, userId) {
+    const s = store();
+    s.pushSubscriptions = s.pushSubscriptions.filter((p) => !(p.endpoint === endpoint && (!userId || p.userId === userId)));
+  },
+
+  async touchPushSubscription(endpoint, at) {
+    const p = store().pushSubscriptions.find((x) => x.endpoint === endpoint);
+    if (p) p.lastUsedAt = at;
   },
 
   async addChatMessage(tenantId, data) {

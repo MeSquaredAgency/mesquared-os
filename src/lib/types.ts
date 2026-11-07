@@ -1076,3 +1076,14 @@ export interface ChatMessageRecord {
   ciphertext: string;
   createdAt: Date;
 }
+
+export interface PushSubscriptionRecord {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  device: string | null;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+}

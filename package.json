@@ -21,6 +21,7 @@
     "db:local": "node scripts/local-postgres.mjs start",
     "db:local:stop": "node scripts/local-postgres.mjs stop",
     "tenant:provision": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/provision.ts",
+    "push:keys": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/push-keys.ts",
     "db:parity": "node --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/parity-check.ts",
     "neon:check": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/neon-check.ts",
     "inventory:import": "node --env-file-if-exists=.env.neon.local --experimental-strip-types --no-warnings --import ./src/test/setup.mjs scripts/import-inventory.ts",

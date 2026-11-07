@@ -15,7 +15,8 @@ const instrument = localFont({
 export const metadata: Metadata = {
   title: { default: "MeSquared OS", template: "%s · MeSquared OS" },
   description: "Multi-tenant operations, social marketing and revenue platform.",
-  icons: { icon: "/brand/me2-app-icon.svg" },
+  icons: { icon: "/brand/me2-app-icon.svg", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Me² OS", statusBarStyle: "default" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
