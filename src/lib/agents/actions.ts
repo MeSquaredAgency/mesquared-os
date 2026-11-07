@@ -33,8 +33,11 @@ const decisionSchema = z.object({
   edit: z.string().max(5000).optional(),
 });
 
-/** Approve (as asked or edited), decline with a note the agent reads, or take the work over and stop the run. */
-export async function decideAgentApproval(tenantId: string, toolCallId: string, input: z.input<typeof decisionSchema>): Promise<ActionResult> {
+/**
+ * Approve (as asked or edited), decline with a note the agent reads, or take the work over and stop the run. An edit
+ * that now needs the client's own sign-off is saved and handed to them instead, and the item stays open.
+ */
+export async function decideAgentApproval(tenantId: string, toolCallId: string, input: z.input<typeof decisionSchema>): Promise<ActionResult & { stillOpen?: boolean }> {
   const checked = decisionSchema.safeParse(input);
   if (!checked.success || !id.safeParse(toolCallId).success) return { ok: false, message: "That decision couldn’t be read. Try again." };
   const ctx = await workspace(tenantId);
@@ -49,6 +52,7 @@ export async function decideAgentApproval(tenantId: string, toolCallId: string, 
   const decided = await decideAgentAction(ctx.tenant, toolCallId, { approve: action === "approve", userId: ctx.user.id, note, edit });
   if (!decided.ok) return { ok: false, message: decided.reason };
   revalidatePath("/console", "layout");
+  if (decided.waitingForClient) return { ok: true, stillOpen: true, message: `Saved, but not sent: your edit needs the client’s own sign-off (${decided.waitingForClient}) It now waits for them in their portal.` };
   return { ok: true, message: action === "approve" ? "Approved. The agent carries on at its next step." : "Declined. The agent will read your note." };
 }
 

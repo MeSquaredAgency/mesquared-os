@@ -11,8 +11,8 @@ import type { AgentAutonomy, AgentGuidanceRecord, BrandProfileRecord, AgentMessa
 import { startOfMonthInZone } from "@/lib/utils";
 import { agentsMode, decideTool, effectiveAutonomy, type AgentsMode } from "./policy";
 import { ROLE_BY_KEY, type AgentRoleDefinition } from "./roles";
-import { checkCustomerText, signoffApprover } from "./signoff";
-import { claudeToolDefinition, runTool } from "./tool";
+import { screenCustomerText, signoffApprover } from "./signoff";
+import { claudeToolDefinition, runTool, type AgentTool } from "./tool";
 import { offeredTools, TOOL_BY_NAME } from "./tools";
 
 /**
@@ -257,7 +257,7 @@ async function step(run: AgentRunRecord, ctx: StepContext): Promise<StepOutcome>
   const seq = messages.at(-1)!.seq + 1;
   switch (response.stop_reason) {
     case "tool_use": {
-      const calls = decideToolCalls(ctx, toolUses(content));
+      const calls = await decideToolCalls(ctx, toolUses(content));
       await repository.appendAgentMessage(tenantId, run.id, { seq, role: "assistant", content, stopReason: response.stop_reason }, calls);
       return "continue";
     }
@@ -308,8 +308,8 @@ async function callModel(run: AgentRunRecord, ctx: StepContext, messages: AgentM
 // ---------------------------------------------------------------------------
 
 /** The policy's decision for each call, made when the model asks; recorded with the turn that asked. */
-function decideToolCalls(ctx: StepContext, uses: ToolUse[]): NewAgentToolCall[] {
-  return uses.map((use) => {
+async function decideToolCalls(ctx: StepContext, uses: ToolUse[]): Promise<NewAgentToolCall[]> {
+  return Promise.all(uses.map(async (use): Promise<NewAgentToolCall> => {
     const base = { toolUseId: use.id, name: use.name, input: use.input };
     const tool = TOOL_BY_NAME[use.name];
     if (!tool || !ctx.role.tools.includes(use.name)) {
@@ -323,20 +323,21 @@ function decideToolCalls(ctx: StepContext, uses: ToolUse[]): NewAgentToolCall[] 
       const error = `Invalid input for ${tool.name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "input"} ${i.message}`).join("; ")}`;
       return { ...base, risk: tool.risk, decision, reason, status: "ERROR", result: error, isError: true };
     }
-    // Words a customer would read: checked like content before anyone sees them.
+    // Words a customer would read: checked on the server before anyone sees them, whatever the agent flagged.
     let signoff: string | null = null;
-    if (decision !== "refuse" && parsed.success && (tool.customerText || tool.signoffReasons)) {
-      const check = checkCustomerText(tool, parsed.data, ctx);
+    const check = decision !== "refuse" && parsed.success ? await screenCustomerText(tool, parsed.data, ctx) : null;
+    if (check) {
       if (check.blocked) return { ...base, risk: tool.risk, decision, reason, status: "ERROR", result: `Not sent, and nobody was asked: ${check.blocked} Rewrite it without that and ask again.`, isError: true };
       signoff = check.signoff;
-      // Something only the client may approve is never sent on the workspace's say-so alone.
-      if (signoff && decision === "run") ({ decision, reason } = { decision: "ask", reason: "This needs the client's own sign-off." });
+      // Anything only the client may approve, or that might commit the business to something, is never sent on the
+      // workspace's say-so alone.
+      if (check.needsPerson && decision === "run") ({ decision, reason } = { decision: "ask", reason: signoff ? "This needs the client's own sign-off." : "A person sees any message that might commit the business to something." });
     }
     if (decision === "run") return { ...base, risk: tool.risk, decision, reason, status: "PENDING" };
     if (decision === "ask") return { ...base, risk: tool.risk, decision, reason, status: "AWAITING_APPROVAL", signoff };
     if (decision === "propose") return { ...base, risk: tool.risk, decision, reason, status: "PROPOSED", result: reason };
     return { ...base, risk: tool.risk, decision, reason, status: "REFUSED", result: reason, isError: true };
-  });
+  }));
 }
 
 /**
@@ -376,11 +377,31 @@ async function recheck(tenantId: string, ctx: StepContext, call: AgentToolCallRe
   const tool = TOOL_BY_NAME[call.name];
   if (!tool) return call;
   const { decision, reason } = decideTool({ risk: tool.risk, autonomy: ctx.autonomy, override: ctx.agent.toolPolicy[tool.name], moduleOn: tool.module === null || moduleOn(ctx.modules, tool.module) });
-  if (decision === "run" || (decision === "ask" && call.status === "APPROVED")) return call;
+  if (decision === "run" || (decision === "ask" && call.status === "APPROVED")) return guardCustomerText(tenantId, ctx, tool, call);
   // A call that now needs a person but was decided "run" (the workspace tightened it meanwhile) is refused rather than
   // asked about mid-turn; the agent can ask for it again.
   const patch = decision === "propose" ? { status: "PROPOSED" as const, result: reason, isError: false } : { status: "REFUSED" as const, result: decision === "ask" ? "This workspace now wants a person to approve that action. Ask for it again if it is still needed." : reason, isError: true };
   return (await repository.updateAgentToolCall(tenantId, call.id, patch, ["PENDING", "APPROVED"])) ?? (await repository.findAgentToolCall(tenantId, call.id)) ?? call;
+}
+
+/**
+ * The last check on words a customer would read, on exactly what is about to run: nothing blocked goes, nothing that
+ * needs the client goes without the client's approval, and nothing that might commit the business goes without a person.
+ */
+async function guardCustomerText(tenantId: string, ctx: StepContext, tool: AgentTool, call: AgentToolCallRecord): Promise<AgentToolCallRecord> {
+  const check = await screenCustomerText(tool, call.editedInput ?? call.input, ctx);
+  if (!check) return call;
+  const approvedByClient = call.status === "APPROVED" && call.signoff !== null;
+  const why = check.blocked
+    ? `Not sent: ${check.blocked} Rewrite it without that and ask again.`
+    : check.signoff && !approvedByClient
+      ? `Not sent: it needs the client's own sign-off (${check.signoff}). Ask for it again.`
+      : check.needsPerson && call.status !== "APPROVED"
+        ? "Not sent: a person needs to see this first. Ask for it again."
+        : null;
+  if (!why) return call;
+  log("warn", "agent.customer_text_stopped", { tenantId, runId: call.runId, tool: call.name });
+  return (await repository.updateAgentToolCall(tenantId, call.id, { status: "REFUSED", result: why, isError: true }, ["PENDING", "APPROVED"])) ?? (await repository.findAgentToolCall(tenantId, call.id)) ?? call;
 }
 
 async function execute(run: AgentRunRecord, ctx: StepContext, call: AgentToolCallRecord): Promise<AgentToolCallRecord> {
@@ -405,31 +426,28 @@ export function changedFields(before: Record<string, unknown>, after: Record<str
   return Object.fromEntries(Object.entries(after).filter(([key, value]) => JSON.stringify(before[key]) !== JSON.stringify(value)));
 }
 
-/**
- * One exception per call in the operator queue; asking again finds the one already there. Something only the client
- * may approve goes to the person the escalation rules name for agent sign-off, who is emailed once.
- */
+/** One exception per call in the operator queue; asking again finds the one already there. */
 async function askForApproval(run: AgentRunRecord, ctx: StepContext, call: AgentToolCallRecord): Promise<void> {
+  await repository.createException(run.tenantId, { ...(await approvalItem(ctx.tenant, ctx.role.name, call)), agentRunId: run.id, agentToolCallId: call.id, leadId: run.leadId, contactId: run.contactId });
+}
+
+/**
+ * What the approval says, from what would run (a person's edit included). Something only the client may approve goes
+ * to the person the escalation rules name for agent sign-off, who is emailed once per call.
+ */
+async function approvalItem(tenant: TenantSummary, roleName: string, call: AgentToolCallRecord): Promise<{ reason: string; suggestedAction: string | null; escalatedToUserId: string | null }> {
   const tool = TOOL_BY_NAME[call.name];
-  const parsed = tool?.input.safeParse(call.input);
-  const preview = tool?.preview && parsed?.success ? await tool.preview(parsed.data, ctx) : null;
-  const what = `${ctx.role.name} wants to ${preview?.title ?? call.name.replace(/_/g, " ")}.`;
-  const approver = call.signoff ? await signoffApprover(ctx.tenant) : null;
-  await repository.createException(run.tenantId, {
-    reason: `${what} ${call.signoff ? `Needs the client's sign-off: ${call.signoff}` : call.reason}`,
-    suggestedAction: preview?.body ?? null,
-    agentRunId: run.id,
-    agentToolCallId: call.id,
-    leadId: run.leadId,
-    contactId: run.contactId,
-    escalatedToUserId: approver?.userId ?? null,
-  });
+  const parsed = tool?.input.safeParse(call.editedInput ?? call.input);
+  const preview = tool?.preview && parsed?.success ? await tool.preview(parsed.data, { tenant }) : null;
+  const what = `${roleName} wants to ${preview?.title ?? call.name.replace(/_/g, " ")}.`;
+  const approver = call.signoff ? await signoffApprover(tenant) : null;
   if (approver) {
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
-    const mail = templates.escalationEmail({ tenant: ctx.tenant, summary: `${what} Only you can approve it: ${call.signoff}`, suggestedAction: preview?.body ? `Read it, then approve or decline: "${preview.body.slice(0, 600)}"` : "Read it, then approve or decline.", portalUrl: `${appUrl}/app/${ctx.tenant.slug}` });
+    const mail = templates.escalationEmail({ tenant, summary: `${what} Only you can approve it: ${call.signoff}`, suggestedAction: preview?.body ? `Read it, then approve or decline: "${preview.body.slice(0, 600)}"` : "Read it, then approve or decline.", portalUrl: `${appUrl}/app/${tenant.slug}` });
     // Keyed by the call, so the hourly look at a waiting run never emails twice.
-    await sendMessage({ tenant: ctx.tenant, contactId: null, channel: "EMAIL", to: approver.email, subject: mail.subject, body: mail.body, transactional: true, idempotencyKey: `signoff:${call.id}` });
+    await sendMessage({ tenant, contactId: null, channel: "EMAIL", to: approver.email, subject: mail.subject, body: mail.body, transactional: true, idempotencyKey: `signoff:${call.id}` });
   }
+  return { reason: `${what} ${call.signoff ? `Needs the client's sign-off: ${call.signoff}` : call.reason}`, suggestedAction: preview?.body ?? null, escalatedToUserId: approver?.userId ?? null };
 }
 
 async function expireApproval(tenantId: string, call: AgentToolCallRecord): Promise<AgentToolCallRecord> {
@@ -457,7 +475,13 @@ export interface AgentActionDecision {
 const UNDECIDABLE = "That action has already been decided, or isn't in this workspace.";
 
 /** Approves (as asked, or edited) or declines one action an agent is waiting on, and wakes the run. */
-export async function decideAgentAction(tenant: TenantSummary, toolCallId: string, decision: AgentActionDecision, now = new Date()): Promise<{ ok: true } | { ok: false; reason: string }> {
+export type AgentActionOutcome =
+  | { ok: true; waitingForClient?: undefined }
+  /** A person's edit now needs the client's own sign-off: it was saved as the message waiting, and handed to them. */
+  | { ok: true; waitingForClient: string }
+  | { ok: false; reason: string };
+
+export async function decideAgentAction(tenant: TenantSummary, toolCallId: string, decision: AgentActionDecision, now = new Date()): Promise<AgentActionOutcome> {
   const note = decision.note?.trim().slice(0, 500) || "";
   const found = await repository.findAgentToolCall(tenant.id, toolCallId);
   if (!found || found.status !== "AWAITING_APPROVAL") return { ok: false, reason: UNDECIDABLE };
@@ -468,14 +492,27 @@ export async function decideAgentAction(tenant: TenantSummary, toolCallId: strin
     return { ok: false, reason: "That approval had expired, so nothing was done and the agent has been told." };
   }
   if (decision.approve && found.signoff && !decision.asClient) return { ok: false, reason: `Only the client can approve this one: ${found.signoff} Decline it or take it over instead.` };
+  // An edit is checked as the agent's own words were: what goes is what was checked.
   let editedInput: Record<string, unknown> | null = null;
+  let signoff = found.signoff;
   if (decision.approve && decision.edit !== undefined) {
     const edited = applyEdit(found, decision.edit);
     if (!edited.ok) return edited;
     editedInput = edited.input;
+    const check = editedInput ? await screenCustomerText(TOOL_BY_NAME[found.name], editedInput, { tenant, brand: (await repository.getTenantConfig(tenant.id)).brand }) : null;
+    if (check?.blocked) return { ok: false, reason: `That edit can't go: ${check.blocked}` };
+    if (check?.signoff && !decision.asClient) {
+      const routed = await repository.updateAgentToolCall(tenant.id, toolCallId, { editedInput, signoff: check.signoff }, ["AWAITING_APPROVAL"]);
+      if (!routed) return { ok: false, reason: UNDECIDABLE };
+      const run = await repository.findAgentRun(tenant.id, routed.runId);
+      await repository.updateAgentToolCallException(tenant.id, toolCallId, await approvalItem(tenant, ROLE_BY_KEY[run?.roleKey ?? ""]?.name ?? "The agent", routed));
+      log("info", "agent.edit_needs_client", { tenantId: tenant.id, runId: routed.runId, tool: routed.name });
+      return { ok: true, waitingForClient: check.signoff };
+    }
+    if (check?.signoff) signoff = check.signoff;
   }
   const patch = decision.approve
-    ? { status: "APPROVED" as const, editedInput, decidedById: decision.userId, decidedAt: now }
+    ? { status: "APPROVED" as const, ...(editedInput ? { editedInput, signoff } : {}), decidedById: decision.userId, decidedAt: now }
     : { status: "REJECTED" as const, result: `A person declined this${note ? `: ${note}` : "."} Don't try it again.`, isError: true, decidedById: decision.userId, decidedAt: now };
   const call = await repository.updateAgentToolCall(tenant.id, toolCallId, patch, ["AWAITING_APPROVAL"]);
   if (!call) return { ok: false, reason: UNDECIDABLE };
@@ -485,14 +522,16 @@ export async function decideAgentAction(tenant: TenantSummary, toolCallId: strin
   return { ok: true };
 }
 
-/** The call's input with the person's text in its editable field; null input when they changed nothing. */
+/** What would run with the person's text in its editable field; null input when it changes nothing. */
 function applyEdit(call: AgentToolCallRecord, text: string): { ok: true; input: Record<string, unknown> | null } | { ok: false; reason: string } {
   const tool = TOOL_BY_NAME[call.name];
   if (!tool?.editable) return { ok: false, reason: "This action can only be approved or declined as it is." };
   const { field, label } = tool.editable;
+  // Built on what would run now, so an earlier person's edit is the starting point and is never lost.
+  const current = call.editedInput ?? call.input;
   const value = text.trim();
-  if (value === String(call.input[field] ?? "").trim()) return { ok: true, input: null };
-  const input = { ...call.input, [field]: value };
+  if (value === String(current[field] ?? "").trim()) return { ok: true, input: null };
+  const input = { ...current, [field]: value };
   const parsed = tool.input.safeParse(input);
   if (!parsed.success) return { ok: false, reason: `That ${label.toLowerCase()} can't be used: ${parsed.error.issues.map((i) => i.message).join("; ")}` };
   return { ok: true, input };
