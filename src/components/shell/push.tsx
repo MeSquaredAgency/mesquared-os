@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { BellRing, Share, X } from "lucide-react";
+import { BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useInstallBannerShowing } from "./install";
 import { deletePushSubscriptionAction, pushPublicKey, savePushSubscriptionAction, sendTestPushAction } from "@/lib/push/actions";
 
 /**
@@ -151,7 +152,8 @@ function dismissedRecently(): boolean {
 export function PushPrompt({ audience }: { audience: "client" | "operator" }) {
   const { state, busy } = usePush();
   const hidden = useSyncExternalStore(subscribe, () => dismissedNow ?? dismissedRecently(), () => true);
-  if (hidden || (state !== "off" && state !== "install")) return null;
+  const installing = useInstallBannerShowing();
+  if (hidden || installing || state !== "off") return null;
   const who = audience === "client" ? "Me² messages you" : "a client messages you";
   const dismiss = () => {
     try {
@@ -162,26 +164,18 @@ export function PushPrompt({ audience }: { audience: "client" | "operator" }) {
   };
   return (
     <div role="region" aria-label="Notifications" className="surface rise mb-6 flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 sm:flex-nowrap">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">{state === "install" ? <Share className="size-4" aria-hidden="true" /> : <BellRing className="size-4" aria-hidden="true" />}</span>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+        <BellRing className="size-4" aria-hidden="true" />
+      </span>
       <p className="min-w-0 flex-1 text-sm">
-        {state === "install" ? (
-          <>
-            <span className="font-medium">Get notifications on this {/iPad/.test(navigator.userAgent) ? "iPad" : "iPhone"}.</span> <span className="text-muted-foreground">Tap Share, then Add to Home Screen, and open the OS from your Home Screen.</span>
-          </>
-        ) : (
-          <>
-            <span className="font-medium">Get a notification when {who} or a deadline is close.</span> <span className="text-muted-foreground">On this device, instantly. Messages never show their text on your lock screen.</span>
-          </>
-        )}
+        <span className="font-medium">Get a notification when {who} or a deadline is close.</span> <span className="text-muted-foreground">On this device, instantly. Messages never show their text on your lock screen.</span>
       </p>
       <div className="flex shrink-0 items-center gap-1.5">
-        {state === "off" && (
-          <Button size="sm" disabled={busy} onClick={() => void enablePush()}>
-            {busy ? "Turning on…" : "Turn on"}
-          </Button>
-        )}
-        <Button size={state === "off" ? "sm" : "icon"} variant="ghost" onClick={dismiss} aria-label="Not now" className={state === "off" ? "" : "size-8"}>
-          {state === "off" ? "Not now" : <X />}
+        <Button size="sm" disabled={busy} onClick={() => void enablePush()}>
+          {busy ? "Turning on…" : "Turn on"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={dismiss}>
+          Not now
         </Button>
       </div>
     </div>

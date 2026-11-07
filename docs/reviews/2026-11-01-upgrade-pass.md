@@ -246,6 +246,14 @@ Work between a client and Me² lived in email and texts, with no shared record o
 - **Notifications.** Browser and phone notifications first: a new message, a task assigned to you, a comment or completion on your task, and deadline reminders arrive instantly on every device a person turned them on for. People with no device turned on get an email instead (for chat, at most once per half-hour burst). Neither ever shows the message text, so nothing private appears on a lock screen.
 - **Turning them on.** A one-time prompt at the top of the app, and an on/off switch with a test button in the account menu. On iPhone and iPad, Apple only allows web notifications once the OS is added to the Home Screen, so there the prompt explains how. The OS now has an app manifest and icons for that.
 - **How it is built.** Web Push written on Web Crypto (no Node-only library), checked byte for byte against the worked example in RFC 8291. Push is only ever sent to the browsers' own push services. Dead devices are forgotten automatically.
+- **App mode.** Installed to a Home Screen on Android or iPhone, the OS opens full screen like an app:
+  - The status bar takes the colour of the header beneath it: warm paper in the portal, navy in the console.
+  - The layout runs edge to edge and pads itself clear of the notch, the home indicator and the rounded corners in landscape.
+  - A page opened with no signal shows a branded offline screen that reloads itself when the connection returns, and a banner says when the connection drops mid-session. Nothing from a workspace is stored on the device.
+  - Pulling down from the top refreshes the page, which installed apps otherwise lack. The chat keeps its own scrolling.
+  - Phones get an install banner: one tap on Android, the two Share steps on iPhone and iPad. Computers get "Install the app" in the account menu.
+  - Proper icons for Android, including maskable versions so the launcher can shape them, and a real 180px iPhone icon.
+  - Form fields are 16px on phones, so iOS no longer zooms in when one is tapped.
 - **Nav.** The portal gains Tasks and Messages with badges. The console workspace page gains Tasks and Messages buttons with counts.
 - **Database.** One migration adds the Task, TaskEvent, ChatMessage and ChatRead tables. Nothing existing changes.
 

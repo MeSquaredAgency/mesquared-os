@@ -4,6 +4,8 @@ import type { UserRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CommandMenu, CommandTrigger, type CommandGroup } from "./command-menu";
 import { MobileNav, ShellNav, type NavItem } from "./shell-nav";
+import { InstallPrompt } from "./install";
+import { PullToRefresh } from "./pull-to-refresh";
 import { PushPrompt } from "./push";
 import { UserMenu } from "./user-menu";
 
@@ -72,7 +74,7 @@ export function AppShell({ user, nav, tone = "paper", context, footer, homeHref 
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header data-theme={tone} className="sidebar-tone sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground md:hidden">
+        <header data-theme={tone} className="sidebar-tone sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b border-sidebar-border bg-sidebar pt-[env(safe-area-inset-top)] pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] text-sidebar-foreground md:hidden">
           <Link href={homeHref} aria-label="MeSquared OS home" className="shrink-0">
             <BrandMark tone={tone} className="h-4.5" />
           </Link>
@@ -83,12 +85,14 @@ export function AppShell({ user, nav, tone = "paper", context, footer, homeHref 
           </div>
         </header>
         <main id="main" tabIndex={-1} className="page-wash flex-1 outline-none">
-          <div className="mx-auto w-full max-w-[1280px] px-4 pt-7 pb-24 md:px-8 md:pt-10 md:pb-16 lg:px-12">
+          <div className="mx-auto w-full max-w-[1280px] pt-7 pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(6rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] md:px-8 md:pt-10 md:pb-16 lg:px-12">
+            <InstallPrompt />
             <PushPrompt audience={user.isOperator || user.isPlatformAdmin ? "operator" : "client"} />
             {children}
           </div>
         </main>
         <MobileNav items={nav} />
+        <PullToRefresh />
       </div>
       <CommandMenu groups={groups} />
     </div>

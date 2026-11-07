@@ -7,6 +7,9 @@ import { humanize } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+/** The status bar matches the console's navy header. */
+export const viewport = { themeColor: "#182533" };
+
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const { user, tenants } = await getConsoleContext();
   const queue = await repository.listExceptions(

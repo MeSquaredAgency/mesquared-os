@@ -71,7 +71,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
   const more = items.length > 5 ? items.slice(4) : [];
   const moreActive = more.some(isActive);
   return (
-    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/90 shadow-[0_-8px_24px_-16px_#1b232c33] backdrop-blur-md md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/90 shadow-[0_-8px_24px_-16px_#1b232c33] backdrop-blur-md md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
       <ul className="flex h-16 items-stretch">
         {shown.map((item) => {
           const Icon = ICONS[item.icon];

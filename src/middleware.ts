@@ -46,5 +46,5 @@ export async function middleware(req: NextRequest) {
 // session (installing, or checking for an update). New pages are therefore
 // private by default.
 export const config = {
-  matcher: ["/((?!api/|_next/|r/|book/|legal/|onboarding/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml|sw\\.js|manifest\\.webmanifest|icons/|brand/).*)"],
+  matcher: ["/((?!api/|_next/|r/|book/|legal/|onboarding/|icon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml|sw\\.js|offline\\.html|manifest\\.webmanifest|icons/|brand/).*)"],
 };

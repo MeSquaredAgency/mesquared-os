@@ -440,3 +440,18 @@
     transform: none;
   }
 }
+
+/* Installed as an app: no grey flash on tap, and no text-selection callout on buttons and links. */
+@media (display-mode: standalone) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  a,
+  button,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"] {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+}

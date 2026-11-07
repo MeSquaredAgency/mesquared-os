@@ -1,6 +1,46 @@
-/* MeSquared OS service worker: shows notifications and opens the right page when one is tapped. Nothing is cached. */
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+/*
+ * MeSquared OS service worker. It shows notifications, opens the right page
+ * when one is tapped, and shows an offline screen when a page can't load.
+ * The only thing it caches is that screen and its icon: workspace data is
+ * never stored on the device.
+ */
+const OFFLINE = "msq-offline-v1";
+const OFFLINE_URL = "/offline.html";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(OFFLINE).then((cache) => cache.addAll([OFFLINE_URL, "/icons/icon-192.png"])).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      for (const key of await caches.keys()) if (key !== OFFLINE) await caches.delete(key);
+      if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
+      await self.clients.claim();
+    })(),
+  );
+});
+
+/* Page loads go to the network as normal; only when that fails does the offline screen answer. */
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode !== "navigate") return;
+  event.respondWith(
+    (async () => {
+      try {
+        const preloaded = await event.preloadResponse;
+        return preloaded || (await fetch(event.request));
+      } catch {
+        return (await caches.match(OFFLINE_URL)) || Response.error();
+      }
+    })(),
+  );
+});
+
+/* The offline screen's icon, when it is shown. */
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode === "navigate" || new URL(event.request.url).pathname !== "/icons/icon-192.png") return;
+  event.respondWith(fetch(event.request).catch(() => caches.match("/icons/icon-192.png")));
+});
 
 self.addEventListener("push", (event) => {
   let data = {};

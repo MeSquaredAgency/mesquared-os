@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { AppMode } from "@/components/shell/app-mode";
+import { CAPTURE_INSTALL_SCRIPT } from "@/lib/install-script";
 import "./globals.css";
 
 /** Instrument Sans, the Me² face: one variable file, weight 400–700, width 75–100% (headlines run condensed). */
@@ -19,10 +21,28 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Me² OS", statusBarStyle: "default" },
 };
 
+/**
+ * Edge to edge on phones (the layout pads itself clear of the notch and the
+ * home indicator), with the status bar in the colour of the header beneath
+ * it. The console sets its own, darker colour.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#faf7f1",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="paper" className={instrument.variable} suppressHydrationWarning>
-      <body className="min-h-screen">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: CAPTURE_INSTALL_SCRIPT }} />
+      </head>
+      <body className="min-h-screen">
+        {children}
+        <AppMode />
+      </body>
     </html>
   );
 }

@@ -80,7 +80,7 @@ export function ChatComposer({ slug, placeholder, maxLength }: { slug: string; p
           }}
           placeholder={placeholder}
           aria-label="Message"
-          className="max-h-44 min-h-6 flex-1 resize-none bg-transparent py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+          className="max-h-44 min-h-6 flex-1 resize-none bg-transparent py-1 text-base leading-relaxed sm:text-sm outline-none placeholder:text-muted-foreground"
         />
         <Button type="submit" size="icon" className={cn("size-8 shrink-0 rounded-lg", !text.trim() && "opacity-50")} disabled={pending || !text.trim()} aria-label="Send">
           <SendHorizontal />

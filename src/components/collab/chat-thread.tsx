@@ -34,7 +34,7 @@ export function ChatThread({ messages, viewer, viewerId, tenant, now }: { messag
   }
   let lastDay = "";
   return (
-    <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-4 py-4 sm:px-6" tabIndex={0} aria-label="Messages">
+    <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-4 py-4 sm:px-6" tabIndex={0} aria-label="Messages" data-no-pull>
       <ol className="flex flex-col gap-1">
         {messages.map((m, i) => {
           const prev = messages[i - 1];
